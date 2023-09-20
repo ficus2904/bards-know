@@ -3,17 +3,15 @@ import random
 from datetime import datetime
 
 import aiohttp
-import json
+import json, os
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from translate import Translator
 
-with open("api_keys.json", "r") as f:
-    api_keys = json.load(f)
 
+api_keys = json.loads(os.getenv('api_key_bard_knows'))
 date_raw = datetime.now()
-
 dp = Dispatcher()
 
 arr_api_data = {
@@ -92,4 +90,5 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    print('Starting')
     asyncio.run(main())
