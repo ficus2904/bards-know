@@ -1,2 +1,5 @@
 /.venv
 /api_keys.json
+/runtime.txt
+/.gitignore
+/Procfile

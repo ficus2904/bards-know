@@ -1,16 +1,17 @@
 import asyncio
 import random
 from datetime import datetime
-
+# import os
 import aiohttp
-import json, os
+import json
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from translate import Translator
+# python app.py
 
-
-api_keys = json.loads(os.getenv('api_key_bard_knows'))
+# api_keys = json.loads(os.getenv('api_key_bard_knows'))
+api_keys = json.loads(open('api_keys.json').read())
 date_raw = datetime.now()
 dp = Dispatcher()
 
