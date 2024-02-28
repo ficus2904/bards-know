@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 # import os
 import aiohttp
+import hashlib
 import json
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.enums import ParseMode
@@ -79,10 +80,15 @@ async def handler(text: str) -> str:
 @dp.message(F.content_type.in_({'text'}))
 async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
     input_data = arr_api_data.get(message.text, 'random')
+    logging.info(f'{message.from_user.id}: {message.text}')
+    user_id_hash = hashlib.sha256(str(message.from_user.id).encode()).hexdigest()
+    if user_id_hash not in ['c9b301adee69aa3a5d3aa0e2a6ccdf72f70adfec81a06fd40a003996bbd13cb4']:
+        await message.reply('Доступ запрещен. Оплатите подписку')
+        return
+
     if len(input_data) == 0:
         await message.reply("Сначала выберите тему ниже")
         return
-    logging.info(input_data)
     try:
         output = await handler(input_data)
         await message.answer(output, reply_markup=builder.as_markup())
@@ -97,6 +103,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.info('Starting')
+    # logging.info('Starting')
     print('Starting')
     asyncio.run(main())
