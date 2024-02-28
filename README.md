@@ -41,9 +41,16 @@ python app.py
 Какой самый большой океан на Земле? ▶ Тихий океан
 ```
 
-## Translation
+## Set api keys
 
-The bot can also translate the information it provides into Russian. To enable translation, simply type "/translate" before the category name. For example, to receive a random quote in Russian, type "/translate Цитата".
+Place the api_keys.json file in the project. 
+Schema:
+```json
+{
+    "api_key_bot": "your-telegram-token",
+    "api_key_riddle": "your-api-token-from: api-ninjas.com"
+}
+```
 
 ## Support
 
