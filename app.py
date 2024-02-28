@@ -1,5 +1,6 @@
 import asyncio
 import random
+import logging
 from datetime import datetime
 # import os
 import aiohttp
@@ -9,8 +10,13 @@ from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from translate import Translator
 # python app.py
-
+# git remote get-url origin # получить url для docker
 # api_keys = json.loads(os.getenv('api_key_bard_knows'))
+
+
+logging.basicConfig(filename='./app.log', level=logging.INFO,
+                    format='%(asctime)19s %(levelname)s: %(message)s')
+
 api_keys = json.loads(open('api_keys.json').read())
 date_raw = datetime.now()
 dp = Dispatcher()
@@ -76,7 +82,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
     if len(input_data) == 0:
         await message.reply("Сначала выберите тему ниже")
         return
-
+    logging.info(input_data)
     try:
         output = await handler(input_data)
         await message.answer(output, reply_markup=builder.as_markup())
@@ -91,5 +97,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    logging.info('Starting')
     print('Starting')
     asyncio.run(main())
