@@ -17,16 +17,21 @@ pip install -r requirements.txt
 python app.py
 ```
 
-2. Type the name of the category you want to receive information from. For example, to receive a random quote, type "Цитата". To receive a trivia question, type "Квиз".
+2. For getting access to the bot, it must first add telegram user ID to sqlite3 database, which was created after running bot (telegram user ID write in logs)
+```
+>>> /start
+"Доступ запрещен. Обратитесь к администратору"
+```
+
+2. Type the name of the category you want to receive information from. For example, to receive a random quote, type "Цитата".
 
 3. The bot will send you the requested information.
 
 ## Examples
 
 ```
->>> /start
 >>> Цитата
-"Жизнь слишком коротка, чтобы тратить ее на маленькие мысли." © Марк Аврелий ▶ Категория Жизнь
+"Жизнь слишком коротка, чтобы тратить ее на маленькие мысли." Марк Аврелий
 
 >>> Шутка
 Что общего у слона и балерины? Они оба на ногах стоят.
@@ -34,11 +39,8 @@ python app.py
 >>> Факт
 Самая большая страна в мире по площади - Россия.
 
->>> Событие в этот день
-19 сентября 1812 года состоялось Бородинское сражение.
-
 >>> Квиз
-Какой самый большой океан на Земле? ▶ Тихий океан
+Какой самый большой океан на Земле?
 ```
 
 ## Set api keys
@@ -48,7 +50,8 @@ Schema:
 ```json
 {
     "api_key_bot": "your-telegram-token",
-    "api_key_riddle": "your-api-token-from: api-ninjas.com"
+    "api_key_riddle": "your-api-token-from: api-ninjas.com", 
+    "gemini": "your-gemini-api-key"
 }
 ```
 

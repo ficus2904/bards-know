@@ -1,4 +1,6 @@
 aiogram
 aiohttp
-translate
+google-generativeai
+# translate
 # asyncio
+# markdown
