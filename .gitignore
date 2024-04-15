@@ -1,10 +1,10 @@
-/.venv
+.venv/
+.env/
 /api_keys.json
 /runtime.txt
-/.gitignore
+.gitignore
 /Procfile
 /app.log
 /db.sqlite3
 /ninjas_api.py
 /__pycache__
-/.gitignore
