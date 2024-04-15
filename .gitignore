@@ -1,5 +1,5 @@
 .venv/
-.env/
+env/
 /api_keys.json
 /runtime.txt
 .gitignore
