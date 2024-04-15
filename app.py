@@ -197,7 +197,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
 
     try:
         if user_name is None:
-            print(f'Новый пользователь: {user_name[0]}')
+            # print(f'Новый пользователь: {user_name[0]}')
             await message.reply('Доступ запрещен. Обратитесь к администратору')
             return
         if text == '/start':
@@ -227,6 +227,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
         await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
         return
     except Exception as e:
+        logging.info(e)
         await message.answer(str(e))
         return
 

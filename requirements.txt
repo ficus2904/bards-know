@@ -2,6 +2,3 @@ aiogram
 aiohttp
 google-generativeai
 cohere
-# translate
-# asyncio
-# markdown
