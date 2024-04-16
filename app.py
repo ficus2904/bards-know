@@ -62,6 +62,25 @@ class DBConnection:
         self.execute('''CREATE TABLE IF NOT EXISTS users
                         (id INT PRIMARY KEY, name TEXT)''')
         self.commit()
+
+    def add_user(self, user_id: int, name: str) -> None:
+        """
+        Insert a new user into the table.
+        :param user_id: The user's ID.
+        :param name: The user's name.
+        """
+        query = 'INSERT INTO users (id, name) VALUES (?, ?)'
+        self.cursor.execute(query, (user_id, name))
+        self.commit()
+
+    def remove_user(self, name: str) -> None:
+        """
+        Remove a user from the users table.
+        :param name: The user's name.
+        """
+        query = 'DELETE FROM users WHERE name = ?'
+        self.cursor.execute(query, (name,))
+        self.commit()
     
     def check_user(self, user_id: int) -> tuple | None:
         return self.fetchone(f'SELECT * FROM users WHERE id is {user_id}')
@@ -198,7 +217,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
     try:
         if user_name is None:
             # print(f'Новый пользователь: {user_name[0]}')
-            await message.reply('Доступ запрещен. Обратитесь к администратору')
+            await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
             return
         if text == '/start':
             await message.reply(f'Доступ открыт. Добро пожаловать {user_name[1]}!')
@@ -223,13 +242,57 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
             # await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
         else:
             await message.reply('Ожидайте...')
-            output = await agent.prompt(text)
+            # output = await agent.prompt(text)
+            output = 'Готово'
         await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
         return
     except Exception as e:
         logging.info(e)
         await message.answer(str(e))
         return
+    
+
+@dp.message(commands=['add'])
+async def add_command_handler(message: types.Message):
+    user_name = db.check_user(message.from_user.id)
+    if not user_name or user_name[1] != 'ADMIN':
+        await message.reply("You don't have admin privileges")
+        return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply("Usage: `/add 123456 YourName`")
+        return
+    # Split the argument into user_id and name
+    user_id, name = args[1].split(maxsplit=1)
+    try:
+        db.add_user(int(user_id), name)
+        await message.reply(f"User {name} with ID {user_id} added successfully.")
+    except sqlite3.IntegrityError:
+        await message.reply("This user ID already exists.")
+    except Exception as e:
+        await message.reply(f"An error occurred: {e}.")
+
+
+@dp.message(commands=['remove'])
+async def remove_command_handler(message: types.Message):
+    user_name = db.check_user(message.from_user.id)
+    if not user_name or user_name[1] != 'ADMIN':
+        await message.reply("You don't have admin privileges")
+        return
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.reply("Usage: `/remove TargetName`")
+        return
+    # Take the argument as the name
+    name_to_remove = args[1].strip()
+    try:
+        if user_name:
+            db.remove_user(name_to_remove)
+            await message.reply(f"User `{name_to_remove}` removed successfully.")
+        else:
+            await message.reply(f"User `{name_to_remove}` not found.")
+    except Exception as e:
+        await message.reply(f"An error occurred: {e}.")
 
 
 async def main() -> None:

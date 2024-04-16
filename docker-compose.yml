@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: bard-knows
-    restart: always
+    restart: unless-stopped
     volumes:
       - .:/app
     command: ["python", "./app.py"]
