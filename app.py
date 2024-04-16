@@ -8,6 +8,7 @@ import sqlite3
 import atexit
 from time import time
 from aiogram import Bot, Dispatcher, F, types
+from aiogram.filters import Command, CommandStart
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from md2tgmd import escape
@@ -148,10 +149,6 @@ class Agent:
     ''' Router for agents'''
     def __init__(self):
         self.current = 'gemini'
-        self.buttons = {'Добавить в контекст универсальный промпт':'enrich', 
-                        'Показать текущий агент и размер контекста':'show',
-                        'Изменить агент':'change', 
-                        'Очистить контекст':'clear'}
         self.universal_prompt = json.loads(open('./prompts.json').read())
         self.all_prompts = 'https://vaulted-polonium-23c.notion.site/500-Best-ChatGPT-Prompts-63ef8a04a63c476ba306e1ec9a9b91c0'
         self.time_dump = time()
@@ -192,68 +189,46 @@ class Agent:
         return output
 
 
+class UsersMap():
+    def __init__(self) -> Agent:
+        self._user_ins = {}
+    
+    def get(self, user_id: int):
+        if user_id not in self._user_ins:
+            self._user_ins[user_id] = Agent()
+        return self._user_ins[user_id]
+
+
 db = DBConnection()
 gemini = GeminiAPI()
 cohere_ins = CohereAPI()
 dp = Dispatcher()
-agent = Agent()
+users = UsersMap()
+buttons = {'Добавить в контекст универсальный промпт':'enrich', 
+            'Показать текущий агент и размер контекста':'show',
+            'Изменить агент':'change', 
+            'Очистить контекст':'clear'}
 
 builder = ReplyKeyboardBuilder()
-for display_text in agent.buttons:
+for display_text in buttons:
     builder.button(text=display_text)
 builder.adjust(2, 2)
 
 
-@dp.message(F.content_type.in_({'text'}))
-async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
-    ## clear context after 15 minutes
-    if (time() - agent.time_dump) > 900:
-        agent.clear()
-    agent.time_dump = time()
+@dp.message(CommandStart())
+async def start_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
-    logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{message.text}"')
-    text = agent.buttons.get(message.text, message.text)
+    logging.info(f'{user_name[1] if user_name else message.from_user.id}: "/start"')
+    if user_name:
+        text = f'Доступ открыт. Добро пожаловать {message.from_user.full_name}!'
+    else:
+        text = f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}'
+    await message.reply(text)
+    return
 
-    try:
-        if user_name is None:
-            # print(f'Новый пользователь: {user_name[0]}')
-            await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
-            return
-        if text == '/start':
-            await message.reply(f'Доступ открыт. Добро пожаловать {user_name[1]}!')
-            return
-        if text in agent.buttons.values() or text in '1':
-            match text:
-                case 'enrich':
-                    agent.enrich()
-                    output = f'Универсальный контекст добавлен в {agent.current}. [Дополнительные промпты]({agent.all_prompts})'
-                case '1':
-                    agent.enrich('1')
-                    output = 'Роль учителя английского языка начата.'
-                case 'show':
-                    output = f'Текущий агент: {agent.current}, размер контекста {agent.show()}'
-                case 'change':
-                    agent.change()
-                    output = f'Смена агента на {agent.current}'
-                case 'clear':
-                    agent.clear()
-                    output = 'Контекст диалога отчищен'
-            output = escape(output)
-            # await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
-        else:
-            await message.reply('Ожидайте...')
-            # output = await agent.prompt(text)
-            output = 'Готово'
-        await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
-        return
-    except Exception as e:
-        logging.info(e)
-        await message.answer(str(e))
-        return
-    
 
-@dp.message(commands=['add'])
-async def add_command_handler(message: types.Message):
+@dp.message(Command(commands=["add"]))
+async def add_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
     if not user_name or user_name[1] != 'ADMIN':
         await message.reply("You don't have admin privileges")
@@ -273,8 +248,8 @@ async def add_command_handler(message: types.Message):
         await message.reply(f"An error occurred: {e}.")
 
 
-@dp.message(commands=['remove'])
-async def remove_command_handler(message: types.Message):
+@dp.message(Command(commands=["remove"]))
+async def remove_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
     if not user_name or user_name[1] != 'ADMIN':
         await message.reply("You don't have admin privileges")
@@ -293,6 +268,51 @@ async def remove_command_handler(message: types.Message):
             await message.reply(f"User `{name_to_remove}` not found.")
     except Exception as e:
         await message.reply(f"An error occurred: {e}.")
+
+
+@dp.message(F.content_type.in_({'text'}))
+async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
+    agent = users.get(message.from_user.id)
+    ## clear context after 15 minutes
+    if (time() - agent.time_dump) > 900:
+        agent.clear()
+    agent.time_dump = time()
+    user_name = db.check_user(message.from_user.id)
+    logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{message.text}"')
+    text = buttons.get(message.text, message.text)
+
+    try:
+        if user_name is None:
+            await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
+            return
+        if text in buttons.values() or text in '1':
+            match text:
+                case 'enrich':
+                    agent.enrich()
+                    output = f'Универсальный контекст добавлен в {agent.current}. [Дополнительные промпты]({agent.all_prompts})'
+                case '1':
+                    agent.enrich('1')
+                    output = 'Роль учителя английского языка начата.'
+                case 'show':
+                    output = f'Текущий агент: {agent.current}, размер контекста {agent.show()}'
+                case 'change':
+                    agent.change()
+                    output = f'Смена агента на {agent.current}'
+                case 'clear':
+                    agent.clear()
+                    output = 'Контекст диалога отчищен'
+            output = escape(output)
+
+        else:
+            await message.reply('Ожидайте...')
+            output = await agent.prompt(text)
+        await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
+        return
+    except Exception as e:
+        logging.info(e)
+        await message.answer(str(e))
+        return
+    
 
 
 async def main() -> None:
