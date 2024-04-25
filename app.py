@@ -12,6 +12,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from md2tgmd import escape
+from PIL import Image
 import warnings
 warnings.simplefilter('ignore')
 
@@ -104,21 +105,32 @@ class GeminiAPI:
     
     def __init__(self):
         genai.configure(api_key=api_keys["gemini"])
-        self.model_name = 'gemini-pro'
-        self.model = genai.GenerativeModel(self.model_name, safety_settings = {
+        self.safety_settings = { 
+            'safety_settings':{
             HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
-        })
+            }
+        }
+        self.model_name = ['gemini-pro', 'gemini-pro-vision']
+        self.model = None
         self.context = []
 
-    async def prompt(self, text: str) -> str:
+    async def prompt(self, text: str, image = None) -> str:
         self.context.append({'role':'user', 'parts':[text]})
-        response = self.model.generate_content(self.context)
+        if image is None:
+            self.model = genai.GenerativeModel(self.model_name[0], **self.safety_settings)
+            response = self.model.generate_content(self.context)
+        else:
+            self.model = genai.GenerativeModel(self.model_name[1], **self.safety_settings)
+            response = self.model.generate_content([text,image])
+
         self.context.append({'role':'model', 'parts':[response.text]})
+
         print(response.text)
         return escape(response.text)
+
 
 
 class CohereAPI:
@@ -152,6 +164,7 @@ class Agent:
         self.universal_prompt = json.loads(open('./prompts.json').read())
         self.all_prompts = 'https://vaulted-polonium-23c.notion.site/500-Best-ChatGPT-Prompts-63ef8a04a63c476ba306e1ec9a9b91c0'
         self.time_dump = time()
+        self.text = None
         
     def enrich(self, option='0'):
         if self.current == 'gemini':
@@ -181,9 +194,9 @@ class Agent:
         cohere_ins.context = None
         gemini.context = []
 
-    async def prompt(self, text):
+    async def prompt(self, text, image=None):
         if self.current == 'gemini':
-            output = await gemini.prompt(text)
+            output = await gemini.prompt(text, image=image)
         elif self.current == 'cohere':
             output = await cohere_ins.prompt(text)
         return output
@@ -197,8 +210,9 @@ class UsersMap():
         if user_id not in self._user_ins:
             self._user_ins[user_id] = Agent()
         return self._user_ins[user_id]
+    
 
-
+bot = Bot(token=api_keys["telegram"], parse_mode=ParseMode.HTML)
 db = DBConnection()
 gemini = GeminiAPI()
 cohere_ins = CohereAPI()
@@ -213,6 +227,25 @@ builder = ReplyKeyboardBuilder()
 for display_text in buttons:
     builder.button(text=display_text)
 builder.adjust(2, 2)
+
+
+async def check_and_clear(message: types.Message, type_prompt: str) -> Agent | None:
+    agent = users.get(message.from_user.id)
+    ## clear context after 15 minutes
+    if (time() - agent.time_dump) > 900:
+        agent.clear()
+    agent.time_dump = time()
+    user_name = db.check_user(message.from_user.id)
+    # type_prompt = message.text if type_prompt == 'text' else message.caption
+    type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
+    logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{type_prompt}"')
+    agent.text = buttons.get(type_prompt, type_prompt)
+    if user_name is None:
+        await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
+        return None
+    
+    return agent
+    
 
 
 @dp.message(CommandStart())
@@ -270,23 +303,26 @@ async def remove_handler(message: types.Message):
         await message.reply(f"An error occurred: {e}.")
 
 
+@dp.message(F.content_type.in_({'photo'}))
+async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
+    agent = await check_and_clear(message, 'photo')
+    if agent.text is None:
+        return
+    
+    await message.reply("Изображение получено! Ожидайте......")
+    tg_photo= await bot.download(message.photo[-1].file_id)
+    output = await agent.prompt(agent.text, Image.open(tg_photo))
+    await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
+    return
+
 @dp.message(F.content_type.in_({'text'}))
 async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
-    agent = users.get(message.from_user.id)
-    ## clear context after 15 minutes
-    if (time() - agent.time_dump) > 900:
-        agent.clear()
-    agent.time_dump = time()
-    user_name = db.check_user(message.from_user.id)
-    logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{message.text}"')
-    text = buttons.get(message.text, message.text)
-
+    agent = await check_and_clear(message, 'text')
+    if agent.text is None:
+        return
     try:
-        if user_name is None:
-            await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
-            return
-        if text in buttons.values() or text in '1':
-            match text:
+        if agent.text in buttons.values() or agent.text in '1':
+            match agent.text:
                 case 'enrich':
                     agent.enrich()
                     output = f'Универсальный контекст добавлен в {agent.current}. [Дополнительные промпты]({agent.all_prompts})'
@@ -305,7 +341,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
 
         else:
             await message.reply('Ожидайте...')
-            output = await agent.prompt(text)
+            output = await agent.prompt(agent.text)
         await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
         return
     except Exception as e:
@@ -316,7 +352,6 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
 
 
 async def main() -> None:
-    bot = Bot(token=api_keys["telegram"], parse_mode=ParseMode.HTML)
     await dp.start_polling(bot)
 
 

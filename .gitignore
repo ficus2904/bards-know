@@ -8,3 +8,4 @@ env/
 /db.sqlite3
 /ninjas_api.py
 /__pycache__
+/keep.txt
