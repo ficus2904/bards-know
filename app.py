@@ -160,7 +160,7 @@ class CohereAPI:
 class Agent:
     ''' Router for agents'''
     def __init__(self):
-        self.current = 'gemini'
+        self.current = 'cohere'
         self.universal_prompt = json.loads(open('./prompts.json').read())
         self.all_prompts = 'https://vaulted-polonium-23c.notion.site/500-Best-ChatGPT-Prompts-63ef8a04a63c476ba306e1ec9a9b91c0'
         self.time_dump = time()
