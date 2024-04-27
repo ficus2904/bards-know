@@ -124,10 +124,10 @@ class GeminiAPI:
     async def prompt(self, text: str, image = None) -> str:
         self.context.append({'role':'user', 'parts':[text]})
         if image is None:
-            self.model = genai.GenerativeModel(self.current_model[0], **self.safety_settings)
+            self.model = genai.GenerativeModel(self.models[0], **self.safety_settings)
             response = self.model.generate_content(self.context)
         else:
-            self.model = genai.GenerativeModel(self.current_model[1], **self.safety_settings)
+            self.model = genai.GenerativeModel(self.models[1], **self.safety_settings)
             response = self.model.generate_content([text,image])
 
         self.context.append({'role':'model', 'parts':[response.text]})
