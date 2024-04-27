@@ -3,6 +3,7 @@ import logging
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import cohere
+from groq import Groq
 import json
 import sqlite3
 import atexit
@@ -113,17 +114,20 @@ class GeminiAPI:
             HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
             }
         }
-        self.model_name = ['gemini-pro', 'gemini-pro-vision']
-        self.model = None
+        self.models = ['gemini-pro', 'gemini-pro-vision']
+        self.current_model = self.models[0]
         self.context = []
+
+    def __str__(self):
+        return 'gemini'
 
     async def prompt(self, text: str, image = None) -> str:
         self.context.append({'role':'user', 'parts':[text]})
         if image is None:
-            self.model = genai.GenerativeModel(self.model_name[0], **self.safety_settings)
+            self.model = genai.GenerativeModel(self.current_model[0], **self.safety_settings)
             response = self.model.generate_content(self.context)
         else:
-            self.model = genai.GenerativeModel(self.model_name[1], **self.safety_settings)
+            self.model = genai.GenerativeModel(self.current_model[1], **self.safety_settings)
             response = self.model.generate_content([text,image])
 
         self.context.append({'role':'model', 'parts':[response.text]})
@@ -134,7 +138,7 @@ class GeminiAPI:
 
 
 class CohereAPI:
-    """Singleton class for Gemini API"""
+    """Singleton class for Cohere API"""
     _instance = None
 
     def __new__(cls, *args, **kwargs):
@@ -142,14 +146,22 @@ class CohereAPI:
             cls._instance = super(CohereAPI, cls).__new__(cls)
         return cls._instance
     
+
     def __init__(self):
         self.co = cohere.Client(api_keys["cohere"])
-        self.context = None
+        self.models = ['command-r-plus','command-r','command','command-light']
+        self.current_model = self.models[0]
+        self.context = []
 
-    async def prompt(self, text):
+
+    def __str__(self):
+        return 'cohere'
+    
+
+    async def prompt(self, text, image = None) -> str:
         response = self.co.chat(
-            model='command-r-plus',
-            chat_history=self.context,
+            model=self.current_model,
+            chat_history=self.context or None,
             message=text
         )
         self.context = response.chat_history
@@ -157,49 +169,97 @@ class CohereAPI:
         return escape(response.text)
 
 
+
+class GroqAPI:
+    """Singleton class for Groq API"""
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(GroqAPI, cls).__new__(cls)
+        return cls._instance
+    
+    def __init__(self):
+        self.client = Groq(api_key=api_keys["groq"])
+        self.models = ['llama3-70b-8192','llama3-8b-8192','mixtral-8x7b-32768','gemma-7b-it'] # https://console.groq.com/docs/models
+        self.current_model = self.models[0]
+        self.context = []
+
+    def __str__(self):
+        return 'groq'
+
+    async def prompt(self, text, image = None) -> str:
+        self.context.append({'role':'user', 'content':text})
+        response = self.client.chat.completions.create(
+            model=self.current_model,
+            messages=self.context,
+        )
+        self.context.append({'role':'assistant', 'content':response.choices[-1].message.content})
+        print(response.choices[-1].message.content)
+        return escape(response.choices[-1].message.content)
+
+
+
 class Agent:
     ''' Router for agents'''
     def __init__(self):
-        self.current = 'cohere'
-        self.universal_prompt = json.loads(open('./prompts.json').read())
-        self.all_prompts = 'https://vaulted-polonium-23c.notion.site/500-Best-ChatGPT-Prompts-63ef8a04a63c476ba306e1ec9a9b91c0'
+        self.api_instances = [groq_ins,cohere_ins,gemini_ins]
+        self.current = self.api_instances[0]
+        self.prompts_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
         self.time_dump = time()
         self.text = None
         
-    def enrich(self, option='0'):
-        if self.current == 'gemini':
-            gemini.context.extend([{'role':'user', 'parts':[self.universal_prompt[option][0]]},
-                                   {'role':'model', 'parts':[self.universal_prompt[option][1]]}])
-        elif self.current == 'cohere':
-            cohere_ins.context = [
-                {"role": "USER", "message": self.universal_prompt[option][0]},
-                {"role": "CHATBOT", "message": self.universal_prompt[option][1]}
-            ]
+
+    def add_context(self) -> str:
+        content = self.prompts_dict.get(self.text)
+        if content is None:
+            return 'Код не найден'
+
+        if isinstance(self.current, GeminiAPI):
+            body = {'role':'system', 'parts':[content[0]]}
+        elif isinstance(self.current, CohereAPI):
+            body = {"role": 'SYSTEM', "message": content[0]}
+        elif isinstance(self.current, GroqAPI):
+            body = {'role':'system', 'content': content[0]}
+        
+        self.current.context.append(body)
+        return f'Контекст {content[2]} добавлен'
 
         
-    def show(self) -> int:
-        if self.current == 'gemini':
-            length = 0 if not gemini.context else len(gemini.context)
-        elif self.current == 'cohere':
-            length = 0 if not cohere_ins.context else len(cohere_ins.context)
-        return length
+    def show_info(self) -> str:
+        return f'\n* Текущий бот: {self.current}\n* Модель: {self.current.current_model}\n* Размер контекста: {len(self.current.context)}'
+    
 
-    def change(self):
-        if self.current == 'gemini':
-            self.current = 'cohere'
-        elif self.current == 'cohere':
-            self.current = 'gemini'
+    def show_prompts_list(self) -> str:
+        all_list = "\n".join([f"{k} - {v[-1]}" for k,v in self.prompts_dict.items() if k != "Дополнительные промпты"])
+        return f'{all_list}\n[Дополнительные промпты]({self.prompts_dict["Дополнительные промпты"]})'
 
-    def clear(self):
-        cohere_ins.context = None
-        gemini.context = []
+
+    def change_agent(self) -> str:
+        lst = self.api_instances
+        current_index = lst.index(self.current)
+        next_index = (current_index + 1) % len(lst)
+        self.current = lst[next_index]
+        return f'Смена бота на {self.current}'
+    
+
+    def change_model(self) -> str:
+        lst = self.current.models
+        current_index = lst.index(self.current.current_model)
+        next_index = (current_index + 1) % len(lst)
+        self.current.current_model = lst[next_index]
+        return f'Смена модели на {self.current.current_model}'
+
+
+    def clear(self) -> str:
+        self.current.context = []
+        return 'Контекст диалога отчищен'
+
 
     async def prompt(self, text, image=None):
-        if self.current == 'gemini':
-            output = await gemini.prompt(text, image=image)
-        elif self.current == 'cohere':
-            output = await cohere_ins.prompt(text)
+        output = await self.current.prompt(text, image)
         return output
+
 
 
 class UsersMap():
@@ -214,19 +274,21 @@ class UsersMap():
 
 bot = Bot(token=api_keys["telegram"], parse_mode=ParseMode.HTML)
 db = DBConnection()
-gemini = GeminiAPI()
+gemini_ins = GeminiAPI()
 cohere_ins = CohereAPI()
+groq_ins = GroqAPI()
 dp = Dispatcher()
 users = UsersMap()
-buttons = {'Добавить в контекст универсальный промпт':'enrich', 
-            'Показать текущий агент и размер контекста':'show',
-            'Изменить агент':'change', 
-            'Очистить контекст':'clear'}
+buttons = {'Список кодов промптов':'show_prompts_list', 
+            'Вывести инфо':'show_info',
+            'Сменить бота':'change_agent', 
+            'Очистить контекст':'clear',
+            'Изменить модель бота':'change_model'}
 
 builder = ReplyKeyboardBuilder()
 for display_text in buttons:
     builder.button(text=display_text)
-builder.adjust(2, 2)
+builder.adjust(2,3)
 
 
 async def check_and_clear(message: types.Message, type_prompt: str) -> Agent | None:
@@ -246,7 +308,6 @@ async def check_and_clear(message: types.Message, type_prompt: str) -> Agent | N
     
     return agent
     
-
 
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
@@ -309,7 +370,9 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     if agent.text is None:
         return
     
-    await message.reply("Изображение получено! Ожидайте......")
+    # await message.reply("Изображение получено! Ожидайте......")
+    await message.reply("Обработка изображений временно недоступна")
+    return
     tg_photo= await bot.download(message.photo[-1].file_id)
     output = await agent.prompt(agent.text, Image.open(tg_photo))
     await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
@@ -321,24 +384,8 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
     if agent.text is None:
         return
     try:
-        if agent.text in buttons.values() or agent.text in '1':
-            match agent.text:
-                case 'enrich':
-                    agent.enrich()
-                    output = f'Универсальный контекст добавлен в {agent.current}. [Дополнительные промпты]({agent.all_prompts})'
-                case '1':
-                    agent.enrich('1')
-                    output = 'Роль учителя английского языка начата.'
-                case 'show':
-                    output = f'Текущий агент: {agent.current}, размер контекста {agent.show()}'
-                case 'change':
-                    agent.change()
-                    output = f'Смена агента на {agent.current}'
-                case 'clear':
-                    agent.clear()
-                    output = 'Контекст диалога отчищен'
-            output = escape(output)
-
+        if agent.text in buttons.values() or agent.text.isnumeric():
+            output = escape(getattr(agent, agent.text, agent.add_context)())
         else:
             await message.reply('Ожидайте...')
             output = await agent.prompt(agent.text)

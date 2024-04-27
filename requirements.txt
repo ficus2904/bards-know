@@ -3,3 +3,4 @@ aiohttp
 google-generativeai
 cohere
 pillow
+groq
