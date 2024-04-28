@@ -4,6 +4,7 @@ import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import cohere
 from groq import Groq
+from openai import OpenAI
 import json
 import sqlite3
 import atexit
@@ -13,7 +14,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from md2tgmd import escape
-from PIL import Image
+# from PIL import Image
 import warnings
 warnings.simplefilter('ignore')
 
@@ -95,14 +96,15 @@ class DBConnection:
         self.conn.close()
 
 
+
 class GeminiAPI:
     """Singleton class for Gemini API"""
-    _instance = None
+    # _instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(GeminiAPI, cls).__new__(cls)
-        return cls._instance
+    # def __new__(cls, *args, **kwargs):
+    #     if cls._instance is None:
+    #         cls._instance = super(GeminiAPI, cls).__new__(cls)
+    #     return cls._instance
     
     def __init__(self):
         genai.configure(api_key=api_keys["gemini"])
@@ -139,12 +141,12 @@ class GeminiAPI:
 
 class CohereAPI:
     """Singleton class for Cohere API"""
-    _instance = None
+    # _instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(CohereAPI, cls).__new__(cls)
-        return cls._instance
+    # def __new__(cls, *args, **kwargs):
+    #     if cls._instance is None:
+    #         cls._instance = super(CohereAPI, cls).__new__(cls)
+    #     return cls._instance
     
 
     def __init__(self):
@@ -172,12 +174,12 @@ class CohereAPI:
 
 class GroqAPI:
     """Singleton class for Groq API"""
-    _instance = None
+    # _instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(GroqAPI, cls).__new__(cls)
-        return cls._instance
+    # def __new__(cls, *args, **kwargs):
+    #     if cls._instance is None:
+    #         cls._instance = super(GroqAPI, cls).__new__(cls)
+    #     return cls._instance
     
     def __init__(self):
         self.client = Groq(api_key=api_keys["groq"])
@@ -189,7 +191,11 @@ class GroqAPI:
         return 'groq'
 
     async def prompt(self, text, image = None) -> str:
-        self.context.append({'role':'user', 'content':text})
+        if image is None:
+            body = {'role':'user', 'content': text}
+        else:
+            body = Agent.make_multimodal_body(text, image)
+        self.context.append(body)
         response = self.client.chat.completions.create(
             model=self.current_model,
             messages=self.context,
@@ -200,11 +206,57 @@ class GroqAPI:
 
 
 
+class NvidiaAPI:
+    """Singleton class for Nvidia API"""
+    # _instance = None
+
+    # def __new__(cls, *args, **kwargs):
+    #     if cls._instance is None:
+    #         cls._instance = super(NvidiaAPI, cls).__new__(cls)
+    #     return cls._instance
+    
+    def __init__(self):
+        self.client = OpenAI(api_key=api_keys["nvidia"],
+                             base_url = "https://integrate.api.nvidia.com/v1")
+        self.models = ['meta/llama3-70b-instruct',
+                       'snowflake/arctic',
+                       'microsoft/phi-3-mini-128k-instruct',
+                       'mistralai/mixtral-8x22b-instruct-v0.1',
+                       'meta/llama3-8b-instruct',
+                       'google/recurrentgemma-2b',
+                       'mistralai/mistral-large'] # https://build.nvidia.com/explore/discover#llama3-70b
+        self.current_model = self.models[0]
+        self.context = []
+
+
+    def __str__(self):
+        return 'nvidia'
+    
+
+    async def prompt(self, text, image = None) -> str:
+        if image is None:
+            body = {'role':'user', 'content': text}
+        else:
+            body = Agent.make_multimodal_body(text, image)
+        self.context.append(body)
+        response = self.client.chat.completions.create(
+            model=self.current_model,
+            messages=self.context,
+            temperature=0.5,
+            top_p=1,
+            max_tokens=1024
+        )
+        self.context.append({'role':'assistant', 'content':response.choices[-1].message.content})
+        print(response.choices[-1].message.content)
+        return escape(response.choices[-1].message.content)
+
+
+
 class Agent:
     ''' Router for agents'''
     def __init__(self):
-        self.api_instances = [groq_ins,cohere_ins,gemini_ins]
-        self.current = self.api_instances[0]
+        self.api_classes = [NvidiaAPI,GroqAPI,CohereAPI,GeminiAPI]
+        self.current = self.api_classes[0]()
         self.prompts_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
         self.time_dump = time()
         self.text = None
@@ -219,11 +271,11 @@ class Agent:
             body = {'role':'system', 'parts':[content[0]]}
         elif isinstance(self.current, CohereAPI):
             body = {"role": 'SYSTEM', "message": content[0]}
-        elif isinstance(self.current, GroqAPI):
+        elif isinstance(self.current, (GroqAPI,NvidiaAPI)):
             body = {'role':'system', 'content': content[0]}
         
         self.current.context.append(body)
-        return f'Контекст {content[2]} добавлен'
+        return f'Контекст {content[-1]} добавлен'
 
         
     def show_info(self) -> str:
@@ -236,24 +288,40 @@ class Agent:
 
 
     def change_agent(self) -> str:
-        lst = self.api_instances
-        current_index = lst.index(self.current)
+        lst = self.api_classes
+        current_index = next((i for i, cls in enumerate(lst) if isinstance(self.current, cls)), None)
         next_index = (current_index + 1) % len(lst)
-        self.current = lst[next_index]
+        self.current = lst[next_index]()
+        self.clear()
         return f'Смена бота на {self.current}'
     
 
     def change_model(self) -> str:
-        lst = self.current.models
-        current_index = lst.index(self.current.current_model)
+        lst: list = self.current.models
+        current_index: int = lst.index(self.current.current_model)
         next_index = (current_index + 1) % len(lst)
         self.current.current_model = lst[next_index]
+        self.clear()
         return f'Смена модели на {self.current.current_model}'
 
 
     def clear(self) -> str:
         self.current.context = []
         return 'Контекст диалога отчищен'
+    
+
+    def make_multimodal_body(text, image):
+        '''DEPRECATED'''
+        return {
+            'role':'user', 
+            'content':[
+                        {"type": "text", "text": text},
+                        {"type": "image_url","image_url": {
+                                                            "url": f"data:image/jpeg;base64,{image}"
+                                                            }
+                        }
+                    ]
+                }
 
 
     async def prompt(self, text, image=None):
@@ -274,9 +342,9 @@ class UsersMap():
 
 bot = Bot(token=api_keys["telegram"], parse_mode=ParseMode.HTML)
 db = DBConnection()
-gemini_ins = GeminiAPI()
-cohere_ins = CohereAPI()
-groq_ins = GroqAPI()
+# gemini_ins = GeminiAPI()
+# cohere_ins = CohereAPI()
+# groq_ins = GroqAPI()
 dp = Dispatcher()
 users = UsersMap()
 buttons = {'Список кодов промптов':'show_prompts_list', 
@@ -373,10 +441,11 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     # await message.reply("Изображение получено! Ожидайте......")
     await message.reply("Обработка изображений временно недоступна")
     return
-    tg_photo= await bot.download(message.photo[-1].file_id)
-    output = await agent.prompt(agent.text, Image.open(tg_photo))
-    await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
-    return
+    # tg_photo = await bot.download(message.photo[-1].file_id)
+    # output = await agent.prompt(agent.text, Image.open(tg_photo))
+    # output = await agent.prompt(agent.text, base64.b64encode(tg_photo.getvalue()).decode('utf-8'))
+    # await message.answer(output, reply_markup=builder.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
+
 
 @dp.message(F.content_type.in_({'text'}))
 async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
