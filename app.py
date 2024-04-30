@@ -6,13 +6,15 @@ import cohere
 from groq import Groq
 from openai import OpenAI
 import json
+import re
 import sqlite3
 import atexit
 from time import time
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
+from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
 # from PIL import Image
 import warnings
@@ -107,6 +109,7 @@ class GeminiAPI:
     #     return cls._instance
     
     def __init__(self):
+        self.name = 'gemini'
         genai.configure(api_key=api_keys["gemini"])
         self.safety_settings = { 
             'safety_settings':{
@@ -121,7 +124,7 @@ class GeminiAPI:
         self.context = []
 
     def __str__(self):
-        return 'gemini'
+        return self.name
 
     async def prompt(self, text: str, image = None) -> str:
         self.context.append({'role':'user', 'parts':[text]})
@@ -150,6 +153,7 @@ class CohereAPI:
     
 
     def __init__(self):
+        self.name = 'cohere'
         self.co = cohere.Client(api_keys["cohere"])
         self.models = ['command-r-plus','command-r','command','command-light']
         self.current_model = self.models[0]
@@ -157,7 +161,7 @@ class CohereAPI:
 
 
     def __str__(self):
-        return 'cohere'
+        return self.name
     
 
     async def prompt(self, text, image = None) -> str:
@@ -182,13 +186,14 @@ class GroqAPI:
     #     return cls._instance
     
     def __init__(self):
+        self.name = 'groq'
         self.client = Groq(api_key=api_keys["groq"])
         self.models = ['llama3-70b-8192','llama3-8b-8192','mixtral-8x7b-32768','gemma-7b-it'] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
         self.context = []
 
     def __str__(self):
-        return 'groq'
+        return self.name
 
     async def prompt(self, text, image = None) -> str:
         if image is None:
@@ -216,6 +221,7 @@ class NvidiaAPI:
     #     return cls._instance
     
     def __init__(self):
+        self.name = 'nvidia'
         self.client = OpenAI(api_key=api_keys["nvidia"],
                              base_url = "https://integrate.api.nvidia.com/v1")
         self.models = ['meta/llama3-70b-instruct',
@@ -230,7 +236,7 @@ class NvidiaAPI:
 
 
     def __str__(self):
-        return 'nvidia'
+        return self.name
     
 
     async def prompt(self, text, image = None) -> str:
@@ -255,8 +261,8 @@ class NvidiaAPI:
 class Agent:
     ''' Router for agents'''
     def __init__(self):
-        self.api_classes = [NvidiaAPI,GroqAPI,CohereAPI,GeminiAPI]
-        self.current = self.api_classes[0]()
+        self.api_classes = ['nvidia','cohere'] # [NvidiaAPI, CohereAPI] # GroqAPI, GeminiAPI
+        self.current = {'nvidia': NvidiaAPI,'cohere':CohereAPI}.get(self.api_classes[0])() # self.api_classes[0]()
         self.prompts_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
         self.time_dump = time()
         self.text = None
@@ -287,22 +293,25 @@ class Agent:
         return f'{all_list}\n[Дополнительные промпты]({self.prompts_dict["Дополнительные промпты"]})'
 
 
-    def change_agent(self) -> str:
-        lst = self.api_classes
-        current_index = next((i for i, cls in enumerate(lst) if isinstance(self.current, cls)), None)
-        next_index = (current_index + 1) % len(lst)
-        self.current = lst[next_index]()
+    def change_bot(self, bot_name) -> str:
+        # lst = self.api_classes
+        # current_index = next((i for i, cls in enumerate(lst) if isinstance(self.current, cls)), None)
+        # next_index = (current_index + 1) % len(lst)
+        # self.current = lst[next_index]()
+        self.current = {'nvidia': NvidiaAPI,'cohere':CohereAPI}.get(bot_name)()
         self.clear()
         return f'Смена бота на {self.current}'
     
 
-    def change_model(self) -> str:
-        lst: list = self.current.models
-        current_index: int = lst.index(self.current.current_model)
-        next_index = (current_index + 1) % len(lst)
-        self.current.current_model = lst[next_index]
+    def change_model(self, model_name) -> str:
+        # lst: list = self.current.models
+        # current_index: int = lst.index(self.current.current_model)
+        # next_index = (current_index + 1) % len(lst)
+        # self.current.current_model = lst[next_index]
+        self.current.current_model = model_name
         self.clear()
-        return f'Смена модели на {self.current.current_model}'
+        output = re.split(r'-|/',model_name, maxsplit=1)[-1]
+        return f'Смена модели на {output}'
 
 
     def clear(self) -> str:
@@ -349,7 +358,7 @@ dp = Dispatcher()
 users = UsersMap()
 buttons = {'Список кодов промптов':'show_prompts_list', 
             'Вывести инфо':'show_info',
-            'Сменить бота':'change_agent', 
+            'Сменить бота':'change_bot', 
             'Очистить контекст':'clear',
             'Изменить модель бота':'change_model'}
 
@@ -358,16 +367,21 @@ for display_text in buttons:
     builder.button(text=display_text)
 builder.adjust(2,3)
 
+class MyCallback(CallbackData, prefix="my"):
+    change_type: str
+    name: str
+
 
 async def check_and_clear(message: types.Message, type_prompt: str) -> Agent | None:
     agent = users.get(message.from_user.id)
+    if type_prompt == 'callback':
+        return agent
     ## clear context after 15 minutes
     if (time() - agent.time_dump) > 900:
         agent.clear()
     agent.time_dump = time()
     user_name = db.check_user(message.from_user.id)
-    # type_prompt = message.text if type_prompt == 'text' else message.caption
-    type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
+    type_prompt = {'text':message.text, 'photo': message.caption,'callback': None}.get(type_prompt)
     logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{type_prompt}"')
     agent.text = buttons.get(type_prompt, type_prompt)
     if user_name is None:
@@ -432,6 +446,14 @@ async def remove_handler(message: types.Message):
         await message.reply(f"An error occurred: {e}.")
 
 
+@dp.callback_query(MyCallback.filter(F.change_type.contains('change')))
+async def callback_handler(query: types.CallbackQuery, callback_data: MyCallback):
+    agent = await check_and_clear(query, 'callback')
+    output = getattr(agent, callback_data.change_type)(callback_data.name)
+    await query.message.answer(output)
+    await query.answer()
+
+
 @dp.message(F.content_type.in_({'photo'}))
 async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     agent = await check_and_clear(message, 'photo')
@@ -454,7 +476,20 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
         return
     try:
         if agent.text in buttons.values() or agent.text.isnumeric():
-            output = escape(getattr(agent, agent.text, agent.add_context)())
+            if 'change' in agent.text:
+                command_type = agent.text.split('_')[-1]
+                builder_inline = InlineKeyboardBuilder()
+                command_dict = {'bot': [agent.api_classes,'бота'],
+                                'model': [agent.current.models,'модель']}
+                for value in command_dict.get(command_type)[0]:
+                    builder_inline.button(text=re.split(r'-|/',value, maxsplit=1)[-1], 
+                                          callback_data=MyCallback(change_type=f'change_{command_type}',
+                                                                    name=value).pack())
+                await message.answer(f'Выберите {command_dict.get(command_type)[-1]}:', 
+                                     reply_markup=builder_inline.as_markup(), parse_mode=ParseMode.MARKDOWN_V2)
+                return
+            else:
+                output = escape(getattr(agent, agent.text, agent.add_context)())
         else:
             await message.reply('Ожидайте...')
             output = await agent.prompt(agent.text)
