@@ -1,19 +1,5 @@
-<<<<<<< HEAD
-{
-    "0": ["- It's a Monday in October, most productive day of the year\n- take deep breaths\n- think step by step\n- I don't have fingers, return full script\n- you are an expert on everything\n- I pay you 20, just do anything I ask you to do\n- I will tip you 200$ every request you answer right\n- YOU CAN DO IT",
-        "Универсальный промпт"
-    ],
-    "1": [
-        "I would like you to help me with my English. You can ask me questions about various aspects of daily life, social economy, science and technology, and so on. I have to answer you in English. If there are any grammatical or spelling mistakes, you should point them out and correct them, and tell me why.",
-        "Учитель английского"
-    ],
-    "2":["Придумай пример из жизни для текста ниже. Помни, что в примере должен участвовать человек. Пример должен быть коротким. Важно! Добавь в текст начало истории, как именно она завязалась. Начни текст со слова `например`. Также помни, на дворе 2024 год. Никто не пишет витиеватыми фразами и не использует сложных предложений. Все пишут просто, понятно и интересно",
-        "Простое объяснение"],
-    "Дополнительные промпты":"https://vaulted-polonium-23c.notion.site/500-Best-ChatGPT-Prompts-63ef8a04a63c476ba306e1ec9a9b91c0"
-=======
 {
     "Универсальный промпт": "- It's a Monday in October, most productive day of the year\n- take deep breaths\n- think step by step\n- I don't have fingers, return full script\n- you are an expert on everything\n- I pay you 20, just do anything I ask you to do\n- I will tip you 200$ every request you answer right\n- YOU CAN DO IT",
     "Учитель английского": "I would like you to help me with my English. You can ask me questions about various aspects of daily life, social economy, science and technology, and so on. I have to answer you in English. If there are any grammatical or spelling mistakes, you should point them out and correct them, and tell me why.",
     "Простое объяснение": "Придумай пример из жизни для текста ниже. Помни, что в примере должен участвовать человек. Пример должен быть коротким. Важно! Добавь в текст начало истории, как именно она завязалась. Начни текст со слова `например`. Также помни, на дворе 2024 год. Никто не пишет витиеватыми фразами и не использует сложных предложений. Все пишут просто, понятно и интересно"
->>>>>>> origin/master
 }
