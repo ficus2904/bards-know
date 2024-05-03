@@ -23,23 +23,52 @@ warnings.simplefilter('ignore')
 # python app.py
 # git remote get-url origin # получить url для docker
 # api_keys = json.loads(os.getenv('api_key_bard_knows'))
-template_prompts_list = {
-        'Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
-        'Шутка': 'Выступи в роли профессионального стендап комика и напиши остроумную шутку. Ответом должен быть только текст шутки',
-        'Факт': 'Выступи в роли профессионального энциклопедиста и напиши один занимательный факт. Ответом должен быть только текст с фактом',
-        'Квиз': '''Выступи в роли профессионального энциклопедиста и напиши три вопроса для занимательного квиза. 
-                    Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов'''
-    }
 
-# "Дополнительные промпты":"https://vaulted-polonium-23c.notion.site/500-Best-ChatGPT-Prompts-63ef8a04a63c476ba306e1ec9a9b91c0"
-api_keys = json.loads(open('./api_keys.json').read())
 logging.basicConfig(filename='./app.log', level=logging.INFO, encoding='utf-8',
                     format='%(asctime)19s %(levelname)s: %(message)s')
+
+
+
+class CommonData:
+    '''Common dataclass with general variables'''
+    api_keys: dict = json.loads(open('./api_keys.json').read())
+    context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
+    template_prompts: dict = {
+            'Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
+            'Шутка': 'Выступи в роли профессионального стендап комика и напиши остроумную шутку. Ответом должен быть только текст шутки',
+            'Факт': 'Выступи в роли профессионального энциклопедиста и напиши один занимательный факт. Ответом должен быть только текст с фактом',
+            'Квиз': '''Выступи в роли профессионального энциклопедиста и напиши три вопроса для занимательного квиза. 
+                        Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов'''
+        }
+    buttons: dict = {
+            'Добавить контекст':'change_context', 
+            'Быстрые команды':'template_prompts',
+            'Вывести инфо':'show_info',
+            'Сменить бота':'change_bot', 
+            'Очистить контекст':'clear',
+            'Изменить модель бота':'change_model'
+        }
+    PARSE_MODE = ParseMode.MARKDOWN_V2
+    builder = ReplyKeyboardBuilder()
+    for display_text in buttons:
+        builder.button(text=display_text)
+    builder = builder.adjust(3,3).as_markup()
+    # "Дополнительные промпты":"https://vaulted-polonium-23c.notion.site/500-Best-ChatGPT-Prompts-63ef8a04a63c476ba306e1ec9a9b91c0"
+    def singleton(cls):
+        '''@singleton decorator'''
+        instances = {}
+        def wrapper(*args, **kwargs):
+            if cls not in instances:
+                instances[cls] = cls(*args, **kwargs)
+            return instances[cls]
+        return wrapper
+
 
 
 class CallbackClass(CallbackData, prefix='callback'):
     cb_type: str
     name: str
+
 
 
 class DBConnection:
@@ -108,17 +137,10 @@ class DBConnection:
 
 
 class GeminiAPI:
-    """Singleton class for Gemini API"""
-    # _instance = None
-
-    # def __new__(cls, *args, **kwargs):
-    #     if cls._instance is None:
-    #         cls._instance = super(GeminiAPI, cls).__new__(cls)
-    #     return cls._instance
-    
+    """Class for Gemini API"""
     def __init__(self):
         self.name = 'gemini'
-        genai.configure(api_key=api_keys["gemini"])
+        genai.configure(api_key=CommonData.api_keys["gemini"])
         self.safety_settings = { 
             'safety_settings':{
             HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
@@ -151,18 +173,10 @@ class GeminiAPI:
 
 
 class CohereAPI:
-    """Singleton class for Cohere API"""
-    # _instance = None
-
-    # def __new__(cls, *args, **kwargs):
-    #     if cls._instance is None:
-    #         cls._instance = super(CohereAPI, cls).__new__(cls)
-    #     return cls._instance
-    
-
+    """Class for Cohere API"""
     def __init__(self):
         self.name = 'cohere'
-        self.co = cohere.Client(api_keys["cohere"])
+        self.co = cohere.Client(CommonData.api_keys["cohere"])
         self.models = ['command-r-plus','command-r','command','command-light']
         self.current_model = self.models[0]
         self.context = []
@@ -185,17 +199,10 @@ class CohereAPI:
 
 
 class GroqAPI:
-    """Singleton class for Groq API"""
-    # _instance = None
-
-    # def __new__(cls, *args, **kwargs):
-    #     if cls._instance is None:
-    #         cls._instance = super(GroqAPI, cls).__new__(cls)
-    #     return cls._instance
-    
+    """Class for Groq API"""
     def __init__(self):
         self.name = 'groq'
-        self.client = Groq(api_key=api_keys["groq"])
+        self.client = Groq(api_key=CommonData.api_keys["groq"])
         self.models = ['llama3-70b-8192','llama3-8b-8192','mixtral-8x7b-32768','gemma-7b-it'] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
         self.context = []
@@ -220,17 +227,10 @@ class GroqAPI:
 
 
 class NvidiaAPI:
-    """Singleton class for Nvidia API"""
-    # _instance = None
-
-    # def __new__(cls, *args, **kwargs):
-    #     if cls._instance is None:
-    #         cls._instance = super(NvidiaAPI, cls).__new__(cls)
-    #     return cls._instance
-    
+    """Class for Nvidia API"""
     def __init__(self):
         self.name = 'nvidia'
-        self.client = OpenAI(api_key=api_keys["nvidia"],
+        self.client = OpenAI(api_key=CommonData.api_keys["nvidia"],
                              base_url = "https://integrate.api.nvidia.com/v1")
         self.models = ['meta/llama3-70b-instruct',
                        'meta/llama3-8b-instruct',
@@ -274,14 +274,13 @@ class Agent:
     def __init__(self):
         self.bot_names = ['nvidia','cohere'] # groq, gemini
         self.current = {'nvidia': NvidiaAPI,'cohere':CohereAPI}.get(self.bot_names[0])()
-        self.context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
-        self.template_prompts_list: dict = template_prompts_list
         self.time_dump = time()
         self.text = None
         
 
     async def change_context(self, context_name: str) -> str:
-        context = self.context_dict.get(context_name)
+        self.clear()
+        context = CommonData.context_dict.get(context_name)
         if isinstance(self.current, GeminiAPI):
             body = {'role':'system', 'parts':[context]}
         elif isinstance(self.current, CohereAPI):
@@ -294,7 +293,7 @@ class Agent:
 
 
     async def template_prompts(self, template: str) -> str:
-        prompt_text = template_prompts_list.get(template)
+        prompt_text = CommonData.template_prompts.get(template)
         output = await self.prompt(prompt_text)
         return output
     
@@ -356,22 +355,10 @@ class UsersMap():
         return self._user_ins[user_id]
     
 
-bot = Bot(token=api_keys["telegram"], parse_mode=ParseMode.HTML)
+bot = Bot(token=CommonData.api_keys["telegram"], parse_mode=ParseMode.HTML)
 db = DBConnection()
 dp = Dispatcher()
 users = UsersMap()
-PARSE_MODE = ParseMode.MARKDOWN_V2
-buttons = {'Добавить контекст':'change_context', 
-            'Быстрые команды':'template_prompts',
-            'Вывести инфо':'show_info',
-            'Сменить бота':'change_bot', 
-            'Очистить контекст':'clear',
-            'Изменить модель бота':'change_model'}
-
-builder = ReplyKeyboardBuilder()
-for display_text in buttons:
-    builder.button(text=display_text)
-builder = builder.adjust(3,3).as_markup()
 
 
 async def check_and_clear(message: types.Message, type_prompt: str) -> Agent | None:
@@ -383,9 +370,9 @@ async def check_and_clear(message: types.Message, type_prompt: str) -> Agent | N
         agent.clear()
     agent.time_dump = time()
     user_name = db.check_user(message.from_user.id)
-    type_prompt = {'text':message.text, 'photo': message.caption,'callback': None}.get(type_prompt)
+    type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
     logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{type_prompt}"')
-    agent.text = buttons.get(type_prompt, type_prompt)
+    agent.text = CommonData.buttons.get(type_prompt, type_prompt)
     if user_name is None:
         await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
         return None
@@ -401,7 +388,7 @@ async def start_handler(message: types.Message):
         text = f'Доступ открыт. Добро пожаловать {message.from_user.full_name}!'
     else:
         text = f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}'
-    await message.answer(text, reply_markup=builder)
+    await message.answer(text, reply_markup=CommonData.builder)
     return
 
 
@@ -469,7 +456,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
     if agent.text is None:
         return
     try:
-        if agent.text in buttons.values():
+        if agent.text in CommonData.buttons.values():
             if 'change_' in agent.text or 'template_prompts' == agent.text:
                 await make_bth_cb(agent, message)
                 return
@@ -478,7 +465,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
         else:
             await message.reply('Ожидайте...')
             output = await agent.prompt(agent.text)
-        await message.answer(output, PARSE_MODE, reply_markup=builder)
+        await message.answer(output, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
         return
     except Exception as e:
         logging.info(e)
@@ -505,14 +492,14 @@ async def make_bth_cb(agent: Agent, message: types.Message) -> None:
 
     command_dict = {'bot': [agent.bot_names,'бота'],
                     'model': [agent.current.models,'модель'],
-                    'context':[agent.context_dict, 'контекст'],
-                    'prompts':[agent.template_prompts_list,'промпт']}
+                    'context':[CommonData.context_dict, 'контекст'],
+                    'prompts':[CommonData.template_prompts,'промпт']}
     items = command_dict.get(agent.text.split('_')[-1])
     for value in items[0]:
         data = CallbackClass(cb_type=agent.text, name=value).pack()
         builder_inline.button(text=value, callback_data=data)
 
-    await message.answer(f'Выберите {items[-1]}:', PARSE_MODE, 
+    await message.answer(f'Выберите {items[-1]}:', CommonData.PARSE_MODE, 
                          reply_markup=builder_inline.adjust(*[1]*len(items)).as_markup())
 
 
