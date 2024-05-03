@@ -49,11 +49,13 @@ class CommonData:
             'Изменить модель бота':'change_model'
         }
     PARSE_MODE = ParseMode.MARKDOWN_V2
+    DEFAULT_BOT = 'cohere'
     builder = ReplyKeyboardBuilder()
     for display_text in buttons:
         builder.button(text=display_text)
     builder = builder.adjust(3,3).as_markup()
     # "Дополнительные промпты":"https://vaulted-polonium-23c.notion.site/500-Best-ChatGPT-Prompts-63ef8a04a63c476ba306e1ec9a9b91c0"
+    # https://github.com/successfulstudy/promptoftheyear/blob/main/README.md
     def singleton(cls):
         '''@singleton decorator'''
         instances = {}
@@ -138,8 +140,8 @@ class DBConnection:
 
 class GeminiAPI:
     """Class for Gemini API"""
+    name = 'gemini'
     def __init__(self):
-        self.name = 'gemini'
         genai.configure(api_key=CommonData.api_keys["gemini"])
         self.safety_settings = { 
             'safety_settings':{
@@ -153,8 +155,6 @@ class GeminiAPI:
         self.current_model = self.models[0]
         self.context = []
 
-    def __str__(self):
-        return self.name
 
     async def prompt(self, text: str, image = None) -> str:
         self.context.append({'role':'user', 'parts':[text]})
@@ -174,16 +174,12 @@ class GeminiAPI:
 
 class CohereAPI:
     """Class for Cohere API"""
+    name = 'cohere'
     def __init__(self):
-        self.name = 'cohere'
         self.co = cohere.Client(CommonData.api_keys["cohere"])
         self.models = ['command-r-plus','command-r','command','command-light']
         self.current_model = self.models[0]
         self.context = []
-
-
-    def __str__(self):
-        return self.name
     
 
     async def prompt(self, text, image = None) -> str:
@@ -200,21 +196,19 @@ class CohereAPI:
 
 class GroqAPI:
     """Class for Groq API"""
+    name = 'groq'
     def __init__(self):
-        self.name = 'groq'
         self.client = Groq(api_key=CommonData.api_keys["groq"])
         self.models = ['llama3-70b-8192','llama3-8b-8192','mixtral-8x7b-32768','gemma-7b-it'] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
         self.context = []
 
-    def __str__(self):
-        return self.name
 
     async def prompt(self, text, image = None) -> str:
         if image is None:
             body = {'role':'user', 'content': text}
         else:
-            body = Agent.make_multimodal_body(text, image)
+            body = User.make_multimodal_body(text, image)
         self.context.append(body)
         response = self.client.chat.completions.create(
             model=self.current_model,
@@ -228,8 +222,8 @@ class GroqAPI:
 
 class NvidiaAPI:
     """Class for Nvidia API"""
+    name = 'nvidia'
     def __init__(self):
-        self.name = 'nvidia'
         self.client = OpenAI(api_key=CommonData.api_keys["nvidia"],
                              base_url = "https://integrate.api.nvidia.com/v1")
         self.models = ['meta/llama3-70b-instruct',
@@ -244,17 +238,13 @@ class NvidiaAPI:
                        ] # https://build.nvidia.com/explore/discover#llama3-70b
         self.current_model = self.models[0]
         self.context = []
-
-
-    def __str__(self):
-        return self.name
     
 
     async def prompt(self, text, image = None) -> str:
         if image is None:
             body = {'role':'user', 'content': text}
         else:
-            body = Agent.make_multimodal_body(text, image)
+            body = User.make_multimodal_body(text, image)
         self.context.append(body)
         response = self.client.chat.completions.create(
             model=self.current_model,
@@ -269,11 +259,11 @@ class NvidiaAPI:
 
 
 
-class Agent:
-    ''' Router for agents'''
+class User:
+    '''Specific user interface in chat'''
     def __init__(self):
-        self.bot_names = ['nvidia','cohere'] # groq, gemini
-        self.current = {'nvidia': NvidiaAPI,'cohere':CohereAPI}.get(self.bot_names[0])()
+        self.bots: dict = {bot_class.name:bot_class for bot_class in [NvidiaAPI,CohereAPI]} #['nvidia','cohere'] # groq, gemini
+        self.current_bot = self.bots.get(CommonData.DEFAULT_BOT)()
         self.time_dump = time()
         self.text = None
         
@@ -281,14 +271,14 @@ class Agent:
     async def change_context(self, context_name: str) -> str:
         self.clear()
         context = CommonData.context_dict.get(context_name)
-        if isinstance(self.current, GeminiAPI):
+        if isinstance(self.current_bot, GeminiAPI):
             body = {'role':'system', 'parts':[context]}
-        elif isinstance(self.current, CohereAPI):
+        elif isinstance(self.current_bot, CohereAPI):
             body = {"role": 'SYSTEM', "message": context}
-        elif isinstance(self.current, (GroqAPI,NvidiaAPI)):
+        elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI)):
             body = {'role':'system', 'content': context}
 
-        self.current.context.append(body)
+        self.current_bot.context.append(body)
         return f'Контекст {context_name} добавлен'
 
 
@@ -299,7 +289,10 @@ class Agent:
     
 
     def show_info(self) -> str:
-        return f'\n* Текущий бот: {self.current}\n* Модель: {self.current.current_model}\n* Размер контекста: {len(self.current.context)}'
+        return '\n'.join(['',
+            f'* Текущий бот: {self.current_bot.name}',
+            f'* Модель: {self.current_bot.current_model}',
+            f'* Размер контекста: {len(self.current_bot.context)}'])
     
 
     def show_prompts_list(self) -> str:
@@ -308,20 +301,19 @@ class Agent:
 
 
     async def change_bot(self, bot_name: str) -> str:
-        self.current = {'nvidia': NvidiaAPI,'cohere':CohereAPI}.get(bot_name)()
-        self.clear()
-        return f'Смена бота на {self.current}'
+        self.current_bot = self.bots.get(bot_name)()
+        return f'Смена бота на {self.current_bot.name}'
     
 
     async def change_model(self, model_name: str) -> str:
-        self.current.current_model = model_name
+        self.current_bot.current_model = model_name
         self.clear()
         output = re.split(r'-|/',model_name, maxsplit=1)[-1]
         return f'Смена модели на {output}'
 
 
     def clear(self) -> str:
-        self.current.context = []
+        self.current_bot.context.clear()
         return 'Контекст диалога отчищен'
     
 
@@ -340,18 +332,18 @@ class Agent:
 
 
     async def prompt(self, text: str, image=None):
-        output = await self.current.prompt(text, image)
+        output = await self.current_bot.prompt(text, image)
         return output
 
 
 
 class UsersMap():
-    def __init__(self) -> Agent:
+    def __init__(self):
         self._user_ins = {}
     
-    def get(self, user_id: int):
+    def get(self, user_id: int) -> User:
         if user_id not in self._user_ins:
-            self._user_ins[user_id] = Agent()
+            self._user_ins[user_id] = User()
         return self._user_ins[user_id]
     
 
@@ -361,23 +353,23 @@ dp = Dispatcher()
 users = UsersMap()
 
 
-async def check_and_clear(message: types.Message, type_prompt: str) -> Agent | None:
-    agent = users.get(message.from_user.id)
+async def check_and_clear(message: types.Message, type_prompt: str) -> User | None:
+    user = users.get(message.from_user.id)
     if type_prompt == 'callback':
-        return agent
+        return user
     ## clear context after 15 minutes
-    if (time() - agent.time_dump) > 900:
-        agent.clear()
-    agent.time_dump = time()
+    if (time() - user.time_dump) > 900:
+        user.clear()
+    user.time_dump = time()
     user_name = db.check_user(message.from_user.id)
     type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
     logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{type_prompt}"')
-    agent.text = CommonData.buttons.get(type_prompt, type_prompt)
+    user.text = CommonData.buttons.get(type_prompt, type_prompt)
     if user_name is None:
         await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
         return None
     
-    return agent
+    return user
     
 
 @dp.message(CommandStart())
@@ -437,34 +429,34 @@ async def remove_handler(message: types.Message):
 
 @dp.message(F.content_type.in_({'photo'}))
 async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
-    agent = await check_and_clear(message, 'photo')
-    if agent.text is None:
+    user = await check_and_clear(message, 'photo')
+    if user.text is None:
         return
     
     # await message.reply("Изображение получено! Ожидайте......")
     await message.reply("Обработка изображений временно недоступна")
     return
     # tg_photo = await bot.download(message.photo[-1].file_id)
-    # output = await agent.prompt(agent.text, Image.open(tg_photo))
-    # output = await agent.prompt(agent.text, base64.b64encode(tg_photo.getvalue()).decode('utf-8'))
+    # output = await user.prompt(user.text, Image.open(tg_photo))
+    # output = await user.prompt(user.text, base64.b64encode(tg_photo.getvalue()).decode('utf-8'))
     # await message.answer(output, reply_markup=builder, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 @dp.message(F.content_type.in_({'text'}))
 async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
-    agent = await check_and_clear(message, 'text')
-    if agent.text is None:
+    user = await check_and_clear(message, 'text')
+    if user.text is None:
         return
     try:
-        if agent.text in CommonData.buttons.values():
-            if 'change_' in agent.text or 'template_prompts' == agent.text:
-                await make_bth_cb(agent, message)
+        if user.text in CommonData.buttons.values():
+            if 'change_' in user.text or 'template_prompts' == user.text:
+                await make_bth_cb(user, message)
                 return
             else:
-                output = escape(getattr(agent, agent.text)())
+                output = escape(getattr(user, user.text)())
         else:
             await message.reply('Ожидайте...')
-            output = await agent.prompt(agent.text)
+            output = await user.prompt(user.text)
         await message.answer(output, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
         return
     except Exception as e:
@@ -475,28 +467,28 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
 
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')|F.cb_type.contains('template')))
 async def change_callback_handler(query: types.CallbackQuery, callback_data: CallbackClass):
-    agent = await check_and_clear(query, 'callback')
+    user = await check_and_clear(query, 'callback')
     if callback_data.cb_type == 'template_prompts':
         await query.message.reply('Ожидайте...')
-    output = await getattr(agent, callback_data.cb_type)(callback_data.name)
+    output = await getattr(user, callback_data.cb_type)(callback_data.name)
     await query.message.answer(output)
     await query.answer()
 
     
-async def make_bth_cb(agent: Agent, message: types.Message) -> None: 
+async def make_bth_cb(user: User, message: types.Message) -> None: 
     '''
     Creates callback data with ChangeCallback, 
     generates and sends an inline keyboard as reply markup 
     '''
     builder_inline = InlineKeyboardBuilder()
 
-    command_dict = {'bot': [agent.bot_names,'бота'],
-                    'model': [agent.current.models,'модель'],
+    command_dict = {'bot': [user.bots, 'бота'],
+                    'model': [user.current_bot.models, 'модель'],
                     'context':[CommonData.context_dict, 'контекст'],
-                    'prompts':[CommonData.template_prompts,'промпт']}
-    items = command_dict.get(agent.text.split('_')[-1])
+                    'prompts':[CommonData.template_prompts, 'промпт']}
+    items = command_dict.get(user.text.split('_')[-1])
     for value in items[0]:
-        data = CallbackClass(cb_type=agent.text, name=value).pack()
+        data = CallbackClass(cb_type=user.text, name=value).pack()
         builder_inline.button(text=value, callback_data=data)
 
     await message.answer(f'Выберите {items[-1]}:', CommonData.PARSE_MODE, 
