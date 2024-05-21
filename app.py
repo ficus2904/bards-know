@@ -68,7 +68,7 @@ class CommonData:
             return instances[cls]
         return wrapper
     
-    def resize_image(self, image: io.BytesIO, max_b64_length=180_000, max_file_size_kb=450):
+    def resize_image(image: io.BytesIO, max_b64_length=180_000, max_file_size_kb=450):
         max_file_size_bytes = max_file_size_kb * 1024
         img = Image.open(image)
         # Функция для сжатия и конвертации изображения в Base64
