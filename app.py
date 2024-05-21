@@ -16,7 +16,10 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
-# from PIL import Image
+import base64
+import requests
+from PIL import Image, ImageOps
+import io
 import warnings
 warnings.simplefilter('ignore')
 
@@ -49,7 +52,7 @@ class CommonData:
             'Изменить модель бота':'change_model'
         }
     PARSE_MODE = ParseMode.MARKDOWN_V2
-    DEFAULT_BOT = 'cohere'
+    DEFAULT_BOT = 'cohere' # 'nvidia' 'cohere'
     builder = ReplyKeyboardBuilder()
     for display_text in buttons:
         builder.button(text=display_text)
@@ -64,6 +67,34 @@ class CommonData:
                 instances[cls] = cls(*args, **kwargs)
             return instances[cls]
         return wrapper
+    
+    def resize_image(self, image: io.BytesIO, max_b64_length=180_000, max_file_size_kb=450):
+        max_file_size_bytes = max_file_size_kb * 1024
+        img = Image.open(image)
+        # Функция для сжатия и конвертации изображения в Base64
+        def image_to_base64(img, quality=85):
+            buffer = io.BytesIO()
+            img.save(buffer, format='JPEG', quality=quality)
+            buffer.seek(0)
+            img_b64 = base64.b64encode(buffer.getvalue()).decode()
+            return img_b64, buffer.getvalue()
+        
+        # Рекурсивная функция для сжатия изображения
+        def recursive_compress(img, quality):
+            img_b64, img_bytes = image_to_base64(img, quality=quality)
+            # Проверить размер изображения
+            if len(img_b64) <= max_b64_length and len(img_bytes) <= max_file_size_bytes:
+                return img_b64
+            # Уменьшить размер изображения
+            img = ImageOps.exif_transpose(img)
+            img.thumbnail((img.size[0] * 0.9, img.size[1] * 0.9), Image.ADAPTIVE)
+            # Уменьшить качество, если размер все еще превышает лимит
+            quality = max(10, quality - 5)
+            # Рекурсивный вызов для сжатия изображения с новыми параметрами
+            return recursive_compress(img, quality)
+        
+        # Начальное сжатие
+        return recursive_compress(img, quality=85)
 
 
 
@@ -163,7 +194,7 @@ class GeminiAPI:
             response = self.model.generate_content(self.context)
         else:
             self.model = genai.GenerativeModel(self.models[1], **self.safety_settings)
-            response = self.model.generate_content([text,image])
+            response = self.model.generate_content([text, Image.open(image)])
 
         self.context.append({'role':'model', 'parts':[response.text]})
 
@@ -235,6 +266,10 @@ class NvidiaAPI:
                        'microsoft/phi-3-mini-128k-instruct',
                        'snowflake/arctic',
                        'databricks/dbrx-instruct',
+                       'nvidia/neva-22b',
+                       'microsoft/kosmos-2',
+                       'adept/fuyu-8b',
+                       'google/paligemma',
                        ] # https://build.nvidia.com/explore/discover#llama3-70b
         self.current_model = self.models[0]
         self.context = []
@@ -243,26 +278,78 @@ class NvidiaAPI:
     async def prompt(self, text, image = None) -> str:
         if image is None:
             body = {'role':'user', 'content': text}
+            self.context.append(body)
+            response = self.client.chat.completions.create(
+                model=self.current_model,
+                messages=self.context,
+                temperature=0.5,
+                top_p=1,
+                max_tokens=1024
+            )
+            self.context.append({'role':'assistant', 'content':response.choices[-1].message.content})
+            print(response.choices[-1].message.content)
+            return escape(response.choices[-1].message.content)
         else:
-            body = User.make_multimodal_body(text, image)
-        self.context.append(body)
-        response = self.client.chat.completions.create(
-            model=self.current_model,
-            messages=self.context,
-            temperature=0.5,
-            top_p=1,
-            max_tokens=1024
-        )
-        self.context.append({'role':'assistant', 'content':response.choices[-1].message.content})
-        print(response.choices[-1].message.content)
-        return escape(response.choices[-1].message.content)
+            invoke_url = "https://ai.api.nvidia.com/v1/vlm/"
+            image_b64 = base64.b64encode(image.getvalue()).decode()
+            if len(image_b64) > 180_000:
+                print("Слишком большое изображение, сжимаем...")
+                image_b64 = CommonData.resize_image(image)
+
+            headers = {
+            "Authorization": f"Bearer {CommonData.api_keys["nvidia"]}",
+            "Accept": "application/json"
+            }
+
+            body = {
+                "messages": [{
+                    "role": "user",
+                    "content": f'{text}. <img src="data:image/jpeg;base64,{image_b64}" />'
+                            }]
+                    }
+            params = {
+                'google/paligemma': {
+                    "max_tokens": 512,
+                    "temperature": 1,
+                    "top_p": 0.70,
+                    "stream": False
+                },
+                'nvidia/neva-22b': {
+                    "max_tokens": 1024,
+                    "temperature": 0.20,
+                    "top_p": 0.70,
+                    "seed": 0,
+                    "stream": False
+                },
+                'microsoft/kosmos-2': {
+                    "max_tokens": 1024,
+                    "temperature": 0.20,
+                    "top_p": 0.2
+                },
+                'adept/fuyu-8b': {
+                    "max_tokens": 1024,
+                    "temperature": 0.20,
+                    "top_p": 0.7,
+                    "seed":0,
+                    "stream": False
+                }
+            }
+            model = self.current_model if self.current_model in params else 'nvidia/neva-22b'
+            # body = body | params.get(model, params['nvidia/neva-22b'])
+            body = body | params.get(model)
+            response = requests.post(invoke_url + model, headers=headers, json=body)
+            output = response.json()
+            output = output.get('choices',[{}])[-1].get('message',{}).get('content','')
+            print(output)
+            return escape(output)
+
 
 
 
 class User:
     '''Specific user interface in chat'''
     def __init__(self):
-        self.bots: dict = {bot_class.name:bot_class for bot_class in [NvidiaAPI,CohereAPI]} #['nvidia','cohere'] # groq, gemini
+        self.bots: dict = {bot_class.name:bot_class for bot_class in [NvidiaAPI,CohereAPI, GeminiAPI]} #['nvidia','cohere'] # groq, gemini
         self.current_bot = self.bots.get(CommonData.DEFAULT_BOT)()
         self.time_dump = time()
         self.text = None
@@ -433,13 +520,13 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     if user.text is None:
         return
     
-    # await message.reply("Изображение получено! Ожидайте......")
-    await message.reply("Обработка изображений временно недоступна")
+    await message.reply("Изображение получено! Ожидайте......")
+    # await message.reply("Обработка изображений временно недоступна")
+    # return
+    tg_photo = await bot.download(message.photo[-1].file_id)
+    output = await user.prompt(user.text, tg_photo)
+    await message.answer(output, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
     return
-    # tg_photo = await bot.download(message.photo[-1].file_id)
-    # output = await user.prompt(user.text, Image.open(tg_photo))
-    # output = await user.prompt(user.text, base64.b64encode(tg_photo.getvalue()).decode('utf-8'))
-    # await message.answer(output, reply_markup=builder, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 @dp.message(F.content_type.in_({'text'}))
