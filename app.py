@@ -52,7 +52,7 @@ class CommonData:
             'Изменить модель бота':'change_model'
         }
     PARSE_MODE = ParseMode.MARKDOWN_V2
-    DEFAULT_BOT = 'cohere' # 'nvidia' 'cohere'
+    DEFAULT_BOT = 'nvidia' # 'nvidia' 'cohere'
     builder = ReplyKeyboardBuilder()
     for display_text in buttons:
         builder.button(text=display_text)
@@ -270,13 +270,48 @@ class NvidiaAPI:
                        'microsoft/kosmos-2',
                        'adept/fuyu-8b',
                        'google/paligemma',
+                       'microsoft/phi-3-vision-128k-instruct',
                        ] # https://build.nvidia.com/explore/discover#llama3-70b
+        self.vlm_params = {
+                        'google/paligemma': {
+                            "max_tokens": 512,
+                            "temperature": 1,
+                            "top_p": 0.70,
+                            "stream": False
+                        },
+                        'microsoft/phi-3-vision-128k-instruct': {
+                            "max_tokens": 512,
+                            "temperature": 1,
+                            "top_p": 0.70,
+                            "stream": False
+                        },
+                        'nvidia/neva-22b': {
+                            "max_tokens": 1024,
+                            "temperature": 0.20,
+                            "top_p": 0.70,
+                            "seed": 0,
+                            "stream": False
+                        },
+                        'microsoft/kosmos-2': {
+                            "max_tokens": 1024,
+                            "temperature": 0.20,
+                            "top_p": 0.2
+                        },
+                        'adept/fuyu-8b': {
+                            "max_tokens": 1024,
+                            "temperature": 0.20,
+                            "top_p": 0.7,
+                            "seed":0,
+                            "stream": False
+                        }
+                    }
         self.current_model = self.models[0]
+        self.current_vlm_model = self.models[-1]
         self.context = []
     
 
     async def prompt(self, text, image = None) -> str:
-        if image is None:
+        if image is None and self.current_model not in self.vlm_params:
             body = {'role':'user', 'content': text}
             self.context.append(body)
             response = self.client.chat.completions.create(
@@ -286,61 +321,31 @@ class NvidiaAPI:
                 top_p=1,
                 max_tokens=1024
             )
-            self.context.append({'role':'assistant', 'content':response.choices[-1].message.content})
-            print(response.choices[-1].message.content)
-            return escape(response.choices[-1].message.content)
+            output = response.choices[-1].message.content
+            self.context.append({'role':'assistant', 'content':output})
+            print(output)
+            return escape(output)
         else:
-            invoke_url = "https://ai.api.nvidia.com/v1/vlm/"
-            image_b64 = base64.b64encode(image.getvalue()).decode()
-            if len(image_b64) > 180_000:
-                print("Слишком большое изображение, сжимаем...")
-                image_b64 = CommonData.resize_image(image)
+            self.context.append({"role": "user","content": text})
+            model = self.current_model if self.current_model in self.vlm_params else self.current_vlm_model
+            if image:
+                image_b64 = base64.b64encode(image.getvalue()).decode()
+                if len(image_b64) > 180_000:
+                    print("Слишком большое изображение, сжимаем...")
+                    image_b64 = CommonData.resize_image(image)
+                image_b64 = f'. <img src="data:image/jpeg;base64,{image_b64}" />'
+            else:
+                image_b64 = ''
 
-            headers = {
-            "Authorization": f"Bearer {CommonData.api_keys["nvidia"]}",
-            "Accept": "application/json"
-            }
-
-            body = {
-                "messages": [{
-                    "role": "user",
-                    "content": f'{text}. <img src="data:image/jpeg;base64,{image_b64}" />'
-                            }]
-                    }
-            params = {
-                'google/paligemma': {
-                    "max_tokens": 512,
-                    "temperature": 1,
-                    "top_p": 0.70,
-                    "stream": False
-                },
-                'nvidia/neva-22b': {
-                    "max_tokens": 1024,
-                    "temperature": 0.20,
-                    "top_p": 0.70,
-                    "seed": 0,
-                    "stream": False
-                },
-                'microsoft/kosmos-2': {
-                    "max_tokens": 1024,
-                    "temperature": 0.20,
-                    "top_p": 0.2
-                },
-                'adept/fuyu-8b': {
-                    "max_tokens": 1024,
-                    "temperature": 0.20,
-                    "top_p": 0.7,
-                    "seed":0,
-                    "stream": False
-                }
-            }
-            model = self.current_model if self.current_model in params else 'nvidia/neva-22b'
-            # body = body | params.get(model, params['nvidia/neva-22b'])
-            body = body | params.get(model)
-            response = requests.post(invoke_url + model, headers=headers, json=body)
+            body = {"messages": [{"role": "user","content": text + image_b64}]} | self.vlm_params.get(model)
+            headers = {"Authorization": f"Bearer {CommonData.api_keys["nvidia"]}",
+                        "Accept": "application/json"}
+            url = "https://ai.api.nvidia.com/v1/vlm/" + model
+            response = requests.post(url=url, headers=headers, json=body)
             output = response.json()
             output = output.get('choices',[{}])[-1].get('message',{}).get('content','')
             print(output)
+            self.context.append({'role':'assistant', 'content':output})
             return escape(output)
 
 
@@ -376,9 +381,11 @@ class User:
     
 
     def show_info(self) -> str:
+        check_vlm = hasattr(self.current_bot, 'vlm_params')
         return '\n'.join(['',
             f'* Текущий бот: {self.current_bot.name}',
             f'* Модель: {self.current_bot.current_model}',
+            f'* Модель vlm: {self.current_bot.current_vlm_model}' if check_vlm else '',
             f'* Размер контекста: {len(self.current_bot.context)}'])
     
 
@@ -394,6 +401,8 @@ class User:
 
     async def change_model(self, model_name: str) -> str:
         self.current_bot.current_model = model_name
+        if hasattr(self.current_bot, 'vlm_params') and model_name in self.current_bot.vlm_params:
+            self.current_bot.current_vlm_model = model_name
         self.clear()
         output = re.split(r'-|/',model_name, maxsplit=1)[-1]
         return f'Смена модели на {output}'
@@ -520,7 +529,15 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     if user.text is None:
         return
     
-    await message.reply("Изображение получено! Ожидайте......")
+    if user.current_bot.name != 'nvidia':
+        text_reply = "Переключите бота на nvidia для обработки изображений"
+        return
+    
+    if user.current_bot.current_model in user.current_bot.vlm_params:
+        text_reply = "Изображение получено! Ожидайте..."
+    else:
+        text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
+    await message.reply(text_reply)
     # await message.reply("Обработка изображений временно недоступна")
     # return
     tg_photo = await bot.download(message.photo[-1].file_id)
