@@ -52,7 +52,7 @@ class CommonData:
             'Изменить модель бота':'change_model'
         }
     PARSE_MODE = ParseMode.MARKDOWN_V2
-    DEFAULT_BOT = 'nvidia' # 'nvidia' 'cohere'
+    DEFAULT_BOT = 'cohere' # 'nvidia' 'cohere'
     builder = ReplyKeyboardBuilder()
     for display_text in buttons:
         builder.button(text=display_text)
@@ -208,7 +208,7 @@ class CohereAPI:
     name = 'cohere'
     def __init__(self):
         self.co = cohere.Client(CommonData.api_keys["cohere"])
-        self.models = ['command-r-plus','command-r','command','command-light']
+        self.models = ['command-r-plus','command-r','command','command-light','c4ai-aya-23']
         self.current_model = self.models[0]
         self.context = []
     
@@ -230,7 +230,11 @@ class GroqAPI:
     name = 'groq'
     def __init__(self):
         self.client = Groq(api_key=CommonData.api_keys["groq"])
-        self.models = ['llama3-70b-8192','llama3-8b-8192','mixtral-8x7b-32768','gemma-7b-it'] # https://console.groq.com/docs/models
+        self.models = ['llama3-70b-8192',
+                       'llama3-8b-8192',
+                       'mixtral-8x7b-32768',
+                       'gemma-7b-it',
+                       'whisper-large-v3'] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
         self.context = []
 
@@ -266,12 +270,13 @@ class NvidiaAPI:
                        'microsoft/phi-3-mini-128k-instruct',
                        'snowflake/arctic',
                        'databricks/dbrx-instruct',
+                       'ibm/granite-34b-code-instruct',
                        'nvidia/neva-22b',
                        'microsoft/kosmos-2',
                        'adept/fuyu-8b',
                        'google/paligemma',
                        'microsoft/phi-3-vision-128k-instruct',
-                       ] # https://build.nvidia.com/explore/discover#llama3-70b
+                       ] # https://build.nvidia.com/explore/discover
         self.vlm_params = {
                         'google/paligemma': {
                             "max_tokens": 512,
@@ -354,7 +359,7 @@ class NvidiaAPI:
 class User:
     '''Specific user interface in chat'''
     def __init__(self):
-        self.bots: dict = {bot_class.name:bot_class for bot_class in [NvidiaAPI,CohereAPI, GeminiAPI]} #['nvidia','cohere'] # groq, gemini
+        self.bots: dict = {bot_class.name:bot_class for bot_class in [NvidiaAPI,CohereAPI,GroqAPI]} #['nvidia','cohere'] # GroqAPI, GeminiAPI
         self.current_bot = self.bots.get(CommonData.DEFAULT_BOT)()
         self.time_dump = time()
         self.text = None
