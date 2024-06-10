@@ -52,7 +52,7 @@ class CommonData:
             'Изменить модель бота':'change_model'
         }
     PARSE_MODE = ParseMode.MARKDOWN_V2
-    DEFAULT_BOT = 'cohere' # 'nvidia' 'cohere'
+    DEFAULT_BOT = 'gemini' # 'nvidia' 'cohere'
     builder = ReplyKeyboardBuilder()
     for display_text in buttons:
         builder.button(text=display_text)
@@ -174,33 +174,47 @@ class GeminiAPI:
     name = 'gemini'
     def __init__(self):
         genai.configure(api_key=CommonData.api_keys["gemini"])
-        self.safety_settings = { 
-            'safety_settings':{
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
-            }
+        self.settings = { 
+            'safety_settings': {
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
+            },
+            'system_instruction': None
         }
-        self.models = ['gemini-pro', 'gemini-pro-vision']
+        self.models = ['gemini-1.5-flash-latest', 'gemini-1.5-pro-latest', ] # gemini-pro gemini-pro-vision
         self.current_model = self.models[0]
-        self.current_vlm_model = self.models[-1]
+        self.model = None
         self.context = []
-
+        self.chat = None
+        self.reset_chat()
 
     async def prompt(self, text: str, image = None) -> str:
-        self.context.append({'role':'user', 'parts':[text]})
+        # self.context.append({'role':'user', 'parts':[text]})
+        # if image is None:
+        #     self.model = genai.GenerativeModel(self.models[0], **self.safety_settings)
+        #     response = self.model.generate_content(self.context)
+        # else:
+        #     self.model = genai.GenerativeModel(self.models[1], **self.safety_settings)
+        #     response = self.model.generate_content([text, Image.open(image)])
+
+
+        # response = self.model.generate_content([self.context, Image.open(image) if image else None])
         if image is None:
-            self.model = genai.GenerativeModel(self.models[0], **self.safety_settings)
-            response = self.model.generate_content(self.context)
+            response = self.chat.send_message(text)
         else:
-            self.model = genai.GenerativeModel(self.models[1], **self.safety_settings)
-            response = self.model.generate_content([text, Image.open(image)])
+            response = self.chat.send_message([text, Image.open(image)])
 
-        self.context.append({'role':'model', 'parts':[response.text]})
+        # self.context.append({'role':'model', 'parts':[response.text]})
 
-        print(response.text)
+        # print(len(self.chat.history))
         return escape(response.text)
+    
+    def reset_chat(self):
+        self.model = genai.GenerativeModel(self.current_model, **self.settings)
+        self.context = []
+        self.chat = self.model.start_chat(history=self.context)
 
 
 
@@ -370,7 +384,11 @@ class User:
         self.clear()
         context = CommonData.context_dict.get(context_name)
         if isinstance(self.current_bot, GeminiAPI):
-            body = {'role':'system', 'parts':[context]}
+            # body = {'role':'system', 'parts':[context]}
+            self.current_bot.settings['system_instruction'] = context
+            self.current_bot.reset_chat()
+            return f'Контекст {context_name} добавлен'
+        
         elif isinstance(self.current_bot, CohereAPI):
             body = {"role": 'SYSTEM', "message": context}
         elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI)):
@@ -388,11 +406,14 @@ class User:
 
     def show_info(self) -> str:
         check_vlm = hasattr(self.current_bot, 'vlm_params')
+        is_gemini = self.current_bot.name == 'gemini'
+        if is_gemini:
+            context = bool(self.current_bot.settings['system_instruction']) + len(self.current_bot.chat.history)
         return '\n'.join(['',
             f'* Текущий бот: {self.current_bot.name}',
             f'* Модель: {self.current_bot.current_model}',
             f'* Модель vlm: {self.current_bot.current_vlm_model}' if check_vlm else '',
-            f'* Размер контекста: {len(self.current_bot.context)}'])
+            f'* Размер контекста: {len(self.current_bot.context) if not is_gemini else context}'])
     
 
     def show_prompts_list(self) -> str:
@@ -416,6 +437,9 @@ class User:
 
     def clear(self) -> str:
         self.current_bot.context.clear()
+        if self.current_bot.name == 'gemini':
+            self.current_bot.settings['system_instruction'] = None
+            self.current_bot.reset_chat()
         return 'Контекст диалога отчищен'
     
 
@@ -540,20 +564,11 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
         await message.reply(text_reply)
         return
     
-    if user.current_bot.name == 'nvidia':
-        if user.current_bot.current_model in user.current_bot.vlm_params:
-            text_reply = "Изображение получено! Ожидайте..."
-        else:
-            text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
-    
-    elif user.current_bot.name == 'gemini':
-        if user.current_bot.current_model == user.current_bot.current_vlm_model:
-            text_reply = "Изображение получено! Ожидайте..."
-        else:
-            text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
+    text_reply = "Изображение получено! Ожидайте..."
+    if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
+        text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
+
     await message.reply(text_reply)
-    # await message.reply("Обработка изображений временно недоступна")
-    # return
     tg_photo = await bot.download(message.photo[-1].file_id)
     output = await user.prompt(user.text, tg_photo)
     await message.answer(output, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
