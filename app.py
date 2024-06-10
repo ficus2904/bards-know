@@ -184,6 +184,7 @@ class GeminiAPI:
         }
         self.models = ['gemini-pro', 'gemini-pro-vision']
         self.current_model = self.models[0]
+        self.current_vlm_model = self.models[-1]
         self.context = []
 
 
@@ -359,7 +360,7 @@ class NvidiaAPI:
 class User:
     '''Specific user interface in chat'''
     def __init__(self):
-        self.bots: dict = {bot_class.name:bot_class for bot_class in [NvidiaAPI,CohereAPI,GroqAPI]} #['nvidia','cohere'] # GroqAPI, GeminiAPI
+        self.bots: dict = {bot_class.name:bot_class for bot_class in [NvidiaAPI,CohereAPI,GroqAPI, GeminiAPI]} #['nvidia','cohere'] # GroqAPI, GeminiAPI
         self.current_bot = self.bots.get(CommonData.DEFAULT_BOT)()
         self.time_dump = time()
         self.text = None
@@ -448,7 +449,7 @@ class UsersMap():
         return self._user_ins[user_id]
     
 
-bot = Bot(token=CommonData.api_keys["telegram"], parse_mode=ParseMode.HTML)
+bot = Bot(token=CommonData.api_keys["telegram"]) # parse_mode=ParseMode.HTML
 db = DBConnection()
 dp = Dispatcher()
 users = UsersMap()
@@ -534,14 +535,22 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     if user.text is None:
         return
     
-    if user.current_bot.name != 'nvidia':
-        text_reply = "Переключите бота на nvidia для обработки изображений"
+    if user.current_bot.name not in ['nvidia', 'gemini']:
+        text_reply = "Переключите бота на nvidia или gemini для обработки изображений"
+        await message.reply(text_reply)
         return
     
-    if user.current_bot.current_model in user.current_bot.vlm_params:
-        text_reply = "Изображение получено! Ожидайте..."
-    else:
-        text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
+    if user.current_bot.name == 'nvidia':
+        if user.current_bot.current_model in user.current_bot.vlm_params:
+            text_reply = "Изображение получено! Ожидайте..."
+        else:
+            text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
+    
+    elif user.current_bot.name == 'gemini':
+        if user.current_bot.current_model == user.current_bot.current_vlm_model:
+            text_reply = "Изображение получено! Ожидайте..."
+        else:
+            text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
     await message.reply(text_reply)
     # await message.reply("Обработка изображений временно недоступна")
     # return
