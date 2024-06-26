@@ -385,7 +385,7 @@ class TogetherAPI:
         self.context = []
     
 
-    async def prompt(self, text) -> str:
+    async def prompt(self, text, image=None) -> str:
         body = {'role':'user', 'content': text}
         self.context.append(body)
         response = self.client.chat.completions.create(
