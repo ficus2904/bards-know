@@ -367,14 +367,46 @@ class NvidiaAPI:
             print(output)
             self.context.append({'role':'assistant', 'content':output})
             return escape(output)
+        
 
+
+class TogetherAPI:
+    """Class for Together API"""
+    name = 'together'
+    def __init__(self):
+        self.client = OpenAI(api_key=CommonData.api_keys["together"],
+                             base_url="https://api.together.xyz/v1")
+        self.models = ['Qwen/Qwen2-72B-Instruct',
+                        'mistralai/Mistral-7B-Instruct-v0.3',
+                        'meta-llama/Llama-3-70b-chat-hf'
+                       ] # https://docs.together.ai/docs/inference-models
+
+        self.current_model = self.models[0]
+        self.context = []
+    
+
+    async def prompt(self, text) -> str:
+        body = {'role':'user', 'content': text}
+        self.context.append(body)
+        response = self.client.chat.completions.create(
+            model=self.current_model,
+            messages=self.context,
+            temperature=0.7,
+            top_p=0.7,
+            max_tokens=1024
+        )
+        output = response.choices[-1].message.content
+        self.context.append({'role':'assistant', 'content':output})
+        print(output)
+        return escape(output)
 
 
 
 class User:
     '''Specific user interface in chat'''
     def __init__(self):
-        self.bots: dict = {bot_class.name:bot_class for bot_class in [NvidiaAPI,CohereAPI,GroqAPI, GeminiAPI]} #['nvidia','cohere'] # GroqAPI, GeminiAPI
+        self.bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI]
+        self.bots: dict = {bot_class.name:bot_class for bot_class in self.bots_lst}
         self.current_bot = self.bots.get(CommonData.DEFAULT_BOT)()
         self.time_dump = time()
         self.text = None
@@ -384,14 +416,13 @@ class User:
         self.clear()
         context = CommonData.context_dict.get(context_name)
         if isinstance(self.current_bot, GeminiAPI):
-            # body = {'role':'system', 'parts':[context]}
             self.current_bot.settings['system_instruction'] = context
             self.current_bot.reset_chat()
             return f'Контекст {context_name} добавлен'
         
         elif isinstance(self.current_bot, CohereAPI):
             body = {"role": 'SYSTEM', "message": context}
-        elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI)):
+        elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI,TogetherAPI)):
             body = {'role':'system', 'content': context}
 
         self.current_bot.context.append(body)
@@ -484,7 +515,7 @@ async def check_and_clear(message: types.Message, type_prompt: str) -> User | No
     if type_prompt == 'callback':
         return user
     ## clear context after 15 minutes
-    if (time() - user.time_dump) > 900:
+    if (time() - user.time_dump) > 1800:
         user.clear()
     user.time_dump = time()
     user_name = db.check_user(message.from_user.id)
