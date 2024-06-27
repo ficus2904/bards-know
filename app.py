@@ -52,7 +52,7 @@ class CommonData:
             'Изменить модель бота':'change_model'
         }
     PARSE_MODE = ParseMode.MARKDOWN_V2
-    DEFAULT_BOT = 'gemini' # 'nvidia' 'cohere'
+    DEFAULT_BOT = 'glif' # 'nvidia' 'cohere' 'gemini'
     builder = ReplyKeyboardBuilder()
     for display_text in buttons:
         builder.button(text=display_text)
@@ -235,7 +235,7 @@ class CohereAPI:
             message=text
         )
         self.context = response.chat_history
-        print(response.text)
+        # print(response.text)
         return escape(response.text)
 
 
@@ -265,7 +265,7 @@ class GroqAPI:
             messages=self.context,
         )
         self.context.append({'role':'assistant', 'content':response.choices[-1].message.content})
-        print(response.choices[-1].message.content)
+        # print(response.choices[-1].message.content)
         return escape(response.choices[-1].message.content)
 
 
@@ -343,7 +343,7 @@ class NvidiaAPI:
             )
             output = response.choices[-1].message.content
             self.context.append({'role':'assistant', 'content':output})
-            print(output)
+            # print(output)
             return escape(output)
         else:
             self.context.append({"role": "user","content": text})
@@ -364,7 +364,7 @@ class NvidiaAPI:
             response = requests.post(url=url, headers=headers, json=body)
             output = response.json()
             output = output.get('choices',[{}])[-1].get('message',{}).get('content','')
-            print(output)
+            # print(output)
             self.context.append({'role':'assistant', 'content':output})
             return escape(output)
         
@@ -402,10 +402,55 @@ class TogetherAPI:
 
 
 
+class GlifAPI:
+    """Class for Glif API"""
+    name = 'glif'
+    def __init__(self):
+        self.api_key = CommonData.api_keys["glif"]
+        self.models = ['claude 3.5 sonnet', 'GPT4o']
+        self.current_model = self.models[0]
+        self.context = []
+
+
+    def form_main_prompt(self) -> str:
+        if len(self.context) > 2:
+            initial_text = 'Use next json schema as context of our previous dialog: '
+            return initial_text + str(self.context[1:])
+        else:
+            return self.context[-1].get('content')
+    
+
+    def form_system_prompt(self) -> str:
+        if not self.context:
+            default_prompt = CommonData.context_dict.get('Универсальный промпт')
+            self.context.append({'role':'system', 'content': default_prompt})
+        return self.context[0].get('content')
+    
+
+    async def prompt(self, text, image = None) -> str:
+        system_prompt = self.form_system_prompt()
+        self.context.append({"role": "user","content": text})
+        main_prompt = self.form_main_prompt()
+        model_id = {"claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
+                    "GPT4o":"clxx330wj000ipbq9rwh4hmp3"}.get(self.current_model)
+        response = requests.post(
+            url="https://simple-api.glif.app",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json={"id": model_id, 
+                  "inputs": {"main_prompt": main_prompt, 
+                             "system_prompt": system_prompt}},
+        )
+        output = response.json()['output']
+        self.context.append({'role':'assistant', 'content': output})
+        # print(output)
+        return escape(output)
+
+
+
 class User:
     '''Specific user interface in chat'''
     def __init__(self):
-        self.bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI]
+        self.bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI]
         self.bots: dict = {bot_class.name:bot_class for bot_class in self.bots_lst}
         self.current_bot = self.bots.get(CommonData.DEFAULT_BOT)()
         self.time_dump = time()
@@ -422,7 +467,7 @@ class User:
         
         elif isinstance(self.current_bot, CohereAPI):
             body = {"role": 'SYSTEM', "message": context}
-        elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI,TogetherAPI)):
+        elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI,TogetherAPI,GlifAPI)):
             body = {'role':'system', 'content': context}
 
         self.current_bot.context.append(body)
@@ -490,6 +535,7 @@ class User:
 
     async def prompt(self, text: str, image=None):
         output = await self.current_bot.prompt(text, image)
+        print(output)
         return output
 
 

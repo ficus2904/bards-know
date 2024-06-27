@@ -4,7 +4,7 @@ import re
 def find_all_index(str, pattern):
     index_list = [0]
     for match in re.finditer(pattern, str, re.MULTILINE):
-        if match.group(1) != None:
+        if match.group(1) is not None:
             start = match.start(1)
             end = match.end(1)
             index_list += [start, end]
