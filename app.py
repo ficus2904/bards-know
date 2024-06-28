@@ -276,29 +276,18 @@ class NvidiaAPI:
     def __init__(self):
         self.client = OpenAI(api_key=CommonData.api_keys["nvidia"],
                              base_url = "https://integrate.api.nvidia.com/v1")
-        self.models = ['meta/llama3-70b-instruct',
-                       'meta/llama3-8b-instruct',
-                       'mistralai/mixtral-8x22b-instruct-v0.1',
-                       'mistralai/mistral-large',
-                       'google/recurrentgemma-2b',
-                       'google/gemma-7b',
-                       'microsoft/phi-3-mini-128k-instruct',
-                       'snowflake/arctic',
-                       'databricks/dbrx-instruct',
-                       'ibm/granite-34b-code-instruct',
-                       'nvidia/neva-22b',
-                       'microsoft/kosmos-2',
-                       'adept/fuyu-8b',
-                       'google/paligemma',
-                       'microsoft/phi-3-vision-128k-instruct',
+        self.models = [
+                        'google/gemma-2-27b-it',
+                        '01-ai/yi-large',
+                        'meta/llama3-70b-instruct',
+                        'nvidia/nemotron-4-340b-instruct',
+                        'nvidia/llama3-chatqa-1.5-70b',
+                        'nvidia/neva-22b',
+                        'microsoft/kosmos-2',
+                        'adept/fuyu-8b',
+                        'microsoft/phi-3-vision-128k-instruct',
                        ] # https://build.nvidia.com/explore/discover
         self.vlm_params = {
-                        'google/paligemma': {
-                            "max_tokens": 512,
-                            "temperature": 1,
-                            "top_p": 0.70,
-                            "stream": False
-                        },
                         'microsoft/phi-3-vision-128k-instruct': {
                             "max_tokens": 512,
                             "temperature": 1,
@@ -337,8 +326,8 @@ class NvidiaAPI:
             response = self.client.chat.completions.create(
                 model=self.current_model,
                 messages=self.context,
-                temperature=0.5,
-                top_p=1,
+                temperature=0.2,
+                top_p=0.7,
                 max_tokens=1024
             )
             output = response.choices[-1].message.content
@@ -378,7 +367,7 @@ class TogetherAPI:
                              base_url="https://api.together.xyz/v1")
         self.models = ['Qwen/Qwen2-72B-Instruct',
                         'mistralai/Mistral-7B-Instruct-v0.3',
-                        'meta-llama/Llama-3-70b-chat-hf'
+                        'meta-llama/Llama-3-70b-chat-hf',
                        ] # https://docs.together.ai/docs/inference-models
 
         self.current_model = self.models[0]
