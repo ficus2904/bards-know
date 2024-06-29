@@ -209,7 +209,7 @@ class GeminiAPI:
         # self.context.append({'role':'model', 'parts':[response.text]})
 
         # print(len(self.chat.history))
-        return escape(response.text)
+        return response.text
     
     def reset_chat(self):
         self.model = genai.GenerativeModel(self.current_model, **self.settings)
@@ -236,7 +236,7 @@ class CohereAPI:
         )
         self.context = response.chat_history
         # print(response.text)
-        return escape(response.text)
+        return response.text
 
 
 
@@ -266,7 +266,7 @@ class GroqAPI:
         )
         self.context.append({'role':'assistant', 'content':response.choices[-1].message.content})
         # print(response.choices[-1].message.content)
-        return escape(response.choices[-1].message.content)
+        return response.choices[-1].message.content
 
 
 
@@ -333,7 +333,7 @@ class NvidiaAPI:
             output = response.choices[-1].message.content
             self.context.append({'role':'assistant', 'content':output})
             # print(output)
-            return escape(output)
+            return output
         else:
             self.context.append({"role": "user","content": text})
             model = self.current_model if self.current_model in self.vlm_params else self.current_vlm_model
@@ -355,7 +355,7 @@ class NvidiaAPI:
             output = output.get('choices',[{}])[-1].get('message',{}).get('content','')
             # print(output)
             self.context.append({'role':'assistant', 'content':output})
-            return escape(output)
+            return output
         
 
 
@@ -386,8 +386,8 @@ class TogetherAPI:
         )
         output = response.choices[-1].message.content
         self.context.append({'role':'assistant', 'content':output})
-        print(output)
-        return escape(output)
+        # print(output)
+        return output
 
 
 
@@ -432,7 +432,7 @@ class GlifAPI:
         output = response.json()['output']
         self.context.append({'role':'assistant', 'content': output})
         # print(output)
-        return escape(output)
+        return output
 
 
 
@@ -525,7 +525,7 @@ class User:
     async def prompt(self, text: str, image=None):
         output = await self.current_bot.prompt(text, image)
         print(output)
-        return output
+        return escape(output)
 
 
 
@@ -574,6 +574,30 @@ async def start_handler(message: types.Message):
         text = f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}'
     await message.answer(text, reply_markup=CommonData.builder)
     return
+
+
+@dp.message(Command(commands=["add_prompt"]))
+async def add_prompt_handler(message: types.Message):
+    user_name = db.check_user(message.from_user.id)
+    if not user_name or user_name[1] != 'ADMIN':
+        await message.reply("You don't have admin privileges")
+        return
+    args = message.text.split('|', maxsplit=2)
+    if len(args) != 3 or '|' in args[-1]:
+        await message.reply("Usage: `/add_prompt | prompt_name | prompt`")
+        return
+    # Split the argument into user_id and name
+    _, prompt_name, prompt = [arg.strip() for arg in args]
+    if CommonData.context_dict.get(prompt_name):
+        await message.reply(f"Prompt {prompt_name} already exists")
+        return
+    try:
+        CommonData.context_dict[prompt_name] = prompt
+        with open('./prompts.json', 'w', encoding="utf-8") as f:
+            json.dump(CommonData.context_dict, f, ensure_ascii=False)
+        await message.reply(f"Prompt {prompt_name} added successfully.")
+    except Exception as e:
+        await message.reply(f"An error occurred: {e}.")
 
 
 @dp.message(Command(commands=["add"]))
