@@ -96,6 +96,8 @@ class CommonData:
         # Начальное сжатие
         return recursive_compress(img, quality=85)
 
+    def batch_output(text, max_length=4096)-> tuple:
+        return (text[i:i + max_length] for i in range(0, len(text), max_length))
 
 
 class CallbackClass(CallbackData, prefix='callback'):
@@ -661,7 +663,8 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     await message.reply(text_reply)
     tg_photo = await bot.download(message.photo[-1].file_id)
     output = await user.prompt(user.text, tg_photo)
-    await message.answer(output, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
+    for part in CommonData.batch_output(output):
+        await message.answer(part, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
     return
 
 
@@ -680,7 +683,9 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
         else:
             await message.reply('Ожидайте...')
             output = await user.prompt(user.text)
-        await message.answer(output, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
+
+        for part in CommonData.batch_output(output):
+            await message.answer(part, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
         return
     except Exception as e:
         logging.info(e)
