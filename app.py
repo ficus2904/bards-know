@@ -1,4 +1,5 @@
 import asyncio
+import aiohttp
 import logging
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -248,9 +249,7 @@ class GroqAPI:
     def __init__(self):
         self.client = Groq(api_key=CommonData.api_keys["groq"])
         self.models = ['llama3-70b-8192',
-                       'llama3-8b-8192',
-                       'mixtral-8x7b-32768',
-                       'gemma-7b-it',
+                       'llama3-groq-70b-8192-tool-use-preview',
                        'whisper-large-v3'] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
         self.context = []
@@ -418,20 +417,40 @@ class GlifAPI:
         return self.context[0].get('content')
     
 
+    async def fetch_data(self, main_prompt: str, system_prompt: str) -> str:
+        url = "https://simple-api.glif.app"
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        model_id = {"claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
+                    "GPT4o":"clxx330wj000ipbq9rwh4hmp3"}.get(self.current_model)
+        json = {"id": model_id, 
+                "inputs": {"main_prompt": main_prompt, 
+                           "system_prompt": system_prompt}}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url=url,headers=headers,json=json) as response:
+                try:
+                    response.raise_for_status()
+                    answer = await response.json()
+                    return answer['output'] or 'Error main'
+                except aiohttp.ClientResponseError as e:
+                    logging.error(e)
+                    return 'Error exception'
+    
+
     async def prompt(self, text, image = None) -> str:
         system_prompt = self.form_system_prompt()
         self.context.append({"role": "user","content": text})
         main_prompt = self.form_main_prompt()
-        model_id = {"claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
-                    "GPT4o":"clxx330wj000ipbq9rwh4hmp3"}.get(self.current_model)
-        response = requests.post(
-            url="https://simple-api.glif.app",
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            json={"id": model_id, 
-                  "inputs": {"main_prompt": main_prompt, 
-                             "system_prompt": system_prompt}},
-        )
-        output = response.json()['output']
+        # model_id = {"claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
+        #             "GPT4o":"clxx330wj000ipbq9rwh4hmp3"}.get(self.current_model)
+        # response = requests.post(
+        #     url="https://simple-api.glif.app",
+        #     headers={"Authorization": f"Bearer {self.api_key}"},
+        #     json={"id": model_id, 
+        #           "inputs": {"main_prompt": main_prompt, 
+        #                      "system_prompt": system_prompt}},
+        # )
+        # output = response.json()['output']
+        output = await self.fetch_data(main_prompt, system_prompt)
         self.context.append({'role':'assistant', 'content': output})
         # print(output)
         return output
