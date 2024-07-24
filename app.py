@@ -17,7 +17,6 @@ from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
 import base64
-import requests
 from PIL import Image, ImageOps
 import io
 import warnings
@@ -377,10 +376,17 @@ class NvidiaAPI:
             headers = {"Authorization": f"Bearer {CommonData.api_keys["nvidia"]}",
                         "Accept": "application/json"}
             url = "https://ai.api.nvidia.com/v1/vlm/" + model
-            response = requests.post(url=url, headers=headers, json=body)
-            output = response.json()
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url=url,headers=headers,json=body) as response:
+                    try:
+                        response.raise_for_status()
+                        output = await response.json()
+                    except aiohttp.ClientResponseError as e:
+                        logging.error(e)
+                        return 'Error exception'
+            # response = requests.post(url=url, headers=headers, json=body)
+            # output = response.json()
             output = output.get('choices',[{}])[-1].get('message',{}).get('content','')
-            # print(output)
             self.context.append({'role':'assistant', 'content':output})
             return output
         
@@ -424,7 +430,12 @@ class GlifAPI:
     name = 'glif'
     def __init__(self):
         self.api_key = CommonData.api_keys["glif"]
-        self.models = ['claude 3.5 sonnet', 'GPT4o']
+        self.models_with_ids = {
+                                "claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
+                                "GPT4o":"clxx330wj000ipbq9rwh4hmp3",
+                                "Llama 3.1 405B":"clyzjs4ht0000iwvdlacfm44y",
+                                }
+        self.models = list(self.models_with_ids.keys()) #['claude 3.5 sonnet', 'GPT4o','Llama 3.1 405B']
         self.current_model = self.models[0]
         self.context = []
 
@@ -447,13 +458,11 @@ class GlifAPI:
     async def fetch_data(self, main_prompt: str, system_prompt: str) -> str:
         url = "https://simple-api.glif.app"
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        model_id = {"claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
-                    "GPT4o":"clxx330wj000ipbq9rwh4hmp3"}.get(self.current_model)
-        json = {"id": model_id, 
+        body = {"id": self.models_with_ids.get(self.current_model), 
                 "inputs": {"main_prompt": main_prompt, 
                            "system_prompt": system_prompt}}
         async with aiohttp.ClientSession() as session:
-            async with session.post(url=url,headers=headers,json=json) as response:
+            async with session.post(url=url,headers=headers,json=body) as response:
                 try:
                     response.raise_for_status()
                     answer = await response.json()
@@ -467,19 +476,8 @@ class GlifAPI:
         system_prompt = self.form_system_prompt()
         self.context.append({"role": "user","content": text})
         main_prompt = self.form_main_prompt()
-        # model_id = {"claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
-        #             "GPT4o":"clxx330wj000ipbq9rwh4hmp3"}.get(self.current_model)
-        # response = requests.post(
-        #     url="https://simple-api.glif.app",
-        #     headers={"Authorization": f"Bearer {self.api_key}"},
-        #     json={"id": model_id, 
-        #           "inputs": {"main_prompt": main_prompt, 
-        #                      "system_prompt": system_prompt}},
-        # )
-        # output = response.json()['output']
         output = await self.fetch_data(main_prompt, system_prompt)
         self.context.append({'role':'assistant', 'content': output})
-        # print(output)
         return output
 
 

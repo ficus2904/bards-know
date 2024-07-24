@@ -1,5 +1,4 @@
 aiogram
-aiohttp
 google-generativeai
 cohere
 pillow
