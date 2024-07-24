@@ -104,7 +104,7 @@ class CommonData:
         if text.startswith('meta'):
             return text.split('/')[1].split('nstruct')[0][:-2]
         else:
-            return text.split('/')[1]
+            return text.split('/')[1] if '/' in text else text
 
 
 class CallbackClass(CallbackData, prefix='callback'):
