@@ -370,11 +370,11 @@ class TogetherAPI:
     name = 'together'
     def __init__(self):
         self.client = OpenAI(api_key=CommonData.api_keys["together"],
-                             base_url="https://api.together.xyz/v1/meta-llama")
+                             base_url="https://api.together.xyz/v1")
         self.models = [
-                        'Meta-Llama-3.1-405B-Instruct-Turbo',
-                        'Meta-Llama-3.1-70B-Instruct-Turbo',
-                        'Meta-Llama-3.1-8B-Instruct-Turbo',
+                        'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',
+                        'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+                        'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
                        ] # https://docs.together.ai/docs/inference-models
 
         self.current_model = self.models[0]
