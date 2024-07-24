@@ -7,7 +7,6 @@ import cohere
 from groq import Groq
 from openai import OpenAI
 import json
-import re
 import sqlite3
 import atexit
 from time import time
