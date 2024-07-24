@@ -96,14 +96,36 @@ class CommonData:
         # Начальное сжатие
         return recursive_compress(img, quality=85)
 
-    def batch_output(text, max_length=4096)-> tuple:
-        return (text[i:i + max_length] for i in range(0, len(text), max_length))
+    # def batch_output(text, max_length=4096)-> tuple:
+    #     return (text[i:i + max_length] for i in range(0, len(text), max_length))
     
     def make_short_name(text: str) -> str:
         if text.startswith('meta'):
             return text.split('/')[1].split('nstruct')[0][:-2]
         else:
             return text.split('/')[1] if '/' in text else text
+        
+    async def split_text(text: str, max_length=4096):
+        start = 0
+        while start < len(text):
+            if len(text) - start <= max_length:
+                yield text[start:]
+                break
+            
+            split_index = start + max_length
+            for separator in ('\n', ' '):
+                last_separator = text.rfind(separator, start, split_index)
+                if last_separator != -1:
+                    split_index = last_separator
+                    break
+            
+            yield text[start:split_index]
+            start = split_index
+            while start < len(text) and text[start] in ('\n', ' '):
+                start += 1
+            
+            # Добавляем небольшую задержку, чтобы дать возможность другим задачам выполниться
+            await asyncio.sleep(0)
 
 
 class CallbackClass(CallbackData, prefix='callback'):
@@ -688,7 +710,7 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     await message.reply(text_reply)
     tg_photo = await bot.download(message.photo[-1].file_id)
     output = await user.prompt(user.text, tg_photo)
-    for part in CommonData.batch_output(output):
+    async for part in CommonData.split_text(output):
         await message.answer(part, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
     return
 
@@ -709,7 +731,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
             await message.reply('Ожидайте...')
             output = await user.prompt(user.text)
 
-        for part in CommonData.batch_output(output):
+        async for part in CommonData.split_text(output):
             await message.answer(part, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
         return
     except Exception as e:
