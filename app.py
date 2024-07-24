@@ -278,9 +278,8 @@ class NvidiaAPI:
         self.client = OpenAI(api_key=CommonData.api_keys["nvidia"],
                              base_url = "https://integrate.api.nvidia.com/v1")
         self.models = [
-                        'google/gemma-2-27b-it',
-                        '01-ai/yi-large',
-                        'meta/llama3-70b-instruct',
+                        'meta/llama-3.1-405b-instruct',
+                        'meta/llama-3.1-8b-instruct',
                         'nvidia/nemotron-4-340b-instruct',
                         'nvidia/llama3-chatqa-1.5-70b',
                         'nvidia/neva-22b',
@@ -366,9 +365,10 @@ class TogetherAPI:
     def __init__(self):
         self.client = OpenAI(api_key=CommonData.api_keys["together"],
                              base_url="https://api.together.xyz/v1")
-        self.models = ['Qwen/Qwen2-72B-Instruct',
-                        'mistralai/Mistral-7B-Instruct-v0.3',
-                        'meta-llama/Llama-3-70b-chat-hf',
+        self.models = [
+                        'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',
+                        'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+                        'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
                        ] # https://docs.together.ai/docs/inference-models
 
         self.current_model = self.models[0]
@@ -668,7 +668,8 @@ async def remove_handler(message: types.Message):
 async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     user = await check_and_clear(message, 'photo')
     if user.text is None:
-        return
+        user.text = 'Следуй системным правилам'
+        # return
     
     if user.current_bot.name not in ['nvidia', 'gemini']:
         text_reply = "Переключите бота на nvidia или gemini для обработки изображений"
