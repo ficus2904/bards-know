@@ -99,6 +99,12 @@ class CommonData:
 
     def batch_output(text, max_length=4096)-> tuple:
         return (text[i:i + max_length] for i in range(0, len(text), max_length))
+    
+    def make_short_name(text: str) -> str:
+        if text.startswith('meta'):
+            return text.split('/')[1].split('nstruct')[0][:-2]
+        else:
+            return text.split('/')[1]
 
 
 class CallbackClass(CallbackData, prefix='callback'):
@@ -737,7 +743,7 @@ async def make_bth_cb(user: User, message: types.Message) -> None:
     items = command_dict.get(user.text.split('_')[-1])
     for value in items[0]:
         data = CallbackClass(cb_type=user.text, name=value).pack()
-        builder_inline.button(text=value, callback_data=data)
+        builder_inline.button(text=CommonData.make_short_name(value), callback_data=data)
 
     await message.answer(f'Выберите {items[-1]}:', CommonData.PARSE_MODE, 
                          reply_markup=builder_inline.adjust(*[1]*len(items)).as_markup())
