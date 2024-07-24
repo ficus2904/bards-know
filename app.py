@@ -370,11 +370,11 @@ class TogetherAPI:
     name = 'together'
     def __init__(self):
         self.client = OpenAI(api_key=CommonData.api_keys["together"],
-                             base_url="https://api.together.xyz/v1")
+                             base_url="https://api.together.xyz/v1/meta-llama")
         self.models = [
-                        'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',
-                        'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
-                        'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+                        'Meta-Llama-3.1-405B-Instruct-Turbo',
+                        'Meta-Llama-3.1-70B-Instruct-Turbo',
+                        'Meta-Llama-3.1-8B-Instruct-Turbo',
                        ] # https://docs.together.ai/docs/inference-models
 
         self.current_model = self.models[0]
@@ -523,8 +523,8 @@ class User:
         if hasattr(self.current_bot, 'vlm_params') and model_name in self.current_bot.vlm_params:
             self.current_bot.current_vlm_model = model_name
         self.clear()
-        output = re.split(r'-|/',model_name, maxsplit=1)[-1]
-        return f'Смена модели на {output}'
+        # output = re.split(r'-|/',model_name, maxsplit=1)[-1]
+        return f'Смена модели на {CommonData.make_short_name(model_name)}'
 
 
     def clear(self) -> str:
