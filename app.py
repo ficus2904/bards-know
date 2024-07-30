@@ -126,6 +126,10 @@ class CommonData:
             # Добавляем небольшую задержку, чтобы дать возможность другим задачам выполниться
             await asyncio.sleep(0)
 
+    def set_kwargs(text, reply_markup = None) -> dict:
+        return {'text': text, 
+                'parse_mode':CommonData.PARSE_MODE, 
+                'reply_markup': reply_markup or CommonData.builder}
 
 
 class CallbackClass(CallbackData, prefix='callback'):
@@ -605,14 +609,8 @@ async def check_and_clear(message: types.Message, type_prompt: str) -> User | No
     if (time() - user.time_dump) > 1800:
         user.clear()
     user.time_dump = time()
+    type_prompt = {'text': message.text, 'photo': message.caption}.get(type_prompt, type_prompt)
     logging.info(f'{user_name or message.from_user.id}: "{type_prompt}"')
-    if type_prompt in {'info','clear'}:
-        return {'text': escape(getattr(user, type_prompt)()), 
-                'parse_mode':CommonData.PARSE_MODE, 
-                'reply_markup': CommonData.builder}
-    elif type_prompt in {"change_context","template_prompts","change_bot","change_model"}:
-        return user
-    type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
     user.text = CommonData.buttons.get(type_prompt, type_prompt)
     return user
 
@@ -717,26 +715,32 @@ async def remove_handler(message: types.Message):
 
 @dp.message(Command(commands=["info","clear"]))
 async def short_command_handler(message: types.Message):
-    kwargs = await check_and_clear(message, message.text.lstrip('/'))
+    user = await check_and_clear(message, message.text.lstrip('/'))
+    kwargs = CommonData.set_kwargs(escape(getattr(user, user.text)()))
     await message.answer(**kwargs)
 
 
-@dp.message(Command(commands=["change_context","template_prompts","change_bot","change_model"]))
-async def long_command_handler(message: types.Message):
-    user = await check_and_clear(message, message.text.lstrip('/'))
-    builder_inline = InlineKeyboardBuilder()
 
-    command_dict = {'bot': [user.bots, 'бота'],
-                    'model': [user.current_bot.models, 'модель'],
-                    'context':[CommonData.context_dict, 'контекст'],
-                    'prompts':[CommonData.template_prompts, 'промпт']}
-    items = command_dict.get(message.text.split('_')[-1])
-    for value in items[0]:
-        data = CallbackClass(cb_type=message.text, name=value).pack()
-        builder_inline.button(text=CommonData.make_short_name(value), callback_data=data)
+@dp.message(lambda message: message.text in CommonData.buttons)
+async def clear_command(message: types.Message):
+    user = await check_and_clear(message, 'text')
+    if user.text in {'info','clear'}:
+        kwargs = CommonData.set_kwargs(escape(getattr(user, user.text)()))
+    else:
+        builder_inline = InlineKeyboardBuilder()
+        command_dict = {'bot': [user.bots, 'бота'],
+                        'model': [user.current_bot.models, 'модель'],
+                        'context':[CommonData.context_dict, 'контекст'],
+                        'prompts':[CommonData.template_prompts, 'промпт']}
+        items = command_dict.get(user.text.split('_')[-1])
+        for value in items[0]:
+            data = CallbackClass(cb_type=user.text, name=value).pack()
+            builder_inline.button(text=CommonData.make_short_name(value), callback_data=data)
+        kwargs = CommonData.set_kwargs(f'Выберите {items[-1]}:', 
+                                       builder_inline.adjust(*[1]*len(items)).as_markup())
+    
+    await message.answer(**kwargs)
 
-    await message.answer(f'Выберите {items[-1]}:', CommonData.PARSE_MODE, 
-                         reply_markup=builder_inline.adjust(*[1]*len(items)).as_markup())
 
 
 @dp.message(F.content_type.in_({'photo'}))
@@ -759,7 +763,7 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     tg_photo = await bot.download(message.photo[-1].file_id)
     output = await user.prompt(user.text, tg_photo)
     async for part in CommonData.split_text(output):
-        await message.answer(part, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
+        await message.answer(**CommonData.set_kwargs(part))
     return
 
 
@@ -769,18 +773,17 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
     if user.text is None:
         return
     try:
-        if user.text in CommonData.buttons.values():
-            if 'change_' in user.text or 'template_prompts' == user.text:
-                await make_bth_cb(user, message)
-                return
-            else:
-                output = escape(getattr(user, user.text)())
-        else:
-            await message.reply('Ожидайте...')
-            output = await user.prompt(user.text)
-
+        # if user.text in CommonData.buttons.values():
+        #     if 'change_' in user.text or 'template_prompts' == user.text:
+        #         await make_bth_cb(user, message)
+        #         return
+        #     else:
+        #         output = escape(getattr(user, user.text)())
+        # else:
+        await message.reply('Ожидайте...')
+        output = await user.prompt(user.text)
         async for part in CommonData.split_text(output):
-            await message.answer(part, CommonData.PARSE_MODE, reply_markup=CommonData.builder)
+            await message.answer(**CommonData.set_kwargs(part))
         return
     except Exception as e:
         logging.info(e)
@@ -798,24 +801,24 @@ async def change_callback_handler(query: types.CallbackQuery, callback_data: Cal
     await query.answer()
 
     
-async def make_bth_cb(user: User, message: types.Message) -> None: 
-    '''
-    Creates callback data with ChangeCallback, 
-    generates and sends an inline keyboard as reply markup 
-    '''
-    builder_inline = InlineKeyboardBuilder()
+# async def make_bth_cb(user: User, message: types.Message) -> None: 
+#     '''
+#     Creates callback data with ChangeCallback, 
+#     generates and sends an inline keyboard as reply markup 
+#     '''
+#     builder_inline = InlineKeyboardBuilder()
 
-    command_dict = {'bot': [user.bots, 'бота'],
-                    'model': [user.current_bot.models, 'модель'],
-                    'context':[CommonData.context_dict, 'контекст'],
-                    'prompts':[CommonData.template_prompts, 'промпт']}
-    items = command_dict.get(user.text.split('_')[-1])
-    for value in items[0]:
-        data = CallbackClass(cb_type=user.text, name=value).pack()
-        builder_inline.button(text=CommonData.make_short_name(value), callback_data=data)
+#     command_dict = {'bot': [user.bots, 'бота'],
+#                     'model': [user.current_bot.models, 'модель'],
+#                     'context':[CommonData.context_dict, 'контекст'],
+#                     'prompts':[CommonData.template_prompts, 'промпт']}
+#     items = command_dict.get(user.text.split('_')[-1])
+#     for value in items[0]:
+#         data = CallbackClass(cb_type=user.text, name=value).pack()
+#         builder_inline.button(text=CommonData.make_short_name(value), callback_data=data)
 
-    await message.answer(f'Выберите {items[-1]}:', CommonData.PARSE_MODE, 
-                         reply_markup=builder_inline.adjust(*[1]*len(items)).as_markup())
+#     await message.answer(f'Выберите {items[-1]}:', CommonData.PARSE_MODE, 
+#                          reply_markup=builder_inline.adjust(*[1]*len(items)).as_markup())
 
 
 async def main() -> None:
