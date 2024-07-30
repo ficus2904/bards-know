@@ -23,113 +23,9 @@ import warnings
 warnings.simplefilter('ignore')
 
 # python app.py
-# git remote get-url origin # получить url для docker
-# api_keys = json.loads(os.getenv('api_key_bard_knows'))
 
 logging.basicConfig(filename='./app.log', level=logging.INFO, encoding='utf-8',
                     format='%(asctime)19s %(levelname)s: %(message)s')
-
-
-
-class CommonData:
-    '''Common dataclass with general variables'''
-    api_keys: dict = json.loads(open('./api_keys.json').read())
-    context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
-    template_prompts: dict = {
-            'Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
-            'Шутка': 'Выступи в роли профессионального стендап комика и напиши остроумную шутку. Ответом должен быть только текст шутки',
-            'Факт': 'Выступи в роли профессионального энциклопедиста и напиши один занимательный факт. Ответом должен быть только текст с фактом',
-            'Квиз': '''Выступи в роли профессионального энциклопедиста и напиши три вопроса для занимательного квиза. 
-                        Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов'''
-        }
-    buttons: dict = {
-            'Добавить контекст':'change_context', 
-            'Быстрые команды':'template_prompts',
-            'Вывести инфо':'info',
-            'Сменить бота':'change_bot', 
-            'Очистить контекст':'clear',
-            'Изменить модель бота':'change_model'
-        }
-    PARSE_MODE = ParseMode.MARKDOWN_V2
-    DEFAULT_BOT = 'glif' # 'nvidia' 'cohere' 'gemini'
-    builder = ReplyKeyboardBuilder()
-    for display_text in buttons:
-        builder.button(text=display_text)
-    builder = builder.adjust(3,3).as_markup()
-    # "Дополнительные промпты":"https://vaulted-polonium-23c.notion.site/500-Best-ChatGPT-Prompts-63ef8a04a63c476ba306e1ec9a9b91c0"
-    # https://github.com/successfulstudy/promptoftheyear/blob/main/README.md
-    def singleton(cls):
-        '''@singleton decorator'''
-        instances = {}
-        def wrapper(*args, **kwargs):
-            if cls not in instances:
-                instances[cls] = cls(*args, **kwargs)
-            return instances[cls]
-        return wrapper
-    
-    def resize_image(image: io.BytesIO, max_b64_length=180_000, max_file_size_kb=450):
-        max_file_size_bytes = max_file_size_kb * 1024
-        img = Image.open(image)
-        # Функция для сжатия и конвертации изображения в Base64
-        def image_to_base64(img, quality=85):
-            buffer = io.BytesIO()
-            img.save(buffer, format='JPEG', quality=quality)
-            buffer.seek(0)
-            img_b64 = base64.b64encode(buffer.getvalue()).decode()
-            return img_b64, buffer.getvalue()
-        
-        # Рекурсивная функция для сжатия изображения
-        def recursive_compress(img, quality):
-            img_b64, img_bytes = image_to_base64(img, quality=quality)
-            # Проверить размер изображения
-            if len(img_b64) <= max_b64_length and len(img_bytes) <= max_file_size_bytes:
-                return img_b64
-            # Уменьшить размер изображения
-            img = ImageOps.exif_transpose(img)
-            img.thumbnail((img.size[0] * 0.9, img.size[1] * 0.9), Image.ADAPTIVE)
-            # Уменьшить качество, если размер все еще превышает лимит
-            quality = max(10, quality - 5)
-            # Рекурсивный вызов для сжатия изображения с новыми параметрами
-            return recursive_compress(img, quality)
-        
-        # Начальное сжатие
-        return recursive_compress(img, quality=85)
-
-    # def batch_output(text, max_length=4096)-> tuple:
-    #     return (text[i:i + max_length] for i in range(0, len(text), max_length))
-    
-    def make_short_name(text: str) -> str:
-        if text.startswith('meta'):
-            return text.split('/')[1].split('nstruct')[0][:-2]
-        else:
-            return text.split('/')[1] if '/' in text else text
-        
-    async def split_text(text: str, max_length=4096):
-        start = 0
-        while start < len(text):
-            if len(text) - start <= max_length:
-                yield text[start:]
-                break
-            
-            split_index = start + max_length
-            for separator in ('\n', ' '):
-                last_separator = text.rfind(separator, start, split_index)
-                if last_separator != -1:
-                    split_index = last_separator
-                    break
-            
-            yield text[start:split_index]
-            start = split_index
-            while start < len(text) and text[start] in ('\n', ' '):
-                start += 1
-            
-            # Добавляем небольшую задержку, чтобы дать возможность другим задачам выполниться
-            await asyncio.sleep(0)
-
-    def set_kwargs(text, reply_markup = None) -> dict:
-        return {'text': text, 
-                'parse_mode':CommonData.PARSE_MODE, 
-                'reply_markup': reply_markup or CommonData.builder}
 
 
 class CallbackClass(CallbackData, prefix='callback'):
@@ -154,24 +50,28 @@ class DBConnection:
         if not self.check_table():
             self.init_table()
 
-    def execute(self, *args):
-        self.cursor.execute(*args)
+    # def execute(self, *args):
+    #     self.cursor.execute(*args)
 
     def fetchone(self, *args) -> tuple | None:
-        self.execute(*args)
+        # self.execute(*args)
+        self.cursor.execute(*args)
         return self.cursor.fetchone()
     
-    def fetchall(self, query) -> tuple | None:
-        self.execute(query)
+    def fetchall(self, *args) -> tuple | None:
+        self.cursor.execute(*args)
         return self.cursor.fetchall()
     
     def check_table(self) -> int:
-        return self.fetchone("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'")[0]
+        query = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users'"
+        return self.fetchone(query)[0]
     
     def init_table(self) -> None:
-        self.execute('''CREATE TABLE IF NOT EXISTS users
-                        (id INT PRIMARY KEY, name TEXT)''')
-        self.commit()
+        # self.execute('''CREATE TABLE IF NOT EXISTS users
+        #                 (id INT PRIMARY KEY, name TEXT)''')
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS users
+                            (id INT PRIMARY KEY, name TEXT)''')
+        self.conn.commit()
 
     def add_user(self, user_id: int, name: str) -> None:
         """
@@ -181,7 +81,7 @@ class DBConnection:
         """
         query = 'INSERT INTO users (id, name) VALUES (?, ?)'
         self.cursor.execute(query, (user_id, name))
-        self.commit()
+        self.conn.commit()
 
     def remove_user(self, name: str) -> None:
         """
@@ -190,14 +90,14 @@ class DBConnection:
         """
         query = 'DELETE FROM users WHERE name = ?'
         self.cursor.execute(query, (name,))
-        self.commit()
+        self.conn.commit()
     
     def check_user(self, user_id: int) -> str | None:
         answer = self.fetchone("SELECT name FROM users WHERE id = ? LIMIT 1", (user_id,))
         return answer[0] if answer else None
 
-    def commit(self):
-        self.conn.commit()
+    # def commit(self):
+    #     self.conn.commit()
 
     def close(self):
         self.conn.close()
@@ -208,7 +108,7 @@ class GeminiAPI:
     """Class for Gemini API"""
     name = 'gemini'
     def __init__(self):
-        genai.configure(api_key=CommonData.api_keys["gemini"])
+        genai.configure(api_key=users.api_keys["gemini"])
         self.settings = { 
             'safety_settings': {
                 HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
@@ -257,7 +157,7 @@ class CohereAPI:
     """Class for Cohere API"""
     name = 'cohere'
     def __init__(self):
-        self.co = cohere.Client(CommonData.api_keys["cohere"])
+        self.co = cohere.Client(users.api_keys["cohere"])
         self.models = ['command-r-plus','command-r','command','command-light','c4ai-aya-23']
         self.current_model = self.models[0]
         self.context = []
@@ -279,7 +179,7 @@ class GroqAPI:
     """Class for Groq API"""
     name = 'groq'
     def __init__(self):
-        self.client = Groq(api_key=CommonData.api_keys["groq"])
+        self.client = Groq(api_key=users.api_keys["groq"])
         self.models = ['llama3-70b-8192',
                        'llama3-groq-70b-8192-tool-use-preview',
                        'whisper-large-v3'] # https://console.groq.com/docs/models
@@ -307,7 +207,7 @@ class NvidiaAPI:
     """Class for Nvidia API"""
     name = 'nvidia'
     def __init__(self):
-        self.client = OpenAI(api_key=CommonData.api_keys["nvidia"],
+        self.client = OpenAI(api_key=users.api_keys["nvidia"],
                              base_url = "https://integrate.api.nvidia.com/v1")
         self.models = [
                         'meta/llama-3.1-405b-instruct',
@@ -373,13 +273,13 @@ class NvidiaAPI:
                 image_b64 = base64.b64encode(image.getvalue()).decode()
                 if len(image_b64) > 180_000:
                     print("Слишком большое изображение, сжимаем...")
-                    image_b64 = CommonData.resize_image(image)
+                    image_b64 = users.resize_image(image)
                 image_b64 = f'. <img src="data:image/jpeg;base64,{image_b64}" />'
             else:
                 image_b64 = ''
 
             body = {"messages": [{"role": "user","content": text + image_b64}]} | self.vlm_params.get(model)
-            headers = {"Authorization": f"Bearer {CommonData.api_keys["nvidia"]}",
+            headers = {"Authorization": f"Bearer {users.api_keys["nvidia"]}",
                         "Accept": "application/json"}
             url = "https://ai.api.nvidia.com/v1/vlm/" + model
             async with aiohttp.ClientSession() as session:
@@ -402,7 +302,7 @@ class TogetherAPI:
     """Class for Together API"""
     name = 'together'
     def __init__(self):
-        self.client = OpenAI(api_key=CommonData.api_keys["together"],
+        self.client = OpenAI(api_key=users.api_keys["together"],
                              base_url="https://api.together.xyz/v1")
         self.models = [
                         'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',
@@ -435,7 +335,7 @@ class GlifAPI:
     """Class for Glif API"""
     name = 'glif'
     def __init__(self):
-        self.api_key = CommonData.api_keys["glif"]
+        self.api_key = users.api_keys["glif"]
         self.models_with_ids = {
                                 "claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
                                 "GPT4o":"clxx330wj000ipbq9rwh4hmp3",
@@ -456,7 +356,7 @@ class GlifAPI:
 
     def form_system_prompt(self) -> str:
         if not self.context:
-            default_prompt = CommonData.context_dict.get('Универсальный промпт')
+            default_prompt = users.context_dict.get('Универсальный промпт')
             self.context.append({'role':'system', 'content': default_prompt})
         return self.context[0].get('content')
     
@@ -493,14 +393,14 @@ class User:
     def __init__(self):
         self.bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI]
         self.bots: dict = {bot_class.name:bot_class for bot_class in self.bots_lst}
-        self.current_bot = self.bots.get(CommonData.DEFAULT_BOT)()
+        self.current_bot = self.bots.get(users.DEFAULT_BOT)()
         self.time_dump = time()
         self.text = None
         
 
     async def change_context(self, context_name: str) -> str:
         self.clear()
-        context = CommonData.context_dict.get(context_name)
+        context = users.context_dict.get(context_name)
         if isinstance(self.current_bot, GeminiAPI):
             self.current_bot.settings['system_instruction'] = context
             self.current_bot.reset_chat()
@@ -516,7 +416,7 @@ class User:
 
 
     async def template_prompts(self, template: str) -> str:
-        prompt_text = CommonData.template_prompts.get(template)
+        prompt_text = users.template_prompts.get(template)
         output = await self.prompt(prompt_text)
         return output
     
@@ -549,7 +449,7 @@ class User:
             self.current_bot.current_vlm_model = model_name
         self.clear()
         # output = re.split(r'-|/',model_name, maxsplit=1)[-1]
-        return f'Смена модели на {CommonData.make_short_name(model_name)}'
+        return f'Смена модели на {users.make_short_name(model_name)}'
 
 
     def clear(self) -> str:
@@ -582,8 +482,37 @@ class User:
 
 
 class UsersMap():
+    '''Main storage of user's sessions, common variables and functions'''
     def __init__(self):
         self._user_ins: dict = {}
+        self.api_keys: dict = json.loads(open('./api_keys.json').read())
+        self.context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
+        self.template_prompts: dict = {
+                'Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
+                'Шутка': 'Выступи в роли профессионального стендап комика и напиши остроумную шутку. Ответом должен быть только текст шутки',
+                'Факт': 'Выступи в роли профессионального энциклопедиста и напиши один занимательный факт. Ответом должен быть только текст с фактом',
+                'Квиз': '''Выступи в роли профессионального энциклопедиста и напиши три вопроса для занимательного квиза. 
+                            Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов'''
+            }
+        self.buttons: dict = {
+                'Добавить контекст':'change_context', 
+                'Быстрые команды':'template_prompts',
+                'Вывести инфо':'info',
+                'Сменить бота':'change_bot', 
+                'Очистить контекст':'clear',
+                'Изменить модель бота':'change_model'
+            }
+        self.PARSE_MODE = ParseMode.MARKDOWN_V2
+        self.DEFAULT_BOT = 'glif'
+        self.builder = self.create_builder()
+
+
+    def create_builder(self) -> ReplyKeyboardBuilder:
+        builder = ReplyKeyboardBuilder()
+        for display_text in self.buttons:
+            builder.button(text=display_text)
+        return builder.adjust(3,3).as_markup()
+
     
     def get(self, user_id: int) -> User:
         if user_id not in self._user_ins:
@@ -591,59 +520,105 @@ class UsersMap():
         return self._user_ins[user_id]
     
 
-bot = Bot(token=CommonData.api_keys["telegram"]) # parse_mode=ParseMode.HTML
+    def resize_image(self, image: io.BytesIO, max_b64_length=180_000, max_file_size_kb=450):
+        max_file_size_bytes = max_file_size_kb * 1024
+        img = Image.open(image)
+        # Функция для сжатия и конвертации изображения в Base64
+        def image_to_base64(img, quality=85):
+            buffer = io.BytesIO()
+            img.save(buffer, format='JPEG', quality=quality)
+            buffer.seek(0)
+            img_b64 = base64.b64encode(buffer.getvalue()).decode()
+            return img_b64, buffer.getvalue()
+        
+        # Рекурсивная функция для сжатия изображения
+        def recursive_compress(img, quality):
+            img_b64, img_bytes = image_to_base64(img, quality=quality)
+            # Проверить размер изображения
+            if len(img_b64) <= max_b64_length and len(img_bytes) <= max_file_size_bytes:
+                return img_b64
+            # Уменьшить размер изображения
+            img = ImageOps.exif_transpose(img)
+            img.thumbnail((img.size[0] * 0.9, img.size[1] * 0.9), Image.ADAPTIVE)
+            # Уменьшить качество, если размер все еще превышает лимит
+            quality = max(10, quality - 5)
+            # Рекурсивный вызов для сжатия изображения с новыми параметрами
+            return recursive_compress(img, quality)
+        
+        # Начальное сжатие
+        return recursive_compress(img, quality=85)
+    
+
+    def make_short_name(self, text: str) -> str:
+        if text.startswith('meta'):
+            return text.split('/')[1].split('nstruct')[0][:-2]
+        else:
+            return text.split('/')[1] if '/' in text else text
+        
+
+    async def split_text(self, text: str, max_length=4096):
+        start = 0
+        while start < len(text):
+            if len(text) - start <= max_length:
+                yield text[start:]
+                break
+            
+            split_index = start + max_length
+            for separator in ('\n', ' '):
+                last_separator = text.rfind(separator, start, split_index)
+                if last_separator != -1:
+                    split_index = last_separator
+                    break
+            
+            yield text[start:split_index]
+            start = split_index
+            while start < len(text) and text[start] in ('\n', ' '):
+                start += 1
+            
+            # Добавляем небольшую задержку, чтобы дать возможность другим задачам выполниться
+            await asyncio.sleep(0)
+
+
+    def set_kwargs(self, text, reply_markup = None) -> dict:
+        return {'text': text, 
+                'parse_mode':self.PARSE_MODE, 
+                'reply_markup': reply_markup or self.builder}
+
+
+    async def check_and_clear(self, message: types.Message, type_prompt: str) -> User | None:
+        user_name = db.check_user(message.from_user.id)
+        if user_name is None:
+            await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
+            return
+        user = self.get(message.from_user.id)
+        if type_prompt == 'callback':
+            return user
+        ## clear context after 30 minutes
+        if (time() - user.time_dump) > 1800:
+            user.clear()
+        user.time_dump = time()
+        type_prompt = {'text': message.text, 'photo': message.caption}.get(type_prompt, type_prompt)
+        logging.info(f'{user_name or message.from_user.id}: "{type_prompt}"')
+        user.text = self.buttons.get(type_prompt, type_prompt)
+        return user
+
+
+
+
+users = UsersMap()
+bot = Bot(token=users.api_keys["telegram"])
 db = DBConnection()
 dp = Dispatcher()
-users = UsersMap()
-
-
-async def check_and_clear(message: types.Message, type_prompt: str) -> User | None:
-    user_name = db.check_user(message.from_user.id)
-    if user_name is None:
-        await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
-        return
-    user = users.get(message.from_user.id)
-    if type_prompt == 'callback':
-        return user
-    ## clear context after 30 minutes
-    if (time() - user.time_dump) > 1800:
-        user.clear()
-    user.time_dump = time()
-    type_prompt = {'text': message.text, 'photo': message.caption}.get(type_prompt, type_prompt)
-    logging.info(f'{user_name or message.from_user.id}: "{type_prompt}"')
-    user.text = CommonData.buttons.get(type_prompt, type_prompt)
-    return user
-
-
-# async def check_and_clear(message: types.Message, type_prompt: str) -> User | None:
-#     user = users.get(message.from_user.id)
-#     if type_prompt == 'callback':
-#         return user
-#     ## clear context after 15 minutes
-#     if (time() - user.time_dump) > 1800:
-#         user.clear()
-#     user.time_dump = time()
-#     user_name = db.check_user(message.from_user.id)
-#     type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
-#     logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{type_prompt}"')
-#     user.text = CommonData.buttons.get(type_prompt, type_prompt)
-#     if user_name is None:
-#         await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
-#         return None
-    
-#     return user
     
 
 @dp.message(CommandStart())
 async def start_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
-    logging.info(f'{user_name[1] if user_name else message.from_user.id}: "/start"')
     if user_name:
         text = f'Доступ открыт. Добро пожаловать {message.from_user.full_name}!'
     else:
         text = f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}'
-    await message.answer(text, reply_markup=CommonData.builder)
-    return
+    await message.answer(text)
 
 
 @dp.message(Command(commands=["add_prompt"]))
@@ -658,13 +633,13 @@ async def add_prompt_handler(message: types.Message):
         return
     # Split the argument into user_id and name
     _, prompt_name, prompt = [arg.strip() for arg in args]
-    if CommonData.context_dict.get(prompt_name):
+    if users.context_dict.get(prompt_name):
         await message.reply(f"Prompt {prompt_name} already exists")
         return
     try:
-        CommonData.context_dict[prompt_name] = prompt
+        users.context_dict[prompt_name] = prompt
         with open('./prompts.json', 'w', encoding="utf-8") as f:
-            json.dump(CommonData.context_dict, f, ensure_ascii=False)
+            json.dump(users.context_dict, f, ensure_ascii=False)
         await message.reply(f"Prompt {prompt_name} added successfully.")
     except Exception as e:
         await message.reply(f"An error occurred: {e}.")
@@ -715,28 +690,32 @@ async def remove_handler(message: types.Message):
 
 @dp.message(Command(commands=["info","clear"]))
 async def short_command_handler(message: types.Message):
-    user = await check_and_clear(message, message.text.lstrip('/'))
-    kwargs = CommonData.set_kwargs(escape(getattr(user, user.text)()))
+    user = await users.check_and_clear(message, message.text.lstrip('/'))
+    if user is None:
+        return
+    kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
     await message.answer(**kwargs)
 
 
 
-@dp.message(lambda message: message.text in CommonData.buttons)
+@dp.message(lambda message: message.text in users.buttons)
 async def clear_command(message: types.Message):
-    user = await check_and_clear(message, 'text')
+    user = await users.check_and_clear(message, 'text')
+    if user is None:
+        return
     if user.text in {'info','clear'}:
-        kwargs = CommonData.set_kwargs(escape(getattr(user, user.text)()))
+        kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
     else:
         builder_inline = InlineKeyboardBuilder()
         command_dict = {'bot': [user.bots, 'бота'],
                         'model': [user.current_bot.models, 'модель'],
-                        'context':[CommonData.context_dict, 'контекст'],
-                        'prompts':[CommonData.template_prompts, 'промпт']}
+                        'context':[users.context_dict, 'контекст'],
+                        'prompts':[users.template_prompts, 'промпт']}
         items = command_dict.get(user.text.split('_')[-1])
         for value in items[0]:
             data = CallbackClass(cb_type=user.text, name=value).pack()
-            builder_inline.button(text=CommonData.make_short_name(value), callback_data=data)
-        kwargs = CommonData.set_kwargs(f'Выберите {items[-1]}:', 
+            builder_inline.button(text=users.make_short_name(value), callback_data=data)
+        kwargs = users.set_kwargs(f'Выберите {items[-1]}:', 
                                        builder_inline.adjust(*[1]*len(items)).as_markup())
     
     await message.answer(**kwargs)
@@ -745,7 +724,9 @@ async def clear_command(message: types.Message):
 
 @dp.message(F.content_type.in_({'photo'}))
 async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
-    user = await check_and_clear(message, 'photo')
+    user = await users.check_and_clear(message, 'photo')
+    if user is None:
+        return
     if user.text is None:
         user.text = 'Следуй системным правилам'
         # return
@@ -762,63 +743,38 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     await message.reply(text_reply)
     tg_photo = await bot.download(message.photo[-1].file_id)
     output = await user.prompt(user.text, tg_photo)
-    async for part in CommonData.split_text(output):
-        await message.answer(**CommonData.set_kwargs(part))
+    async for part in users.split_text(output):
+        await message.answer(**users.set_kwargs(part))
     return
 
 
 @dp.message(F.content_type.in_({'text'}))
 async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
-    user = await check_and_clear(message, 'text')
-    if user.text is None:
+    user = await users.check_and_clear(message, 'text')
+    if user is None or user.text is None:
         return
     try:
-        # if user.text in CommonData.buttons.values():
-        #     if 'change_' in user.text or 'template_prompts' == user.text:
-        #         await make_bth_cb(user, message)
-        #         return
-        #     else:
-        #         output = escape(getattr(user, user.text)())
-        # else:
         await message.reply('Ожидайте...')
         output = await user.prompt(user.text)
-        async for part in CommonData.split_text(output):
-            await message.answer(**CommonData.set_kwargs(part))
+        async for part in users.split_text(output):
+            await message.answer(**users.set_kwargs(part))
         return
     except Exception as e:
         logging.info(e)
-        await message.answer(str(e))
+        await message.answer("Error processing message. See logs for details")
         return
 
 
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')|F.cb_type.contains('template')))
 async def change_callback_handler(query: types.CallbackQuery, callback_data: CallbackClass):
-    user = await check_and_clear(query, 'callback')
+    user = await users.check_and_clear(query, 'callback')
     if callback_data.cb_type == 'template_prompts':
         await query.message.reply('Ожидайте...')
     output = await getattr(user, callback_data.cb_type)(callback_data.name)
-    await query.message.answer(output,CommonData.PARSE_MODE)
+    # await query.message.answer(output,users.PARSE_MODE)
+    await query.message.answer(**users.set_kwargs(output))
     await query.answer()
 
-    
-# async def make_bth_cb(user: User, message: types.Message) -> None: 
-#     '''
-#     Creates callback data with ChangeCallback, 
-#     generates and sends an inline keyboard as reply markup 
-#     '''
-#     builder_inline = InlineKeyboardBuilder()
-
-#     command_dict = {'bot': [user.bots, 'бота'],
-#                     'model': [user.current_bot.models, 'модель'],
-#                     'context':[CommonData.context_dict, 'контекст'],
-#                     'prompts':[CommonData.template_prompts, 'промпт']}
-#     items = command_dict.get(user.text.split('_')[-1])
-#     for value in items[0]:
-#         data = CallbackClass(cb_type=user.text, name=value).pack()
-#         builder_inline.button(text=CommonData.make_short_name(value), callback_data=data)
-
-#     await message.answer(f'Выберите {items[-1]}:', CommonData.PARSE_MODE, 
-#                          reply_markup=builder_inline.adjust(*[1]*len(items)).as_markup())
 
 
 async def main() -> None:
