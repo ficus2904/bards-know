@@ -615,7 +615,7 @@ async def check_and_clear(message: types.Message, type_prompt: str) -> User | No
         user.clear()
     user.time_dump = time()
     if type_prompt in {'info','clear'}:
-        return {'text': getattr(user, type_prompt)(), 
+        return {'text': escape(getattr(user, type_prompt)()), 
                 'parse_mode':CommonData.PARSE_MODE, 
                 'reply_markup': CommonData.builder}
     type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
