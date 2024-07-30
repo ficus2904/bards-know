@@ -689,6 +689,16 @@ async def remove_handler(message: types.Message):
         await message.reply(f"An error occurred: {e}.")
 
 
+@dp.message(Command(commands=["info"]))
+async def info_handler(message: types.Message):
+    if db.check_user(message.from_user.id) is None:
+        return 
+    output = users.get(message.from_user.id).clear()
+    await message.answer(output, CommonData.PARSE_MODE, 
+                        reply_markup=CommonData.builder)
+    return
+
+
 @dp.message(F.content_type.in_({'photo'}))
 async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     user = await check_and_clear(message, 'photo')
