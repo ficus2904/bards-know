@@ -158,11 +158,11 @@ class DBConnection:
         if not self.check_table():
             self.init_table()
 
-    def execute(self, query):
-        self.cursor.execute(query)
+    def execute(self, *args):
+        self.cursor.execute(*args)
 
-    def fetchone(self, query) -> tuple | None:
-        self.execute(query)
+    def fetchone(self, *args) -> tuple | None:
+        self.execute(*args)
         return self.cursor.fetchone()
     
     def fetchall(self, query) -> tuple | None:
