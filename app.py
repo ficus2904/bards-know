@@ -45,7 +45,7 @@ class CommonData:
     buttons: dict = {
             'Добавить контекст':'change_context', 
             'Быстрые команды':'template_prompts',
-            'Вывести инфо':'show_info',
+            'Вывести инфо':'info',
             'Сменить бота':'change_bot', 
             'Очистить контекст':'clear',
             'Изменить модель бота':'change_model'
@@ -127,6 +127,15 @@ class CommonData:
             await asyncio.sleep(0)
 
 
+    async def short_command(command, message):
+        if db.check_user(message.from_user.id) is None:
+            return 
+        user = users.get(message.from_user.id)
+        output = getattr(user, command)()
+        await message.answer(output, CommonData.PARSE_MODE, 
+                            reply_markup=CommonData.builder)
+
+
 class CallbackClass(CallbackData, prefix='callback'):
     cb_type: str
     name: str
@@ -187,8 +196,9 @@ class DBConnection:
         self.cursor.execute(query, (name,))
         self.commit()
     
-    def check_user(self, user_id: int) -> tuple | None:
-        return self.fetchone(f'SELECT * FROM users WHERE id is {user_id}')
+    def check_user(self, user_id: int) -> str | None:
+        answer = self.fetchone("SELECT name FROM users WHERE id = ? LIMIT 1", (user_id,))
+        return answer[0] if answer else None
 
     def commit(self):
         self.conn.commit()
@@ -515,7 +525,7 @@ class User:
         return output
     
 
-    def show_info(self) -> str:
+    def info(self) -> str:
         check_vlm = hasattr(self.current_bot, 'vlm_params')
         is_gemini = self.current_bot.name == 'gemini'
         if is_gemini:
@@ -577,7 +587,7 @@ class User:
 
 class UsersMap():
     def __init__(self):
-        self._user_ins = {}
+        self._user_ins: dict = {}
     
     def get(self, user_id: int) -> User:
         if user_id not in self._user_ins:
@@ -592,22 +602,44 @@ users = UsersMap()
 
 
 async def check_and_clear(message: types.Message, type_prompt: str) -> User | None:
+    user_name = db.check_user(message.from_user.id)
+    logging.info(f'{user_name or message.from_user.id}: "{type_prompt}"')
+    if user_name is None:
+        await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
+        return
     user = users.get(message.from_user.id)
     if type_prompt == 'callback':
         return user
-    ## clear context after 15 minutes
+    ## clear context after 30 minutes
     if (time() - user.time_dump) > 1800:
         user.clear()
     user.time_dump = time()
-    user_name = db.check_user(message.from_user.id)
+    if type_prompt in {'info','clear'}:
+        return {'text': getattr(user, type_prompt)(), 
+                'parse_mode':CommonData.PARSE_MODE, 
+                'reply_markup': CommonData.builder}
     type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
-    logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{type_prompt}"')
     user.text = CommonData.buttons.get(type_prompt, type_prompt)
-    if user_name is None:
-        await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
-        return None
-    
     return user
+
+
+# async def check_and_clear(message: types.Message, type_prompt: str) -> User | None:
+#     user = users.get(message.from_user.id)
+#     if type_prompt == 'callback':
+#         return user
+#     ## clear context after 15 minutes
+#     if (time() - user.time_dump) > 1800:
+#         user.clear()
+#     user.time_dump = time()
+#     user_name = db.check_user(message.from_user.id)
+#     type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
+#     logging.info(f'{user_name[1] if user_name else message.from_user.id}: "{type_prompt}"')
+#     user.text = CommonData.buttons.get(type_prompt, type_prompt)
+#     if user_name is None:
+#         await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
+#         return None
+    
+#     return user
     
 
 @dp.message(CommandStart())
@@ -625,7 +657,7 @@ async def start_handler(message: types.Message):
 @dp.message(Command(commands=["add_prompt"]))
 async def add_prompt_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
-    if not user_name or user_name[1] != 'ADMIN':
+    if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
     args = message.text.split('|', maxsplit=2)
@@ -649,7 +681,7 @@ async def add_prompt_handler(message: types.Message):
 @dp.message(Command(commands=["add"]))
 async def add_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
-    if not user_name or user_name[1] != 'ADMIN':
+    if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
     args = message.text.split(maxsplit=1)
@@ -670,7 +702,7 @@ async def add_handler(message: types.Message):
 @dp.message(Command(commands=["remove"]))
 async def remove_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
-    if not user_name or user_name[1] != 'ADMIN':
+    if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
     args = message.text.split(maxsplit=1)
@@ -689,14 +721,10 @@ async def remove_handler(message: types.Message):
         await message.reply(f"An error occurred: {e}.")
 
 
-@dp.message(Command(commands=["info"]))
+@dp.message(Command(commands=["info","clear"]))
 async def info_handler(message: types.Message):
-    if db.check_user(message.from_user.id) is None:
-        return 
-    output = users.get(message.from_user.id).clear()
-    await message.answer(output, CommonData.PARSE_MODE, 
-                        reply_markup=CommonData.builder)
-    return
+    kwargs = await check_and_clear(message, message.text.lstrip('/'))
+    await message.answer(**kwargs)
 
 
 @dp.message(F.content_type.in_({'photo'}))
@@ -754,7 +782,7 @@ async def change_callback_handler(query: types.CallbackQuery, callback_data: Cal
     if callback_data.cb_type == 'template_prompts':
         await query.message.reply('Ожидайте...')
     output = await getattr(user, callback_data.cb_type)(callback_data.name)
-    await query.message.answer(output)
+    await query.message.answer(output,CommonData.PARSE_MODE)
     await query.answer()
 
     
