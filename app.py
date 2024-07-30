@@ -127,14 +127,6 @@ class CommonData:
             await asyncio.sleep(0)
 
 
-    async def short_command(command, message):
-        if db.check_user(message.from_user.id) is None:
-            return 
-        user = users.get(message.from_user.id)
-        output = getattr(user, command)()
-        await message.answer(output, CommonData.PARSE_MODE, 
-                            reply_markup=CommonData.builder)
-
 
 class CallbackClass(CallbackData, prefix='callback'):
     cb_type: str
@@ -603,7 +595,6 @@ users = UsersMap()
 
 async def check_and_clear(message: types.Message, type_prompt: str) -> User | None:
     user_name = db.check_user(message.from_user.id)
-    logging.info(f'{user_name or message.from_user.id}: "{type_prompt}"')
     if user_name is None:
         await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
         return
@@ -614,10 +605,13 @@ async def check_and_clear(message: types.Message, type_prompt: str) -> User | No
     if (time() - user.time_dump) > 1800:
         user.clear()
     user.time_dump = time()
+    logging.info(f'{user_name or message.from_user.id}: "{type_prompt}"')
     if type_prompt in {'info','clear'}:
         return {'text': escape(getattr(user, type_prompt)()), 
                 'parse_mode':CommonData.PARSE_MODE, 
                 'reply_markup': CommonData.builder}
+    elif type_prompt in {"change_context","template_prompts","change_bot","change_model"}:
+        return user
     type_prompt = {'text':message.text, 'photo': message.caption}.get(type_prompt)
     user.text = CommonData.buttons.get(type_prompt, type_prompt)
     return user
@@ -722,9 +716,27 @@ async def remove_handler(message: types.Message):
 
 
 @dp.message(Command(commands=["info","clear"]))
-async def info_handler(message: types.Message):
+async def short_command_handler(message: types.Message):
     kwargs = await check_and_clear(message, message.text.lstrip('/'))
     await message.answer(**kwargs)
+
+
+@dp.message(Command(commands=["change_context","template_prompts","change_bot","change_model"]))
+async def long_command_handler(message: types.Message):
+    user = await check_and_clear(message, message.text.lstrip('/'))
+    builder_inline = InlineKeyboardBuilder()
+
+    command_dict = {'bot': [user.bots, 'бота'],
+                    'model': [user.current_bot.models, 'модель'],
+                    'context':[CommonData.context_dict, 'контекст'],
+                    'prompts':[CommonData.template_prompts, 'промпт']}
+    items = command_dict.get(message.text.split('_')[-1])
+    for value in items[0]:
+        data = CallbackClass(cb_type=message.text, name=value).pack()
+        builder_inline.button(text=CommonData.make_short_name(value), callback_data=data)
+
+    await message.answer(f'Выберите {items[-1]}:', CommonData.PARSE_MODE, 
+                         reply_markup=builder_inline.adjust(*[1]*len(items)).as_markup())
 
 
 @dp.message(F.content_type.in_({'photo'}))
