@@ -627,12 +627,12 @@ async def add_prompt_handler(message: types.Message):
     if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
-    args = message.text.split('|', maxsplit=2)
-    if len(args) != 3 or '|' in args[-1]:
-        await message.reply("Usage: `/add_prompt | prompt_name | prompt`")
+    args = message.text.split(maxsplit=1)
+    if len(args) != 2 or args[1].count('|') != 1:
+        await message.reply("Usage: `/add_prompt prompt_name | prompt`")
         return
-    # Split the argument into user_id and name
-    _, prompt_name, prompt = [arg.strip() for arg in args]
+    
+    prompt_name, prompt = [arg.strip() for arg in args[1].split("|",maxsplit=1)]
     if users.context_dict.get(prompt_name):
         await message.reply(f"Prompt {prompt_name} already exists")
         return
@@ -645,7 +645,7 @@ async def add_prompt_handler(message: types.Message):
         await message.reply(f"An error occurred: {e}.")
 
 
-@dp.message(Command(commands=["add"]))
+@dp.message(Command(commands=["add_user"]))
 async def add_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
     if user_name != 'ADMIN':
@@ -666,7 +666,7 @@ async def add_handler(message: types.Message):
         await message.reply(f"An error occurred: {e}.")
 
 
-@dp.message(Command(commands=["remove"]))
+@dp.message(Command(commands=["remove_user"]))
 async def remove_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
     if user_name != 'ADMIN':
