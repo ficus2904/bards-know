@@ -390,10 +390,13 @@ class GlifAPI:
                 try:
                     response.raise_for_status()
                     answer = await response.json()
-                    return json.loads(answer['output']) 
+                    try:
+                        return json.loads(answer['output']) 
+                    except Exception as e:
+                        logging.error(e)
+                        return answer['output']
                 except aiohttp.ClientResponseError as e:
                     logging.error(e)
-                    return answer['output']
                 
 
     async def prompt(self, text, image = None) -> str:
@@ -728,9 +731,11 @@ async def image_handler(message: types.Message):
         await message.reply("Usage: `/image prompt`")
         return
     await message.reply('Ожидайте...')
+    kwargs = await user.bots.get('glif')().fetch_image(args[1])
     try:
-        kwargs = await user.bots.get('glif')().fetch_image(args[1])
-        if not isinstance(kwargs, dict):
+        if isinstance(kwargs, None):
+            raise Exception('fetch_image return None')
+        elif isinstance(kwargs, str):
             match = re.search(r'https://[^"]+\.jpg', kwargs)
             kwargs = {"photo":match.group(0) if match else None,
                       "caption":kwargs.split('"caption":"')[-1].rstrip('"}')}
@@ -739,7 +744,7 @@ async def image_handler(message: types.Message):
         else:
             await message.reply(kwargs['caption'])
     except Exception as e:
-        await message.reply(f"An error occurred: {e}.")
+        await message.reply(f"An error occurred: {e}. {kwargs}")
 
 
 
