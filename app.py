@@ -380,7 +380,7 @@ class GlifAPI:
                 
 
 
-    async def fetch_image(self, prompt: str) -> dict | str:
+    async def fetch_image(self, prompt: str) -> dict | str | None:
         url = "https://simple-api.glif.app"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         body = {"id": 'clzj1yoqc000i13n0li4mwa2b', 
@@ -733,7 +733,7 @@ async def image_handler(message: types.Message):
     await message.reply('Ожидайте...')
     kwargs = await user.bots.get('glif')().fetch_image(args[1])
     try:
-        if isinstance(kwargs, None):
+        if kwargs is None:
             raise Exception('fetch_image return None')
         elif isinstance(kwargs, str):
             match = re.search(r'https://[^"]+\.jpg', kwargs)
