@@ -738,11 +738,11 @@ async def image_handler(message: types.Message):
         elif isinstance(kwargs, str):
             match = re.search(r'https://[^"]+\.jpg', kwargs)
             kwargs = {"photo":match.group(0) if match else None,
-                      "caption":kwargs.split('"caption":"')[-1].rstrip('"}')}
+                      "caption":kwargs.split('"caption":"')[-1].rstrip('"}')[:1000]}
         if kwargs['photo']:
             await message.reply_photo(**kwargs)
         else:
-            await message.reply(kwargs['caption'])
+            await message.reply(kwargs['caption'][:1000])
     except Exception as e:
         await message.reply(f"An error occurred: {e}. {kwargs}")
 
