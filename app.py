@@ -19,6 +19,7 @@ from md2tgmd import escape
 import base64
 from PIL import Image, ImageOps
 import io
+import re
 import warnings
 warnings.simplefilter('ignore')
 
@@ -392,7 +393,7 @@ class GlifAPI:
                     return json.loads(answer['output']) 
                 except aiohttp.ClientResponseError as e:
                     logging.error(e)
-                    return 'Error exception'
+                    return answer['output']
                 
 
     async def prompt(self, text, image = None) -> str:
@@ -727,8 +728,18 @@ async def image_handler(message: types.Message):
         await message.reply("Usage: `/image prompt`")
         return
     await message.reply('Ожидайте...')
-    kwargs = await user.bots.get('glif')().fetch_image(args[1])
-    await message.reply_photo(**kwargs)
+    try:
+        kwargs = await user.bots.get('glif')().fetch_image(args[1])
+        if not isinstance(kwargs, dict):
+            match = re.search(r'https://[^"]+\.jpg', kwargs)
+            kwargs = {"photo":match.group(0) if match else None,
+                      "caption":kwargs.split('"caption":"')[-1].rstrip('"}')}
+        if kwargs['photo']:
+            await message.reply_photo(**kwargs)
+        else:
+            await message.reply(kwargs['caption'])
+    except Exception as e:
+        await message.reply(f"An error occurred: {e}.")
 
 
 
