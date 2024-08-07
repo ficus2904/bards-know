@@ -376,7 +376,24 @@ class GlifAPI:
                 except aiohttp.ClientResponseError as e:
                     logging.error(e)
                     return 'Error exception'
-    
+                
+
+
+    async def fetch_image(self, prompt: str) -> dict | str:
+        url = "https://simple-api.glif.app"
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        body = {"id": 'clzj1yoqc000i13n0li4mwa2b', 
+                "inputs": {"initial_prompt": prompt}}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url=url,headers=headers,json=body) as response:
+                try:
+                    response.raise_for_status()
+                    answer = await response.json()
+                    return json.loads(answer['output']) 
+                except aiohttp.ClientResponseError as e:
+                    logging.error(e)
+                    return 'Error exception'
+                
 
     async def prompt(self, text, image = None) -> str:
         system_prompt = self.form_system_prompt()
@@ -591,7 +608,10 @@ class UsersMap():
             await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
             return
         user = self.get(message.from_user.id)
-        if type_prompt == 'callback':
+        if type_prompt in ['callback']:
+            return user
+        if type_prompt in ['image']:
+            logging.info(f'{user_name or message.from_user.id}: "{message.text}"')
             return user
         ## clear context after 30 minutes
         if (time() - user.time_dump) > 1800:
@@ -695,6 +715,20 @@ async def short_command_handler(message: types.Message):
         return
     kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
     await message.answer(**kwargs)
+
+
+@dp.message(Command(commands=["image"]))
+async def image_handler(message: types.Message):
+    user = await users.check_and_clear(message, "image")
+    if user is None:
+        return
+    args = message.text.split(maxsplit=1)
+    if len(args) != 2:
+        await message.reply("Usage: `/image prompt`")
+        return
+    await message.reply('Ожидайте...')
+    kwargs = await user.bots.get('glif')().fetch_image(args[1])
+    await message.reply_photo(**kwargs)
 
 
 
