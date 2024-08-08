@@ -380,7 +380,7 @@ class GlifAPI:
                 
 
 
-    async def fetch_image(self, prompt: str) -> dict | str | None:
+    async def fetch_image(self, prompt: str) -> dict | None:
         url = "https://simple-api.glif.app"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         body = {"id": 'clzj1yoqc000i13n0li4mwa2b', 
@@ -392,9 +392,10 @@ class GlifAPI:
                     answer = await response.json()
                     try:
                         return json.loads(answer['output']) 
-                    except Exception as e:
-                        logging.error(e)
-                        return answer['output']
+                    except Exception:
+                        match = re.search(r'https://[^"]+\.jpg', answer['output'])
+                        return {"photo":match.group(0) if match else None,
+                                "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
                 except aiohttp.ClientResponseError as e:
                     logging.error(e)
                 
@@ -722,7 +723,7 @@ async def short_command_handler(message: types.Message):
 
 
 @dp.message(Command(commands=["image"]))
-async def image_handler(message: types.Message):
+async def image_gen_handler(message: types.Message):
     user = await users.check_and_clear(message, "image")
     if user is None:
         return
@@ -730,15 +731,11 @@ async def image_handler(message: types.Message):
     if len(args) != 2:
         await message.reply("Usage: `/image prompt`")
         return
-    await message.reply('Ожидайте...')
+    await message.reply('Картинка генерируется...')
     kwargs = await user.bots.get('glif')().fetch_image(args[1])
     try:
         if kwargs is None:
             raise Exception('fetch_image return None')
-        elif isinstance(kwargs, str):
-            match = re.search(r'https://[^"]+\.jpg', kwargs)
-            kwargs = {"photo":match.group(0) if match else None,
-                      "caption":kwargs.split('"caption":"')[-1].rstrip('"}')}
         ## max caption length 1024
         kwargs['caption'] = kwargs['caption'][:1000]
         if kwargs['photo']:
