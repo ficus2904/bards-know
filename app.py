@@ -737,7 +737,7 @@ async def image_gen_handler(message: types.Message):
         if kwargs is None:
             raise Exception('fetch_image return None')
         ## max caption length 1024
-        kwargs['caption'] = escape(kwargs['caption'][:1000])
+        kwargs['caption'] = f'`{escape(kwargs['caption'][:1000])}`'
         if kwargs['photo']:
             await message.reply_photo(**kwargs,parse_mode=users.PARSE_MODE)
         else:
@@ -820,6 +820,7 @@ async def change_callback_handler(query: types.CallbackQuery, callback_data: Cal
         await query.message.reply('Ожидайте...')
     output = await getattr(user, callback_data.cb_type)(callback_data.name)
     # await query.message.answer(output,users.PARSE_MODE)
+    await query.message.edit_reply_markup(reply_markup=None)
     await query.message.answer(**users.set_kwargs(output))
     await query.answer()
 
