@@ -783,9 +783,8 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
         user.text = 'Следуй системным правилам'
         # return
     
-    if user.current_bot.name not in ['nvidia', 'gemini']:
-        text_reply = "Переключите бота на nvidia или gemini для обработки изображений"
-        await message.reply(text_reply)
+    if user.current_bot.name != 'gemini':
+        await message.reply(f"{user.change_bot('gemini')} для обработки изображения")
         return
     
     text_reply = "Изображение получено! Ожидайте..."
