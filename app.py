@@ -737,7 +737,7 @@ async def image_gen_handler(message: types.Message):
         if kwargs is None:
             raise Exception('fetch_image return None')
         ## max caption length 1024
-        kwargs['caption'] = kwargs['caption'][:1000]
+        kwargs['caption'] = escape(kwargs['caption'][:1000])
         if kwargs['photo']:
             await message.reply_photo(**kwargs,parse_mode=users.PARSE_MODE)
         else:
