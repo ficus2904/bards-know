@@ -739,9 +739,9 @@ async def image_gen_handler(message: types.Message):
         ## max caption length 1024
         kwargs['caption'] = kwargs['caption'][:1000]
         if kwargs['photo']:
-            await message.reply_photo(**kwargs)
+            await message.reply_photo(**kwargs,parse_mode=users.PARSE_MODE)
         else:
-            await message.reply(kwargs['caption'])
+            await message.reply(users.set_kwargs(kwargs['caption']))
     except Exception as e:
         await message.reply(f"An error occurred: {e}. {kwargs}")
 
@@ -777,7 +777,7 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     if user is None:
         return
     if user.text is None:
-        user.text = 'Следуй системным правилам'
+        user.text = '' # Следуй системным правилам
         # return
     
     if user.current_bot.name != 'gemini':
