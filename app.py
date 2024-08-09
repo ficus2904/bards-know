@@ -383,8 +383,11 @@ class GlifAPI:
     async def fetch_image(self, prompt: str) -> dict:
         url = "https://simple-api.glif.app"
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        body = {"id": 'clzj1yoqc000i13n0li4mwa2b', 
-                "inputs": {"initial_prompt": prompt}}
+        body = {"id": {
+                        True:'clzmbpo6k000u1pb2ar3udjff',
+                        False:'clzj1yoqc000i13n0li4mwa2b'
+                        }.get(prompt.startswith('-f')), 
+                "inputs": {"initial_prompt": prompt.lstrip('-f ')}}
         async with aiohttp.ClientSession() as session:
             async with session.post(url=url,headers=headers,json=body, timeout=90) as response:
                 try:
@@ -738,7 +741,7 @@ async def image_gen_handler(message: types.Message):
         return
     args = message.text.split(maxsplit=1)
     if len(args) != 2:
-        await message.reply("Usage: `/image prompt`")
+        await message.reply("Usage: `/image prompt` or `/image -f prompt`")
         return
     await message.reply('Картинка генерируется...')
     kwargs = await GlifAPI().fetch_image(args[1])
