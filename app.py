@@ -380,24 +380,33 @@ class GlifAPI:
                 
 
 
-    async def fetch_image(self, prompt: str) -> dict | None:
+    async def fetch_image(self, prompt: str) -> dict:
         url = "https://simple-api.glif.app"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         body = {"id": 'clzj1yoqc000i13n0li4mwa2b', 
                 "inputs": {"initial_prompt": prompt}}
         async with aiohttp.ClientSession() as session:
-            async with session.post(url=url,headers=headers,json=body) as response:
+            async with session.post(url=url,headers=headers,json=body, timeout=90) as response:
                 try:
                     response.raise_for_status()
                     answer = await response.json()
                     try:
-                        return json.loads(answer['output']) 
+                        return json.loads(answer['output'])
                     except Exception:
                         match = re.search(r'https://[^"]+\.jpg', answer['output'])
                         return {"photo":match.group(0) if match else None,
                                 "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
-                except aiohttp.ClientResponseError as e:
-                    logging.error(e)
+                except Exception as e:
+                    match e:
+                        case asyncio.TimeoutError():
+                            logging.error(error_msg := 'Timeout error')
+                        case aiohttp.ClientResponseError():
+                            logging.error(error_msg := f'HTTP error {e.status}: {e.message}')
+                        case KeyError():
+                            logging.error(error_msg := 'No output data')
+                        case _:
+                            logging.error(error_msg := f'Unexpected error: {str(e)}')
+                    return {'error': error_msg}
                 
 
     async def prompt(self, text, image = None) -> str:
@@ -732,18 +741,18 @@ async def image_gen_handler(message: types.Message):
         await message.reply("Usage: `/image prompt`")
         return
     await message.reply('Картинка генерируется...')
-    kwargs = await user.bots.get('glif')().fetch_image(args[1])
+    kwargs = await GlifAPI().fetch_image(args[1])
     try:
-        if kwargs is None:
-            raise Exception('fetch_image return None')
+        if 'error' in kwargs:
+            raise Exception()
         ## max caption length 1024
         kwargs['caption'] = f'`{escape(kwargs['caption'][:1000])}`'
         if kwargs['photo']:
-            await message.reply_photo(**kwargs,parse_mode=users.PARSE_MODE)
+            await message.reply_photo(**kwargs, parse_mode=users.PARSE_MODE)
         else:
             await message.reply(users.set_kwargs(kwargs['caption']))
-    except Exception as e:
-        await message.reply(f"An error occurred: {e}. {kwargs}")
+    except Exception:
+        await message.reply(f"Ошибка: {kwargs}")
 
 
 
