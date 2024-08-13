@@ -751,7 +751,8 @@ async def image_gen_handler(message: types.Message):
         ## max caption length 1024
         kwargs['caption'] = f'`{escape(kwargs['caption'][:1000])}`'
         if kwargs['photo']:
-            await message.reply_photo(**kwargs, parse_mode=users.PARSE_MODE)
+            # await message.reply_photo(**kwargs, parse_mode=users.PARSE_MODE)
+            await message.answer_photo(**kwargs, parse_mode=users.PARSE_MODE)
         else:
             await message.reply(users.set_kwargs(kwargs['caption']))
     except Exception:
@@ -793,7 +794,8 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
         # return
     
     if user.current_bot.name != 'gemini':
-        await message.reply(f"{user.change_bot('gemini')} для обработки изображения")
+        await user.change_bot('gemini')
+        await message.reply("Выбран бот gemini для обработки изображения")
         return
     
     text_reply = "Изображение получено! Ожидайте..."
