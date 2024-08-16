@@ -683,6 +683,46 @@ async def add_prompt_handler(message: types.Message):
         await message.reply(f"An error occurred: {e}.")
 
 
+@dp.message(Command(commands=["context"]))
+async def context_handler(message: types.Message):
+    user_name = db.check_user(message.from_user.id)
+    if user_name != 'ADMIN':
+        await message.reply("You don't have admin privileges")
+        return
+    args = message.text.split(maxsplit=2)
+    if len(args) != 3 and not args[1].startswith('-'):
+        await message.reply("Usage: `/context [-i/-r/-a] prompt_name [| prompt]`")
+        return
+    
+    _, arg, prompt_body = args
+    if arg == '-i' and prompt_body in users.context_dict:
+        await message.reply(escape(users.context_dict[prompt_body]))
+        return
+    
+    if arg == '-r' and prompt_body in users.context_dict:
+        users.context_dict.pop(prompt_body)
+        with open('./prompts.json', 'w', encoding="utf-8") as f:
+            json.dump(users.context_dict, f, ensure_ascii=False)
+        await message.reply(f"Context {prompt_body} removed successfully.")
+        return
+    
+    if arg != '-a' and not prompt_body.count('|') == 1:
+        await message.reply("Usage: `/context -a prompt_name | prompt`")
+        return
+    
+    prompt_name, prompt = [el.strip() for el in prompt_body.split("|",maxsplit=1)]
+    if users.context_dict.get(prompt_name):
+        await message.reply(f"Context {prompt_name} already exists")
+        return
+    try:
+        users.context_dict[prompt_name] = prompt
+        with open('./prompts.json', 'w', encoding="utf-8") as f:
+            json.dump(users.context_dict, f, ensure_ascii=False)
+        await message.reply(f"Context {prompt_name} added successfully.")
+    except Exception as e:
+        await message.reply(f"An error occurred: {e}.")
+
+
 @dp.message(Command(commands=["add_user"]))
 async def add_handler(message: types.Message):
     user_name = db.check_user(message.from_user.id)
