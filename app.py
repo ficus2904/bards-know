@@ -659,28 +659,28 @@ async def start_handler(message: types.Message):
     await message.answer(text)
 
 
-@dp.message(Command(commands=["add_prompt"]))
-async def add_prompt_handler(message: types.Message):
-    user_name = db.check_user(message.from_user.id)
-    if user_name != 'ADMIN':
-        await message.reply("You don't have admin privileges")
-        return
-    args = message.text.split(maxsplit=1)
-    if len(args) != 2 or args[1].count('|') != 1:
-        await message.reply("Usage: `/add_prompt prompt_name | prompt`")
-        return
+# @dp.message(Command(commands=["add_prompt"]))
+# async def add_prompt_handler(message: types.Message):
+#     user_name = db.check_user(message.from_user.id)
+#     if user_name != 'ADMIN':
+#         await message.reply("You don't have admin privileges")
+#         return
+#     args = message.text.split(maxsplit=1)
+#     if len(args) != 2 or args[1].count('|') != 1:
+#         await message.reply("Usage: `/add_prompt prompt_name | prompt`")
+#         return
     
-    prompt_name, prompt = [arg.strip() for arg in args[1].split("|",maxsplit=1)]
-    if users.context_dict.get(prompt_name):
-        await message.reply(f"Prompt {prompt_name} already exists")
-        return
-    try:
-        users.context_dict[prompt_name] = prompt
-        with open('./prompts.json', 'w', encoding="utf-8") as f:
-            json.dump(users.context_dict, f, ensure_ascii=False)
-        await message.reply(f"Prompt {prompt_name} added successfully.")
-    except Exception as e:
-        await message.reply(f"An error occurred: {e}.")
+#     prompt_name, prompt = [arg.strip() for arg in args[1].split("|",maxsplit=1)]
+#     if users.context_dict.get(prompt_name):
+#         await message.reply(f"Prompt {prompt_name} already exists")
+#         return
+#     try:
+#         users.context_dict[prompt_name] = prompt
+#         with open('./prompts.json', 'w', encoding="utf-8") as f:
+#             json.dump(users.context_dict, f, ensure_ascii=False)
+#         await message.reply(f"Prompt {prompt_name} added successfully.")
+#     except Exception as e:
+#         await message.reply(f"An error occurred: {e}.")
 
 
 @dp.message(Command(commands=["context"]))
@@ -696,7 +696,7 @@ async def context_handler(message: types.Message):
     
     _, arg, prompt_body = args
     if arg == '-i' and prompt_body in users.context_dict:
-        await message.reply(escape(users.context_dict[prompt_body]))
+        await message.reply(users.set_kwargs(escape(users.context_dict[prompt_body])))
         return
     
     if arg == '-r' and prompt_body in users.context_dict:
