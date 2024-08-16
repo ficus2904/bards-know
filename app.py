@@ -538,7 +538,7 @@ class UsersMap():
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT = 'glif'
+        self.DEFAULT_BOT = 'gemini' #'glif'
         self.builder = self.create_builder()
 
 
