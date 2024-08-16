@@ -696,7 +696,7 @@ async def context_handler(message: types.Message):
     
     _, arg, prompt_body = args
     if arg == '-i' and prompt_body in users.context_dict:
-        await message.reply(users.set_kwargs(escape(users.context_dict[prompt_body])))
+        await message.reply(**users.set_kwargs(escape(users.context_dict[prompt_body])))
         return
     
     if arg == '-r' and prompt_body in users.context_dict:
@@ -795,7 +795,7 @@ async def image_gen_handler(message: types.Message):
             # await message.reply_photo(**kwargs, parse_mode=users.PARSE_MODE)
             await message.answer_photo(**kwargs, parse_mode=users.PARSE_MODE)
         else:
-            await message.reply(users.set_kwargs(kwargs['caption']))
+            await message.reply(**users.set_kwargs(kwargs['caption']))
     except Exception:
         await message.reply(f"Ошибка: {kwargs}")
 
