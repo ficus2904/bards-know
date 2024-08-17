@@ -127,30 +127,23 @@ class GeminiAPI:
         self.reset_chat()
 
     async def prompt(self, text: str, image = None) -> str:
-        # self.context.append({'role':'user', 'parts':[text]})
-        # if image is None:
-        #     self.model = genai.GenerativeModel(self.models[0], **self.safety_settings)
-        #     response = self.model.generate_content(self.context)
-        # else:
-        #     self.model = genai.GenerativeModel(self.models[1], **self.safety_settings)
-        #     response = self.model.generate_content([text, Image.open(image)])
-
-
-        # response = self.model.generate_content([self.context, Image.open(image) if image else None])
         if image is None:
             response = self.chat.send_message(text)
         else:
             response = self.chat.send_message([text, Image.open(image)])
-
-        # self.context.append({'role':'model', 'parts':[response.text]})
-
-        # print(len(self.chat.history))
         return response.text
     
     def reset_chat(self):
         self.model = genai.GenerativeModel(self.current_model, **self.settings)
         self.context = []
         self.chat = self.model.start_chat(history=self.context)
+
+
+    async def get_enhanced_prompt(self, init_prompt: str) -> str:
+        self.settings['system_instruction'] = users.context_dict.get('FLUX')
+        self.reset_chat()
+        enhanced_prompt = await self.prompt(init_prompt)
+        return enhanced_prompt
 
 
 
@@ -380,7 +373,7 @@ class GlifAPI:
                 
 
 
-    async def fetch_image(self, prompt: str) -> dict:
+    async def fetch_image_glif(self, prompt: str) -> dict:
         url = "https://simple-api.glif.app"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         body = {"id": {
@@ -399,6 +392,38 @@ class GlifAPI:
                         match = re.search(r'https://[^"]+\.jpg', answer['output'])
                         return {"photo":match.group(0) if match else None,
                                 "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
+                except Exception as e:
+                    match e:
+                        case asyncio.TimeoutError():
+                            logging.error(error_msg := 'Timeout error')
+                        case aiohttp.ClientResponseError():
+                            logging.error(error_msg := f'HTTP error {e.status}: {e.message}')
+                        case KeyError():
+                            logging.error(error_msg := 'No output data')
+                        case _:
+                            logging.error(error_msg := f'Unexpected error: {str(e)}')
+                    return {'error': error_msg}
+                
+
+    async def fetch_image_fal(self, prompt: str) -> dict:
+        url = "https://fal.run/fal-ai/flux-pro"
+        headers = {"Authorization": f"Key {users.api_keys["fal"]}",
+                   'Content-Type': 'application/json'}
+        body = {"prompt": prompt,
+                "image_size": "portrait_4_3", # Possible values: "square_hd", "square", "portrait_4_3", "portrait_16_9", "landscape_4_3", "landscape_16_9"
+                "num_inference_steps": 30,
+                "guidance_scale": 3.5,
+                "num_images": 1,
+                "safety_tolerance": "5"}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url=url,headers=headers,json=body, timeout=90) as response:
+                try:
+                    response.raise_for_status()
+                    answer = await response.json()
+                    try:
+                        return answer['images'][0]['url']
+                    except Exception:
+                        return str(answer)
                 except Exception as e:
                     match e:
                         case asyncio.TimeoutError():
@@ -775,6 +800,30 @@ async def short_command_handler(message: types.Message):
     await message.answer(**kwargs)
 
 
+# @dp.message(Command(commands=["image"]))
+# async def image_gen_handler(message: types.Message):
+#     user = await users.check_and_clear(message, "image")
+#     if user is None:
+#         return
+#     args = message.text.split(maxsplit=1)
+#     if len(args) != 2:
+#         await message.reply("Usage: `/image prompt` or `/image -f prompt`")
+#         return
+#     await message.reply('Картинка генерируется...')
+#     kwargs = await GlifAPI().fetch_image(args[1])
+#     try:
+#         if 'error' in kwargs:
+#             raise Exception()
+#         ## max caption length 1024
+#         kwargs['caption'] = f'`{escape(kwargs['caption'][:1000])}`'
+#         if kwargs['photo']:
+#             await message.answer_photo(**kwargs, parse_mode=users.PARSE_MODE)
+#         else:
+#             await message.reply(**users.set_kwargs(kwargs['caption']))
+#     except Exception:
+#         await message.reply(f"Ошибка: {kwargs}")
+
+
 @dp.message(Command(commands=["image"]))
 async def image_gen_handler(message: types.Message):
     user = await users.check_and_clear(message, "image")
@@ -784,15 +833,22 @@ async def image_gen_handler(message: types.Message):
     if len(args) != 2:
         await message.reply("Usage: `/image prompt` or `/image -f prompt`")
         return
+    
     await message.reply('Картинка генерируется...')
-    kwargs = await GlifAPI().fetch_image(args[1])
+
+    if args[1].startswith("-f"):
+        caption = ''
+    else:
+        caption = await GeminiAPI().get_enhanced_prompt(args[1].lstrip('-f '))
+
+    image_url = await GlifAPI().fetch_image_fal(caption or args[1])
     try:
-        if 'error' in kwargs:
+        if 'error' in image_url:
             raise Exception()
+        kwargs = {'photo': image_url, 'caption': caption}
         ## max caption length 1024
         kwargs['caption'] = f'`{escape(kwargs['caption'][:1000])}`'
         if kwargs['photo']:
-            # await message.reply_photo(**kwargs, parse_mode=users.PARSE_MODE)
             await message.answer_photo(**kwargs, parse_mode=users.PARSE_MODE)
         else:
             await message.reply(**users.set_kwargs(kwargs['caption']))
