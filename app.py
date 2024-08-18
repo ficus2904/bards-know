@@ -119,7 +119,7 @@ class GeminiAPI:
             },
             'system_instruction': None
         }
-        self.models = ['gemini-1.5-pro-latest','gemini-1.5-flash-latest', ] # gemini-pro gemini-pro-vision
+        self.models = ['gemini-1.5-pro-exp-0801','gemini-1.5-flash-latest', ] # gemini-1.5-pro-latest
         self.current_model = self.models[0]
         self.model = None
         self.context = []
