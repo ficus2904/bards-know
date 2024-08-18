@@ -130,7 +130,7 @@ class GeminiAPI:
         if image is None:
             response = self.chat.send_message(text)
         else:
-            response = self.chat.send_message([text, Image.open(image)])
+            response = self.chat.send_message([Image.open(image), text])
         return response.text
     
     def reset_chat(self):
