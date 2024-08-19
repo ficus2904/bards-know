@@ -1,27 +1,28 @@
-import asyncio
 import os
+import io
+import re
+import json
+import base64
+import asyncio
 import aiohttp
 import logging
+import warnings
+import sqlite3
+import cohere
+import atexit
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
-import cohere
+from functools import lru_cache
+from time import time
 from groq import Groq
 from openai import OpenAI
-import json
-import sqlite3
-import atexit
-from time import time
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
-import base64
 from PIL import Image, ImageOps
-import io
-import re
-import warnings
 from dotenv import load_dotenv
 load_dotenv()
 warnings.simplefilter('ignore')
@@ -108,28 +109,6 @@ class DBConnection:
 
 
 
-# class SingletonAPI:  
-#     """Base class for singleton API classes"""  
-#     _instances = {}  
-
-#     def __new__(cls, user_id, *args, **kwargs):  
-#         # Check if the instance already exists for the user_id  
-#         if user_id in cls._instances:  
-#             return cls._instances[user_id]  
-
-#         # Create a new instance since it doesn't exist  
-#         instance = super(SingletonAPI, cls).__new__(cls)  
-#         cls._instances[user_id] = instance  
-#         instance.__initialized = False  # Flag to track initialization status  
-#         return instance  
-
-#     def __init__(self, user_id):  
-#         # Avoid re-initializing an existing instance  
-#         if not getattr(self, '__initialized', False):  # Improved check for initialization  
-#             self.user_id = user_id  
-#             self.__initialized = True  # Set the flag to True after initialization
-
-
 class GeminiAPI():
     """Class for Gemini API"""
     genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
@@ -213,7 +192,7 @@ class GroqAPI():
         if image is None:
             body = {'role':'user', 'content': text}
         else:
-            body = User.make_multimodal_body(text, image)
+            body = User.make_multi_modal_body(text, image)
         self.context.append(body)
         response = self.client.chat.completions.create(
             model=self.current_model,
@@ -478,12 +457,23 @@ class GlifAPI():
 
 
 
+class APIFactory:
+    '''A factory pattern for creating bot interfaces'''
+    def __init__(self):
+        self._instances: dict = {}
+        self.bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI]
+        self.bots: dict = {bot_class.name:bot_class for bot_class in self.bots_lst}
+
+    def get(self, bot_name: str):
+        return self._instances.setdefault(bot_name, self.bots[bot_name]())
+
+
+
 class User:
     '''Specific user interface in chat'''
     def __init__(self):
-        self.bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI]
-        self.bots: dict = {bot_class.name:bot_class for bot_class in self.bots_lst}
-        self.current_bot = self.bots.get(users.DEFAULT_BOT)()
+        self.api_factory = APIFactory()
+        self.current_bot = self.api_factory.get(users.DEFAULT_BOT)
         self.time_dump = time()
         self.text = None
         
@@ -529,17 +519,18 @@ class User:
 
 
     async def change_bot(self, bot_name: str) -> str:
-        self.current_bot = self.bots.get(bot_name)()
+        self.current_bot = self.api_factory.get(bot_name)
         self.clear()
         return f'Смена бота на {self.current_bot.name}'
     
 
     async def change_model(self, model_name: str) -> str:
-        self.current_bot.current_model = model_name
-        if hasattr(self.current_bot, 'vlm_params') and model_name in self.current_bot.vlm_params:
+        cur_bot = self.current_bot
+        model = next((el for el in cur_bot.models if model_name in el), cur_bot.current_model)
+        self.current_bot.current_model = model
+        if hasattr(cur_bot, 'vlm_params') and model_name in cur_bot.vlm_params:
             self.current_bot.current_vlm_model = model_name
         self.clear()
-        # output = re.split(r'-|/',model_name, maxsplit=1)[-1]
         return f'Смена модели на {users.make_short_name(model_name)}'
 
 
@@ -551,7 +542,7 @@ class User:
         return 'Контекст диалога отчищен'
     
 
-    def make_multimodal_body(text, image):
+    def make_multi_modal_body(text, image):
         '''DEPRECATED'''
         return {
             'role':'user', 
@@ -575,7 +566,7 @@ class User:
 class UsersMap():
     '''Main storage of user's sessions, common variables and functions'''
     def __init__(self):
-        self._user_ins: dict = {}
+        self._user_instances: dict[int, User] = {}
         self.context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
         self.template_prompts: dict = {
                 'Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
@@ -594,8 +585,8 @@ class UsersMap():
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT = 'gemini' #'glif'
-        self.builder = self.create_builder()
+        self.DEFAULT_BOT: str = 'gemini' #'glif'
+        self.builder: ReplyKeyboardBuilder = self.create_builder()
 
 
     def create_builder(self) -> ReplyKeyboardBuilder:
@@ -604,11 +595,9 @@ class UsersMap():
             builder.button(text=display_text)
         return builder.adjust(3,3).as_markup()
 
-    
+    @lru_cache(maxsize=None)
     def get(self, user_id: int) -> User:
-        if user_id not in self._user_ins:
-            self._user_ins[user_id] = User()
-        return self._user_ins[user_id]
+        return self._user_instances.setdefault(user_id, User())
     
 
     def resize_image(self, image: io.BytesIO, max_b64_length=180_000, max_file_size_kb=450):
@@ -873,13 +862,13 @@ async def clear_command(message: types.Message):
         kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
     else:
         builder_inline = InlineKeyboardBuilder()
-        command_dict = {'bot': [user.bots, 'бота'],
+        command_dict = {'bot': [user.api_factory.bots, 'бота'],
                         'model': [user.current_bot.models, 'модель'],
                         'context':[users.context_dict, 'контекст'],
                         'prompts':[users.template_prompts, 'промпт']}
         items = command_dict.get(user.text.split('_')[-1])
         for value in items[0]:
-            data = CallbackClass(cb_type=user.text, name=value).pack()
+            data = CallbackClass(cb_type=user.text, name=users.make_short_name(value)).pack()
             builder_inline.button(text=users.make_short_name(value), callback_data=data)
         kwargs = users.set_kwargs(f'Выберите {items[-1]}:', 
                                        builder_inline.adjust(*[1]*len(items)).as_markup())
@@ -938,9 +927,8 @@ async def change_callback_handler(query: types.CallbackQuery, callback_data: Cal
     if callback_data.cb_type == 'template_prompts':
         await query.message.reply('Ожидайте...')
     output = await getattr(user, callback_data.cb_type)(callback_data.name)
-    # await query.message.answer(output,users.PARSE_MODE)
     await query.message.edit_reply_markup(reply_markup=None)
-    await query.message.answer(**users.set_kwargs(output))
+    await query.message.answer(output)
     await query.answer()
 
 
