@@ -590,7 +590,6 @@ class UsersMap():
     '''Main storage of user's sessions, common variables and functions'''
     def __init__(self):
         self._user_ins: dict = {}
-        self.api_keys: dict = json.loads(open('./api_keys.json').read())
         self.context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
         self.template_prompts: dict = {
                 'Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
