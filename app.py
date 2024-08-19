@@ -1,4 +1,5 @@
 import asyncio
+import os
 import aiohttp
 import logging
 import google.generativeai as genai
@@ -21,6 +22,8 @@ from PIL import Image, ImageOps
 import io
 import re
 import warnings
+from dotenv import load_dotenv
+load_dotenv()
 warnings.simplefilter('ignore')
 
 # python app.py
@@ -107,9 +110,16 @@ class DBConnection:
 
 class GeminiAPI:
     """Class for Gemini API"""
+    genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
     name = 'gemini'
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(GeminiAPI, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        genai.configure(api_key=users.api_keys["gemini"])
         self.settings = { 
             'safety_settings': {
                 HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
@@ -150,8 +160,15 @@ class GeminiAPI:
 class CohereAPI:
     """Class for Cohere API"""
     name = 'cohere'
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(CohereAPI, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        self.co = cohere.Client(users.api_keys["cohere"])
+        self.co = cohere.Client(os.getenv('COHERE_API_KEY'))
         self.models = ['command-r-plus','command-r','command','command-light','c4ai-aya-23']
         self.current_model = self.models[0]
         self.context = []
@@ -172,8 +189,15 @@ class CohereAPI:
 class GroqAPI:
     """Class for Groq API"""
     name = 'groq'
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(GroqAPI, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        self.client = Groq(api_key=users.api_keys["groq"])
+        self.client = Groq(api_key=os.getenv('GROQ_API_KEY'))
         self.models = ['llama3-70b-8192',
                        'llama3-groq-70b-8192-tool-use-preview',
                        'whisper-large-v3'] # https://console.groq.com/docs/models
@@ -200,8 +224,15 @@ class GroqAPI:
 class NvidiaAPI:
     """Class for Nvidia API"""
     name = 'nvidia'
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(NvidiaAPI, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        self.client = OpenAI(api_key=users.api_keys["nvidia"],
+        self.client = OpenAI(api_key=os.getenv('NVIDIA_API_KEY'),
                              base_url = "https://integrate.api.nvidia.com/v1")
         self.models = [
                         'meta/llama-3.1-405b-instruct',
@@ -295,8 +326,15 @@ class NvidiaAPI:
 class TogetherAPI:
     """Class for Together API"""
     name = 'together'
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(TogetherAPI, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        self.client = OpenAI(api_key=users.api_keys["together"],
+        self.client = OpenAI(api_key=os.getenv('TOGETHER_API_KEY'),
                              base_url="https://api.together.xyz/v1")
         self.models = [
                         'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',
@@ -328,8 +366,15 @@ class TogetherAPI:
 class GlifAPI:
     """Class for Glif API"""
     name = 'glif'
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(GlifAPI, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        self.api_key = users.api_keys["glif"]
+        self.api_key = os.getenv('GLIF_API_KEY')
         self.models_with_ids = {
                                 "claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
                                 "GPT4o":"clxx330wj000ipbq9rwh4hmp3",
@@ -407,7 +452,7 @@ class GlifAPI:
 
     async def fetch_image_fal(self, prompt: str) -> dict:
         url = "https://fal.run/fal-ai/flux-pro"
-        headers = {"Authorization": f"Key {users.api_keys["fal"]}",
+        headers = {"Authorization": f"Key {os.getenv('FAL_API_KEY')}",
                    'Content-Type': 'application/json'}
         body = {"prompt": prompt,
                 "image_size": "portrait_4_3", # Possible values: "square_hd", "square", "portrait_4_3", "portrait_16_9", "landscape_4_3", "landscape_16_9"
@@ -499,6 +544,7 @@ class User:
 
     async def change_bot(self, bot_name: str) -> str:
         self.current_bot = self.bots.get(bot_name)()
+        self.clear()
         return f'Смена бота на {self.current_bot.name}'
     
 
@@ -669,7 +715,7 @@ class UsersMap():
 
 
 users = UsersMap()
-bot = Bot(token=users.api_keys["telegram"])
+bot = Bot(token=os.getenv('TELEGRAM_KEY'))
 db = DBConnection()
 dp = Dispatcher()
     
@@ -682,30 +728,6 @@ async def start_handler(message: types.Message):
     else:
         text = f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}'
     await message.answer(text)
-
-
-# @dp.message(Command(commands=["add_prompt"]))
-# async def add_prompt_handler(message: types.Message):
-#     user_name = db.check_user(message.from_user.id)
-#     if user_name != 'ADMIN':
-#         await message.reply("You don't have admin privileges")
-#         return
-#     args = message.text.split(maxsplit=1)
-#     if len(args) != 2 or args[1].count('|') != 1:
-#         await message.reply("Usage: `/add_prompt prompt_name | prompt`")
-#         return
-    
-#     prompt_name, prompt = [arg.strip() for arg in args[1].split("|",maxsplit=1)]
-#     if users.context_dict.get(prompt_name):
-#         await message.reply(f"Prompt {prompt_name} already exists")
-#         return
-#     try:
-#         users.context_dict[prompt_name] = prompt
-#         with open('./prompts.json', 'w', encoding="utf-8") as f:
-#             json.dump(users.context_dict, f, ensure_ascii=False)
-#         await message.reply(f"Prompt {prompt_name} added successfully.")
-#     except Exception as e:
-#         await message.reply(f"An error occurred: {e}.")
 
 
 @dp.message(Command(commands=["context"]))

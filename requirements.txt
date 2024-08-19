@@ -1,5 +1,6 @@
 aiogram
 google-generativeai
+python-dotenv
 cohere
 pillow
 groq

@@ -1,6 +1,6 @@
 .venv/
 env/
-/api_keys.json
+/.env
 /runtime.txt
 .gitignore
 /Procfile
