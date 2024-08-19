@@ -108,17 +108,33 @@ class DBConnection:
 
 
 
-class GeminiAPI:
+# class SingletonAPI:  
+#     """Base class for singleton API classes"""  
+#     _instances = {}  
+
+#     def __new__(cls, user_id, *args, **kwargs):  
+#         # Check if the instance already exists for the user_id  
+#         if user_id in cls._instances:  
+#             return cls._instances[user_id]  
+
+#         # Create a new instance since it doesn't exist  
+#         instance = super(SingletonAPI, cls).__new__(cls)  
+#         cls._instances[user_id] = instance  
+#         instance.__initialized = False  # Flag to track initialization status  
+#         return instance  
+
+#     def __init__(self, user_id):  
+#         # Avoid re-initializing an existing instance  
+#         if not getattr(self, '__initialized', False):  # Improved check for initialization  
+#             self.user_id = user_id  
+#             self.__initialized = True  # Set the flag to True after initialization
+
+
+class GeminiAPI():
     """Class for Gemini API"""
     genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
     name = 'gemini'
-    _instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(GeminiAPI, cls).__new__(cls)
-        return cls._instance
-    
     def __init__(self):
         self.settings = { 
             'safety_settings': {
@@ -157,16 +173,10 @@ class GeminiAPI:
 
 
 
-class CohereAPI:
+class CohereAPI():
     """Class for Cohere API"""
     name = 'cohere'
-    _instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(CohereAPI, cls).__new__(cls)
-        return cls._instance
-    
     def __init__(self):
         self.co = cohere.Client(os.getenv('COHERE_API_KEY'))
         self.models = ['command-r-plus','command-r','command','command-light','c4ai-aya-23']
@@ -186,16 +196,10 @@ class CohereAPI:
 
 
 
-class GroqAPI:
+class GroqAPI():
     """Class for Groq API"""
     name = 'groq'
-    _instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(GroqAPI, cls).__new__(cls)
-        return cls._instance
-    
     def __init__(self):
         self.client = Groq(api_key=os.getenv('GROQ_API_KEY'))
         self.models = ['llama3-70b-8192',
@@ -221,15 +225,9 @@ class GroqAPI:
 
 
 
-class NvidiaAPI:
+class NvidiaAPI():
     """Class for Nvidia API"""
     name = 'nvidia'
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(NvidiaAPI, cls).__new__(cls)
-        return cls._instance
     
     def __init__(self):
         self.client = OpenAI(api_key=os.getenv('NVIDIA_API_KEY'),
@@ -323,15 +321,9 @@ class NvidiaAPI:
         
 
 
-class TogetherAPI:
+class TogetherAPI():
     """Class for Together API"""
     name = 'together'
-    _instance = None
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(TogetherAPI, cls).__new__(cls)
-        return cls._instance
     
     def __init__(self):
         self.client = OpenAI(api_key=os.getenv('TOGETHER_API_KEY'),
@@ -363,16 +355,10 @@ class TogetherAPI:
 
 
 
-class GlifAPI:
+class GlifAPI():
     """Class for Glif API"""
     name = 'glif'
-    _instance = None
 
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super(GlifAPI, cls).__new__(cls)
-        return cls._instance
-    
     def __init__(self):
         self.api_key = os.getenv('GLIF_API_KEY')
         self.models_with_ids = {
