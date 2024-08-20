@@ -11,6 +11,7 @@ import sqlite3
 import cohere
 import atexit
 import google.generativeai as genai
+from abc import ABC, abstractmethod
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from functools import lru_cache
 from time import time
@@ -28,7 +29,7 @@ load_dotenv()
 warnings.simplefilter('ignore')
 
 # python app.py
-
+genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 logging.basicConfig(filename='./app.log', level=logging.INFO, encoding='utf-8',
                     format='%(asctime)19s %(levelname)s: %(message)s')
 
@@ -109,9 +110,27 @@ class DBConnection:
 
 
 
-class GeminiAPI():
+class BaseAPIInterface(ABC):
+    @classmethod  
+    def __init_subclass__(cls, **kwargs):  
+        super().__init_subclass__(**kwargs)  
+        cls.api_key = cls.get_api_key(cls.name)
+        cls.context = []
+
+    @staticmethod  
+    def get_api_key(name: str):  
+        return os.getenv(f'{name.upper()}_API_KEY')
+
+
+    @abstractmethod
+    async def prompt(self, *args, **kwargs):
+        pass
+
+
+
+class GeminiAPI(BaseAPIInterface):
     """Class for Gemini API"""
-    genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+    # genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
     name = 'gemini'
 
     def __init__(self):
@@ -126,8 +145,8 @@ class GeminiAPI():
         }
         self.models = ['gemini-1.5-pro-exp-0801','gemini-1.5-flash-latest', ] # gemini-1.5-pro-latest
         self.current_model = self.models[0]
-        self.model = None
-        self.context = []
+        self.client = None
+        # self.context = []
         self.chat = None
         self.reset_chat()
 
@@ -139,9 +158,9 @@ class GeminiAPI():
         return response.text
     
     def reset_chat(self):
-        self.model = genai.GenerativeModel(self.current_model, **self.settings)
+        self.client = genai.GenerativeModel(self.current_model, **self.settings)
         self.context = []
-        self.chat = self.model.start_chat(history=self.context)
+        self.chat = self.client.start_chat(history=self.context)
 
 
     async def get_enhanced_prompt(self, init_prompt: str) -> str:
@@ -152,19 +171,20 @@ class GeminiAPI():
 
 
 
-class CohereAPI():
+class CohereAPI(BaseAPIInterface):
     """Class for Cohere API"""
     name = 'cohere'
 
     def __init__(self):
-        self.co = cohere.Client(os.getenv('COHERE_API_KEY'))
+        # self.co = cohere.Client(os.getenv('COHERE_API_KEY'))
+        self.client = cohere.Client(self.api_key)
         self.models = ['command-r-plus','command-r','command','command-light','c4ai-aya-23']
         self.current_model = self.models[0]
         self.context = []
     
 
     async def prompt(self, text, image = None) -> str:
-        response = self.co.chat(
+        response = self.client.chat(
             model=self.current_model,
             chat_history=self.context or None,
             message=text
@@ -175,17 +195,18 @@ class CohereAPI():
 
 
 
-class GroqAPI():
+class GroqAPI(BaseAPIInterface):
     """Class for Groq API"""
     name = 'groq'
 
     def __init__(self):
-        self.client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+        # self.client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+        self.client = Groq(api_key=self.api_key)
         self.models = ['llama3-70b-8192',
                        'llama3-groq-70b-8192-tool-use-preview',
                        'whisper-large-v3'] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
-        self.context = []
+        # self.context = []
 
 
     async def prompt(self, text, image = None) -> str:
@@ -204,12 +225,12 @@ class GroqAPI():
 
 
 
-class NvidiaAPI():
+class NvidiaAPI(BaseAPIInterface):
     """Class for Nvidia API"""
     name = 'nvidia'
     
     def __init__(self):
-        self.client = OpenAI(api_key=os.getenv('NVIDIA_API_KEY'),
+        self.client = OpenAI(api_key=self.api_key,
                              base_url = "https://integrate.api.nvidia.com/v1")
         self.models = [
                         'meta/llama-3.1-405b-instruct',
@@ -250,7 +271,7 @@ class NvidiaAPI():
                     }
         self.current_model = self.models[0]
         self.current_vlm_model = self.models[-1]
-        self.context = []
+        # self.context = []
     
 
     async def prompt(self, text, image = None) -> str:
@@ -300,12 +321,12 @@ class NvidiaAPI():
         
 
 
-class TogetherAPI():
+class TogetherAPI(BaseAPIInterface):
     """Class for Together API"""
     name = 'together'
     
     def __init__(self):
-        self.client = OpenAI(api_key=os.getenv('TOGETHER_API_KEY'),
+        self.client = OpenAI(api_key=self.api_key,
                              base_url="https://api.together.xyz/v1")
         self.models = [
                         'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',
@@ -314,7 +335,7 @@ class TogetherAPI():
                        ] # https://docs.together.ai/docs/inference-models
 
         self.current_model = self.models[0]
-        self.context = []
+        # self.context = []
     
 
     async def prompt(self, text, image=None) -> str:
@@ -334,12 +355,13 @@ class TogetherAPI():
 
 
 
-class GlifAPI():
+class GlifAPI(BaseAPIInterface):
     """Class for Glif API"""
     name = 'glif'
 
     def __init__(self):
-        self.api_key = os.getenv('GLIF_API_KEY')
+        # self.api_key = os.getenv('GLIF_API_KEY')
+        self.api_key = self.api_key
         self.models_with_ids = {
                                 "claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
                                 "GPT4o":"clxx330wj000ipbq9rwh4hmp3",
@@ -347,7 +369,7 @@ class GlifAPI():
                                 }
         self.models = list(self.models_with_ids.keys()) #['claude 3.5 sonnet', 'GPT4o','Llama 3.1 405B']
         self.current_model = self.models[0]
-        self.context = []
+        # self.context = []
 
 
     def form_main_prompt(self) -> str:
@@ -460,11 +482,11 @@ class GlifAPI():
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
     def __init__(self):
-        self._instances: dict = {}
+        self._instances: dict[str,BaseAPIInterface] = {}
         self.bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI]
         self.bots: dict = {bot_class.name:bot_class for bot_class in self.bots_lst}
 
-    def get(self, bot_name: str):
+    def get(self, bot_name: str) -> BaseAPIInterface:
         return self._instances.setdefault(bot_name, self.bots[bot_name]())
 
 
@@ -473,7 +495,7 @@ class User:
     '''Specific user interface in chat'''
     def __init__(self):
         self.api_factory = APIFactory()
-        self.current_bot = self.api_factory.get(users.DEFAULT_BOT)
+        self.current_bot: BaseAPIInterface = self.api_factory.get(users.DEFAULT_BOT)
         self.time_dump = time()
         self.text = None
         
@@ -542,7 +564,7 @@ class User:
         return 'Контекст диалога отчищен'
     
 
-    def make_multi_modal_body(text, image):
+    def make_multi_modal_body(text, image) -> str:
         '''DEPRECATED'''
         return {
             'role':'user', 
@@ -556,10 +578,10 @@ class User:
                 }
 
 
-    async def prompt(self, text: str, image=None):
+    async def prompt(self, text: str, image=None) -> str:
         output = await self.current_bot.prompt(text, image)
         print(output)
-        return escape(output)
+        return escape(output) 
 
 
 
@@ -574,7 +596,10 @@ class UsersMap():
                 'Факт': 'Выступи в роли профессионального энциклопедиста и напиши один занимательный факт. Ответом должен быть только текст с фактом',
                 'Квиз': '''Выступи в роли профессионального энциклопедиста и напиши три вопроса для занимательного квиза. 
                             Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов''',
-                'Промпт': 'Выступи в роли профессионального искусствоведа и напиши три интересных и необычных сюжета для моей картины/фотографии'
+                'Промпт': '''
+                Write 4 interesting and unusual prompts for Stable Diffusion XL in different visual styles. 
+                It must consist a sarcastic and ironic plot, showing the absurdity of the situation.
+                Wrap each prompt in quotation marks `...`.'''
             }
         self.buttons: dict = {
                 'Добавить контекст':'change_context', 
@@ -921,14 +946,22 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
         return
 
 
-@dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')|F.cb_type.contains('template')))
+@dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')))
 async def change_callback_handler(query: types.CallbackQuery, callback_data: CallbackClass):
     user = await users.check_and_clear(query, 'callback')
-    if callback_data.cb_type == 'template_prompts':
-        await query.message.reply('Ожидайте...')
     output = await getattr(user, callback_data.cb_type)(callback_data.name)
     await query.message.edit_reply_markup(reply_markup=None)
     await query.message.answer(output)
+    await query.answer()
+
+
+@dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
+async def template_callback_handler(query: types.CallbackQuery, callback_data: CallbackClass):
+    user = await users.check_and_clear(query, 'callback')
+    await query.message.edit_reply_markup(reply_markup=None)
+    await query.message.reply('Ожидайте...')
+    output = await user.template_prompts(callback_data.name)
+    await query.message.answer(**users.set_kwargs(output))
     await query.answer()
 
 
