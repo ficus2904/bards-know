@@ -12,6 +12,7 @@ import cohere
 import atexit
 import google.generativeai as genai
 from abc import ABC, abstractmethod
+from aiolimiter import AsyncLimiter
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from functools import lru_cache
 from time import time
@@ -164,7 +165,7 @@ class GeminiAPI(BaseAPIInterface):
 
 
     async def get_enhanced_prompt(self, init_prompt: str) -> str:
-        self.settings['system_instruction'] = users.context_dict.get('FLUX')
+        self.settings['system_instruction'] = users.context_dict.get('FLUX2')
         self.reset_chat()
         enhanced_prompt = await self.prompt(init_prompt)
         return enhanced_prompt
@@ -202,9 +203,9 @@ class GroqAPI(BaseAPIInterface):
     def __init__(self):
         # self.client = Groq(api_key=os.getenv('GROQ_API_KEY'))
         self.client = Groq(api_key=self.api_key)
-        self.models = ['llama3-70b-8192',
-                       'llama3-groq-70b-8192-tool-use-preview',
-                       'whisper-large-v3'] # https://console.groq.com/docs/models
+        self.models = ['llama-3.1-70b-versatile',
+                       'llama3-70b-8192',
+                       'llama3-groq-70b-8192-tool-use-preview'] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
         # self.context = []
 
@@ -361,7 +362,6 @@ class GlifAPI(BaseAPIInterface):
 
     def __init__(self):
         # self.api_key = os.getenv('GLIF_API_KEY')
-        self.api_key = self.api_key
         self.models_with_ids = {
                                 "claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
                                 "GPT4o":"clxx330wj000ipbq9rwh4hmp3",
@@ -481,13 +481,25 @@ class GlifAPI(BaseAPIInterface):
 
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
+    bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI]
+    bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
     def __init__(self):
         self._instances: dict[str,BaseAPIInterface] = {}
-        self.bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI]
-        self.bots: dict = {bot_class.name:bot_class for bot_class in self.bots_lst}
+
 
     def get(self, bot_name: str) -> BaseAPIInterface:
         return self._instances.setdefault(bot_name, self.bots[bot_name]())
+
+
+
+class RateLimitedQueueManager:
+    def __init__(self):
+        self.limiters = {name:AsyncLimiter(1, 30) for name in APIFactory.bots}
+    
+    async def enqueue_request(self, api_name: str, task):
+        limiter = self.limiters[api_name]
+        async with limiter:
+            return await task
 
 
 
@@ -579,7 +591,9 @@ class User:
 
 
     async def prompt(self, text: str, image=None) -> str:
-        output = await self.current_bot.prompt(text, image)
+        output = await queue_manager.enqueue_request(self.current_bot.name, 
+                                                     self.current_bot.prompt(text, image))
+        # output = await self.current_bot.prompt(text, image)
         print(output)
         return escape(output) 
 
@@ -714,6 +728,7 @@ class UsersMap():
 
 
 users = UsersMap()
+queue_manager = RateLimitedQueueManager()
 bot = Bot(token=os.getenv('TELEGRAM_KEY'))
 db = DBConnection()
 dp = Dispatcher()
@@ -913,8 +928,8 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     
     if user.current_bot.name != 'gemini':
         await user.change_bot('gemini')
-        await user.change_context('SDXL')
-        await message.reply("Выбран gemini и контекст SDXL")
+        await user.change_context('FLUX2')
+        await message.reply("Выбран gemini и контекст FLUX2")
 
     
     text_reply = "Изображение получено! Ожидайте..."
