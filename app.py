@@ -165,7 +165,7 @@ class GeminiAPI(BaseAPIInterface):
 
 
     async def get_enhanced_prompt(self, init_prompt: str) -> str:
-        self.settings['system_instruction'] = users.context_dict.get('FLUX2')
+        self.settings['system_instruction'] = users.context_dict.get('SDXL')
         self.reset_chat()
         enhanced_prompt = await self.prompt(init_prompt)
         return enhanced_prompt
@@ -928,8 +928,8 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     
     if user.current_bot.name != 'gemini':
         await user.change_bot('gemini')
-        await user.change_context('FLUX2')
-        await message.reply("Выбран gemini и контекст FLUX2")
+        await user.change_context('SDXL')
+        await message.reply("Выбран gemini и контекст SDXL")
 
     
     text_reply = "Изображение получено! Ожидайте..."
