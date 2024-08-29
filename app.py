@@ -179,7 +179,7 @@ class CohereAPI(BaseAPIInterface):
     def __init__(self):
         # self.co = cohere.Client(os.getenv('COHERE_API_KEY'))
         self.client = cohere.Client(self.api_key)
-        self.models = ['command-r-plus','command-r','command','command-light','c4ai-aya-23']
+        self.models = ['command-r-plus-08-2024','command-nightly','c4ai-aya-23-35b']
         self.current_model = self.models[0]
         self.context = []
     
@@ -624,7 +624,7 @@ class UsersMap():
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'gemini' #'glif'
+        self.DEFAULT_BOT: str = 'cohere' #'glif' gemini
         self.builder: ReplyKeyboardBuilder = self.create_builder()
 
 
