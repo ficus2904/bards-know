@@ -872,13 +872,16 @@ async def image_gen_handler(message: types.Message):
     
     await message.reply('Картинка генерируется...')
 
-    if args[1].startswith("-f"):
-        caption = ''
-    else:
-        caption = await GeminiAPI().get_enhanced_prompt(args[1].lstrip('-f '))
-
-    image_url = await GlifAPI().fetch_image_fal(caption or args[1])
     try:
+        if args[1].startswith("-f"):
+            caption = ''
+        else:
+            # caption = await GeminiAPI().get_enhanced_prompt(args[1].lstrip('-f '))
+            await user.change_context('SDXL')
+            caption = await user.prompt(user.text)
+
+        image_url = await GlifAPI().fetch_image_fal(caption or args[1])
+
         if 'error' in image_url:
             raise Exception()
         kwargs = {'photo': image_url, 'caption': caption}
@@ -957,7 +960,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
         return
     except Exception as e:
         logging.info(e)
-        await message.answer("Error processing message. See logs for details")
+        await message.answer(f"{e}")
         return
 
 
@@ -972,12 +975,17 @@ async def change_callback_handler(query: types.CallbackQuery, callback_data: Cal
 
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
 async def template_callback_handler(query: types.CallbackQuery, callback_data: CallbackClass):
-    user = await users.check_and_clear(query, 'callback')
-    await query.message.edit_reply_markup(reply_markup=None)
-    await query.message.reply('Ожидайте...')
-    output = await user.template_prompts(callback_data.name)
-    await query.message.answer(**users.set_kwargs(output))
-    await query.answer()
+    try:
+        user = await users.check_and_clear(query, 'callback')
+        await query.message.edit_reply_markup(reply_markup=None)
+        await query.message.reply('Ожидайте...')
+        output = await user.template_prompts(callback_data.name)
+        await query.message.answer(**users.set_kwargs(output))
+        await query.answer()
+    except Exception as e:
+        logging.info(e)
+        await query.message.answer("Error processing message. See logs for details")
+        return
 
 
 
