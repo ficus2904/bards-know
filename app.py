@@ -298,12 +298,12 @@ class NvidiaAPI(BaseAPIInterface):
                 if len(image_b64) > 180_000:
                     print("Слишком большое изображение, сжимаем...")
                     image_b64 = users.resize_image(image)
-                image_b64 = f'. <img src="data:image/jpeg;base64,{image_b64}" />'
+                image_b64 = f' <img src="data:image/jpeg;base64,{image_b64}" />'
             else:
                 image_b64 = ''
 
             body = {"messages": [{"role": "user","content": text + image_b64}]} | self.vlm_params.get(model)
-            headers = {"Authorization": f"Bearer {users.api_keys["nvidia"]}",
+            headers = {"Authorization": f"Bearer {self.api_key}",
                         "Accept": "application/json"}
             url = "https://ai.api.nvidia.com/v1/vlm/" + model
             async with aiohttp.ClientSession() as session:
@@ -624,7 +624,7 @@ class UsersMap():
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'cohere' #'glif' gemini
+        self.DEFAULT_BOT: str = 'glif' #'glif' gemini
         self.builder: ReplyKeyboardBuilder = self.create_builder()
 
 
@@ -929,10 +929,15 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
         user.text = '' # Следуй системным правилам
         # return
     
-    if user.current_bot.name != 'gemini':
-        await user.change_bot('gemini')
+    # if user.current_bot.name != 'gemini':
+    #     await user.change_bot('gemini')
+    #     await user.change_context('SDXL')
+    #     await message.reply("Выбран gemini и контекст SDXL")
+    if user.current_bot.name != 'nvidia':
+        await user.change_bot('nvidia')
         await user.change_context('SDXL')
-        await message.reply("Выбран gemini и контекст SDXL")
+        await message.reply("Выбран nvidia")
+
 
     
     text_reply = "Изображение получено! Ожидайте..."
