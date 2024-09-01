@@ -188,7 +188,8 @@ class CohereAPI(BaseAPIInterface):
         response = self.client.chat(
             model=self.current_model,
             chat_history=self.context or None,
-            message=text
+            message=text,
+            safety_mode='NONE'
         )
         self.context = response.chat_history
         # print(response.text)
