@@ -144,7 +144,7 @@ class GeminiAPI(BaseAPIInterface):
             },
             'system_instruction': None
         }
-        self.models = ['gemini-1.5-pro-exp-0801','gemini-1.5-flash-latest', ] # gemini-1.5-pro-latest
+        self.models = ['gemini-1.5-pro-exp-0827','gemini-1.5-flash-latest', ] # gemini-1.5-pro-latest
         self.current_model = self.models[0]
         self.client = None
         # self.context = []
@@ -625,7 +625,7 @@ class UsersMap():
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'glif' #'glif' gemini
+        self.DEFAULT_BOT: str = 'gemini' #'glif' gemini
         self.builder: ReplyKeyboardBuilder = self.create_builder()
 
 
