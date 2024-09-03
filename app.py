@@ -877,9 +877,9 @@ async def image_gen_handler(message: types.Message):
         if args[1].startswith("-f"):
             caption = ''
         else:
-            # caption = await GeminiAPI().get_enhanced_prompt(args[1].lstrip('-f '))
-            await user.change_context('SDXL')
-            caption = await user.prompt(user.text)
+            caption = await GeminiAPI().get_enhanced_prompt(args[1].lstrip('-f '))
+            # await user.change_context('SDXL')
+            # caption = await user.prompt(user.text)
 
         image_url = await GlifAPI().fetch_image_fal(caption or args[1])
 
@@ -930,14 +930,14 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
         user.text = '' # Следуй системным правилам
         # return
     
-    # if user.current_bot.name != 'gemini':
-    #     await user.change_bot('gemini')
-    #     await user.change_context('SDXL')
-    #     await message.reply("Выбран gemini и контекст SDXL")
-    if user.current_bot.name != 'nvidia':
-        await user.change_bot('nvidia')
+    if user.current_bot.name != 'gemini':
+        await user.change_bot('gemini')
         await user.change_context('SDXL')
-        await message.reply("Выбран nvidia")
+        await message.reply("Выбран gemini и контекст SDXL")
+    # if user.current_bot.name != 'nvidia':
+    #     await user.change_bot('nvidia')
+    #     await user.change_context('SDXL')
+    #     await message.reply("Выбран nvidia")
 
 
     
