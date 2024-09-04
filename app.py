@@ -730,7 +730,7 @@ class UsersMap():
 
 users = UsersMap()
 queue_manager = RateLimitedQueueManager()
-bot = Bot(token=os.getenv('TELEGRAM_KEY'))
+bot = Bot(token=os.getenv('TELEGRAM_API_KEY'))
 db = DBConnection()
 dp = Dispatcher()
     
