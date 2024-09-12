@@ -243,6 +243,7 @@ class NvidiaAPI(BaseAPIInterface):
                         'microsoft/kosmos-2',
                         'adept/fuyu-8b',
                         'microsoft/phi-3-vision-128k-instruct',
+                        'nvidia/vila',
                        ] # https://build.nvidia.com/explore/discover
         self.vlm_params = {
                         'microsoft/phi-3-vision-128k-instruct': {
@@ -265,6 +266,13 @@ class NvidiaAPI(BaseAPIInterface):
                         },
                         'adept/fuyu-8b': {
                             "max_tokens": 1024,
+                            "temperature": 0.20,
+                            "top_p": 0.7,
+                            "seed":0,
+                            "stream": False
+                        },
+                        'nvidia/vila': {
+                            "max_tokens": 2048,
                             "temperature": 0.20,
                             "top_p": 0.7,
                             "seed":0,
@@ -930,7 +938,7 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
         user.text = '' # Следуй системным правилам
         # return
     
-    if user.current_bot.name != 'gemini':
+    if user.current_bot.name not in ['gemini', 'nvidia'] :
         await user.change_bot('gemini')
         await user.change_context('SDXL')
         await message.reply("Выбран gemini и контекст SDXL")
