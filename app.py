@@ -272,10 +272,9 @@ class NvidiaAPI(BaseAPIInterface):
                             "stream": False
                         },
                         'nvidia/vila': {
-                            "max_tokens": 2048,
+                            "max_tokens": 1024,
                             "temperature": 0.20,
                             "top_p": 0.7,
-                            "seed":0,
                             "stream": False
                         }
                     }
@@ -307,7 +306,7 @@ class NvidiaAPI(BaseAPIInterface):
                 if len(image_b64) > 180_000:
                     print("Слишком большое изображение, сжимаем...")
                     image_b64 = users.resize_image(image)
-                image_b64 = f' <img src="data:image/jpeg;base64,{image_b64}" />'
+                image_b64 = f'Hi! What is in this image? <img src="data:image/jpeg;base64,{image_b64}" />'
             else:
                 image_b64 = ''
 
