@@ -206,24 +206,30 @@ class GroqAPI(BaseAPIInterface):
         self.client = Groq(api_key=self.api_key)
         self.models = ['llama-3.1-70b-versatile',
                        'llama3-70b-8192',
-                       'llama3-groq-70b-8192-tool-use-preview'] # https://console.groq.com/docs/models
+                       'llama3-groq-70b-8192-tool-use-preview',
+                       'llava-v1.5-7b-4096-preview'] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
-        # self.context = []
 
 
-    async def prompt(self, text, image = None) -> str:
-        if image is None:
-            body = {'role':'user', 'content': text}
+    async def prompt(self, text: str, image = None) -> str:
+        if image:
+            kwargs = self.image_body_kwargs(image, text)
         else:
-            body = User.make_multi_modal_body(text, image)
-        self.context.append(body)
-        response = self.client.chat.completions.create(
-            model=self.current_model,
-            messages=self.context,
-        )
-        self.context.append({'role':'assistant', 'content':response.choices[-1].message.content})
-        # print(response.choices[-1].message.content)
-        return response.choices[-1].message.content
+            body = {'role':'user', 'content': text}
+            self.context.append(body)
+            kwargs = {'model':self.current_model,'messages': self.context}
+        response = self.client.chat.completions.create(**kwargs).choices[-1].message.content
+        self.context.append({'role':'assistant', 'content':response})
+        return response
+    
+
+    def image_body_kwargs(self, image, text: str) -> dict:
+        image_b64 = base64.b64encode(image.getvalue()).decode()
+        if len(image_b64) > 180_000:
+            print("Слишком большое изображение, сжимаем...")
+            image_b64 = users.resize_image(image)
+        body = User.make_multi_modal_body(text or "What's in this image?", image_b64)
+        return {'model':self.models[-1], 'messages': body}
 
 
 
@@ -584,18 +590,21 @@ class User:
         return 'Контекст диалога отчищен'
     
 
-    def make_multi_modal_body(text, image) -> str:
-        '''DEPRECATED'''
-        return {
-            'role':'user', 
-            'content':[
-                        {"type": "text", "text": text},
-                        {"type": "image_url","image_url": {
-                                                            "url": f"data:image/jpeg;base64,{image}"
-                                                            }
-                        }
-                    ]
-                }
+    def make_multi_modal_body(text, base64_image) -> str:
+        return [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": text},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{base64_image}",
+                    },
+                },
+            ],
+        }
+    ]
 
 
     async def prompt(self, text: str, image=None) -> str:
@@ -937,7 +946,7 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
         user.text = '' # Следуй системным правилам
         # return
     
-    if user.current_bot.name not in ['gemini', 'nvidia'] :
+    if user.current_bot.name not in {'gemini', 'nvidia', 'groq'}:
         await user.change_bot('gemini')
         await user.change_context('SDXL')
         await message.reply("Выбран gemini и контекст SDXL")
@@ -951,7 +960,6 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
     text_reply = "Изображение получено! Ожидайте..."
     if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
         text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
-
     await message.reply(text_reply)
     tg_photo = await bot.download(message.photo[-1].file_id)
     output = await user.prompt(user.text, tg_photo)
