@@ -726,7 +726,7 @@ class UsersMap():
         user = self.get(message.from_user.id)
         if type_prompt in ['callback']:
             return user
-        # if user_name is None:
+        # if not user_name:
         #     user_name = db.check_user(message.from_user.id)
         if type_prompt in ['image']:
             logging.info(f'{user_name or message.from_user.id}: "{message.text}"')
@@ -736,7 +736,8 @@ class UsersMap():
             user.clear()
         user.time_dump = time()
         type_prompt = {'text': message.text, 'photo': message.caption}.get(type_prompt, type_prompt)
-        logging.info(f'{user_name or message.from_user.id}: "{type_prompt}"')
+        if user_name:
+            logging.info(f'{user_name}: "{type_prompt}"')
         user.text = self.buttons.get(type_prompt, type_prompt)
         return user
 
@@ -920,8 +921,8 @@ async def image_gen_handler(message: Message, user_name: str):
 
 
 @dp.message(lambda message: message.text in users.buttons)
-async def clear_command(message: Message, user_name: str):
-    user = await users.check_and_clear(message, 'text', user_name)
+async def clear_command(message: Message):
+    user = await users.check_and_clear(message, 'text')
     if user.text in {'info','clear'}:
         kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
     else:
