@@ -18,7 +18,8 @@ from functools import lru_cache
 from time import time
 from groq import Groq
 from openai import OpenAI
-from aiogram import Bot, Dispatcher, F, types
+from aiogram import Bot, Dispatcher, BaseMiddleware, F
+from aiogram.types import TelegramObject, Message, CallbackQuery, KeyboardButtonPollType
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
@@ -721,14 +722,12 @@ class UsersMap():
                 'reply_markup': reply_markup or self.builder}
 
 
-    async def check_and_clear(self, message: types.Message, type_prompt: str) -> User | None:
-        user_name = db.check_user(message.from_user.id)
-        if user_name is None:
-            await message.reply(f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}')
-            return
+    async def check_and_clear(self, message: Message, type_prompt: str, user_name: str = '') -> User:
         user = self.get(message.from_user.id)
         if type_prompt in ['callback']:
             return user
+        # if user_name is None:
+        #     user_name = db.check_user(message.from_user.id)
         if type_prompt in ['image']:
             logging.info(f'{user_name or message.from_user.id}: "{message.text}"')
             return user
@@ -749,21 +748,28 @@ queue_manager = RateLimitedQueueManager()
 bot = Bot(token=os.getenv('TELEGRAM_API_KEY'))
 db = DBConnection()
 dp = Dispatcher()
+
+
+class UserFilterMiddleware(BaseMiddleware):
+    async def __call__(self, handler: callable, event: TelegramObject, data: dict):
+        USER_ID = data['event_from_user'].id
+        if user_name:= db.check_user(USER_ID):
+            data.setdefault('user_name', user_name)
+            await handler(event, data)
+        else:
+            if isinstance(event, Message):
+                await bot.send_message(event.chat.id, 
+                f'Доступ запрещен. Обратитесь к администратору. Ваш id: {USER_ID}')
     
 
 @dp.message(CommandStart())
-async def start_handler(message: types.Message):
-    user_name = db.check_user(message.from_user.id)
-    if user_name:
-        text = f'Доступ открыт. Добро пожаловать {message.from_user.full_name}!'
-    else:
-        text = f'Доступ запрещен. Обратитесь к администратору. Ваш id: {message.from_user.id}'
-    await message.answer(text)
+async def start_handler(message: Message):
+    await message.answer(f'Доступ открыт. Добро пожаловать {message.from_user.first_name}!')
 
 
 @dp.message(Command(commands=["context"]))
-async def context_handler(message: types.Message):
-    user_name = db.check_user(message.from_user.id)
+async def context_handler(message: Message, user_name: str):
+    # user_name = db.check_user(message.from_user.id)
     if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
@@ -784,26 +790,26 @@ async def context_handler(message: types.Message):
         await message.reply(f"Context {prompt_body} removed successfully.")
         return
     
-    if arg != '-a' and not prompt_body.count('|') == 1:
+    if arg == '-a' and prompt_body.count('|') == 1:
+        prompt_name, prompt = [el.strip() for el in prompt_body.split("|",maxsplit=1)]
+        if users.context_dict.get(prompt_name):
+            await message.reply(f"Context {prompt_name} already exists")
+            return
+        try:
+            users.context_dict[prompt_name] = prompt
+            with open('./prompts.json', 'w', encoding="utf-8") as f:
+                json.dump(users.context_dict, f, ensure_ascii=False)
+            await message.reply(f"Context {prompt_name} added successfully.")
+        except Exception as e:
+            await message.reply(f"An error occurred: {e}.")
+    else:
         await message.reply("Usage: `/context -a prompt_name | prompt`")
         return
     
-    prompt_name, prompt = [el.strip() for el in prompt_body.split("|",maxsplit=1)]
-    if users.context_dict.get(prompt_name):
-        await message.reply(f"Context {prompt_name} already exists")
-        return
-    try:
-        users.context_dict[prompt_name] = prompt
-        with open('./prompts.json', 'w', encoding="utf-8") as f:
-            json.dump(users.context_dict, f, ensure_ascii=False)
-        await message.reply(f"Context {prompt_name} added successfully.")
-    except Exception as e:
-        await message.reply(f"An error occurred: {e}.")
-
 
 @dp.message(Command(commands=["add_user"]))
-async def add_handler(message: types.Message):
-    user_name = db.check_user(message.from_user.id)
+async def add_handler(message: Message, user_name: str):
+    # user_name = db.check_user(message.from_user.id)
     if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
@@ -823,8 +829,8 @@ async def add_handler(message: types.Message):
 
 
 @dp.message(Command(commands=["remove_user"]))
-async def remove_handler(message: types.Message):
-    user_name = db.check_user(message.from_user.id)
+async def remove_handler(message: Message, user_name: str):
+    # user_name = db.check_user(message.from_user.id)
     if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
@@ -845,41 +851,41 @@ async def remove_handler(message: types.Message):
 
 
 @dp.message(Command(commands=["info","clear"]))
-async def short_command_handler(message: types.Message):
-    user = await users.check_and_clear(message, message.text.lstrip('/'))
-    if user is None:
-        return
+async def short_command_handler(message: Message, user_name: str):
+    user = await users.check_and_clear(message, message.text.lstrip('/'), user_name)
     kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
     await message.answer(**kwargs)
 
 
-# @dp.message(Command(commands=["image"]))
-# async def image_gen_handler(message: types.Message):
-#     user = await users.check_and_clear(message, "image")
-#     if user is None:
-#         return
-#     args = message.text.split(maxsplit=1)
-#     if len(args) != 2:
-#         await message.reply("Usage: `/image prompt` or `/image -f prompt`")
-#         return
-#     await message.reply('Картинка генерируется...')
-#     kwargs = await GlifAPI().fetch_image(args[1])
-#     try:
-#         if 'error' in kwargs:
-#             raise Exception()
-#         ## max caption length 1024
-#         kwargs['caption'] = f'`{escape(kwargs['caption'][:1000])}`'
-#         if kwargs['photo']:
-#             await message.answer_photo(**kwargs, parse_mode=users.PARSE_MODE)
-#         else:
-#             await message.reply(**users.set_kwargs(kwargs['caption']))
-#     except Exception:
-#         await message.reply(f"Ошибка: {kwargs}")
+if False:
+    ...
+    # @dp.message(Command(commands=["image"]))
+    # async def image_gen_handler(message: Message, user_name: str):
+    #     user = await users.check_and_clear(message, "image", user_name)
+    #     if user is None:
+    #         return
+    #     args = message.text.split(maxsplit=1)
+    #     if len(args) != 2:
+    #         await message.reply("Usage: `/image prompt` or `/image -f prompt`")
+    #         return
+    #     await message.reply('Картинка генерируется...')
+    #     kwargs = await GlifAPI().fetch_image(args[1])
+    #     try:
+    #         if 'error' in kwargs:
+    #             raise Exception()
+    #         ## max caption length 1024
+    #         kwargs['caption'] = f'`{escape(kwargs['caption'][:1000])}`'
+    #         if kwargs['photo']:
+    #             await message.answer_photo(**kwargs, parse_mode=users.PARSE_MODE)
+    #         else:
+    #             await message.reply(**users.set_kwargs(kwargs['caption']))
+    #     except Exception:
+    #         await message.reply(f"Ошибка: {kwargs}")
 
 
 @dp.message(Command(commands=["image"]))
-async def image_gen_handler(message: types.Message):
-    user = await users.check_and_clear(message, "image")
+async def image_gen_handler(message: Message, user_name: str):
+    user = await users.check_and_clear(message, "image", user_name)
     if user is None:
         return
     args = message.text.split(maxsplit=1)
@@ -914,10 +920,8 @@ async def image_gen_handler(message: types.Message):
 
 
 @dp.message(lambda message: message.text in users.buttons)
-async def clear_command(message: types.Message):
-    user = await users.check_and_clear(message, 'text')
-    if user is None:
-        return
+async def clear_command(message: Message, user_name: str):
+    user = await users.check_and_clear(message, 'text', user_name)
     if user.text in {'info','clear'}:
         kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
     else:
@@ -938,10 +942,8 @@ async def clear_command(message: types.Message):
 
 
 @dp.message(F.content_type.in_({'photo'}))
-async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
-    user = await users.check_and_clear(message, 'photo')
-    if user is None:
-        return
+async def photo_handler(message: Message | KeyboardButtonPollType, user_name: str):
+    user = await users.check_and_clear(message, 'photo', user_name)
     if user.text is None:
         user.text = '' # Следуй системным правилам
         # return
@@ -969,9 +971,9 @@ async def photo_handler(message: types.Message | types.KeyboardButtonPollType):
 
 
 @dp.message(F.content_type.in_({'text'}))
-async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
-    user = await users.check_and_clear(message, 'text')
-    if user is None or user.text is None:
+async def echo_handler(message: Message | KeyboardButtonPollType, user_name: str):
+    user = await users.check_and_clear(message, 'text', user_name)
+    if user.text is None:
         return
     try:
         await message.reply('Ожидайте...')
@@ -986,7 +988,7 @@ async def echo_handler(message: types.Message | types.KeyboardButtonPollType):
 
 
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')))
-async def change_callback_handler(query: types.CallbackQuery, callback_data: CallbackClass):
+async def change_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
     user = await users.check_and_clear(query, 'callback')
     output = await getattr(user, callback_data.cb_type)(callback_data.name)
     await query.message.edit_reply_markup(reply_markup=None)
@@ -995,7 +997,7 @@ async def change_callback_handler(query: types.CallbackQuery, callback_data: Cal
 
 
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
-async def template_callback_handler(query: types.CallbackQuery, callback_data: CallbackClass):
+async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
     try:
         user = await users.check_and_clear(query, 'callback')
         await query.message.edit_reply_markup(reply_markup=None)
