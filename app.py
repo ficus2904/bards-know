@@ -761,7 +761,11 @@ class UserFilterMiddleware(BaseMiddleware):
             if isinstance(event, Message):
                 await bot.send_message(event.chat.id, 
                 f'Доступ запрещен. Обратитесь к администратору. Ваш id: {USER_ID}')
-    
+
+
+dp.message.middleware(UserFilterMiddleware())
+dp.callback_query.middleware(UserFilterMiddleware())
+
 
 @dp.message(CommandStart())
 async def start_handler(message: Message):
