@@ -6,3 +6,4 @@ pillow
 groq
 openai
 aiolimiter
+mistralai
