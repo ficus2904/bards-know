@@ -10,6 +10,7 @@ import warnings
 import sqlite3
 import cohere
 import atexit
+from mistralai import Mistral
 import google.generativeai as genai
 from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
@@ -132,7 +133,6 @@ class BaseAPIInterface(ABC):
 
 class GeminiAPI(BaseAPIInterface):
     """Class for Gemini API"""
-    # genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
     name = 'gemini'
 
     def __init__(self):
@@ -178,7 +178,6 @@ class CohereAPI(BaseAPIInterface):
     name = 'cohere'
 
     def __init__(self):
-        # self.co = cohere.Client(os.getenv('COHERE_API_KEY'))
         self.client = cohere.Client(self.api_key)
         self.models = ['command-r-plus-08-2024','command-nightly','c4ai-aya-23-35b']
         self.current_model = self.models[0]
@@ -203,7 +202,6 @@ class GroqAPI(BaseAPIInterface):
     name = 'groq'
 
     def __init__(self):
-        # self.client = Groq(api_key=os.getenv('GROQ_API_KEY'))
         self.client = Groq(api_key=self.api_key)
         self.models = ['llama-3.1-70b-versatile',
                        'llama3-70b-8192',
@@ -214,23 +212,46 @@ class GroqAPI(BaseAPIInterface):
 
     async def prompt(self, text: str, image = None) -> str:
         if image:
-            kwargs = self.image_body_kwargs(image, text)
+            self.context.clear()
+            User.make_multi_modal_body(text or "What's in this image?", image, self.context)
         else:
             body = {'role':'user', 'content': text}
             self.context.append(body)
-            kwargs = {'model':self.current_model,'messages': self.context}
+        
+        kwargs = {'model':self.models[-1] if image else self.current_model, 
+                  'messages': self.context}
         response = self.client.chat.completions.create(**kwargs).choices[-1].message.content
         self.context.append({'role':'assistant', 'content':response})
         return response
-    
 
-    def image_body_kwargs(self, image, text: str) -> dict:
-        image_b64 = base64.b64encode(image.getvalue()).decode()
-        if len(image_b64) > 180_000:
-            print("Слишком большое изображение, сжимаем...")
-            image_b64 = users.resize_image(image)
-        body = User.make_multi_modal_body(text or "What's in this image?", image_b64)
-        return {'model':self.models[-1], 'messages': body}
+
+
+class MistralAPI(BaseAPIInterface):
+    """Class for Mistral API"""
+    name = 'mistral'
+
+    def __init__(self):
+        self.client = Mistral(api_key=self.api_key)
+        self.models = ['mistral-small-latest',
+                       'mistral-large-latest',
+                       'pixtral-12b-2409'] # https://docs.mistral.ai/getting-started/models/
+        self.current_model = self.models[0]
+
+
+    async def prompt(self, text: str, image = None) -> str:
+        if image:
+            User.make_multi_modal_body(text or "What's in this image?", 
+                                        image, self.context, is_mistral=True)
+        else:
+            body = {'role':'user', 'content': text}
+            self.context.append(body)
+        
+        kwargs = {'model':self.models[-1] if image else self.current_model, 
+                  'messages': self.context}
+        response = await self.client.chat.complete_async(**kwargs)
+        response = response.choices[-1].message.content
+        self.context.append({'role':'assistant', 'content':response})
+        return response
 
 
 
@@ -376,7 +397,6 @@ class GlifAPI(BaseAPIInterface):
     name = 'glif'
 
     def __init__(self):
-        # self.api_key = os.getenv('GLIF_API_KEY')
         self.models_with_ids = {
                                 "claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
                                 "GPT4o":"clxx330wj000ipbq9rwh4hmp3",
@@ -496,7 +516,7 @@ class GlifAPI(BaseAPIInterface):
 
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
-    bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI]
+    bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI]
     bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
     def __init__(self):
         self._instances: dict[str,BaseAPIInterface] = {}
@@ -537,7 +557,7 @@ class User:
         
         elif isinstance(self.current_bot, CohereAPI):
             body = {"role": 'SYSTEM', "message": context}
-        elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI,TogetherAPI,GlifAPI)):
+        elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI,TogetherAPI,GlifAPI,MistralAPI)):
             body = {'role':'system', 'content': context}
 
         self.current_bot.context.append(body)
@@ -591,21 +611,25 @@ class User:
         return 'Контекст диалога отчищен'
     
 
-    def make_multi_modal_body(text, base64_image) -> str:
-        return [
+    def make_multi_modal_body(text, image, context: list, is_mistral = False) -> None:
+        image_b64 = base64.b64encode(image.getvalue()).decode()
+        if len(image_b64) > 180_000:
+            print("Слишком большое изображение, сжимаем...")
+            image_b64 = users.resize_image(image)
+        part = f"data:image/jpeg;base64,{image_b64}"
+        embedded_part = part if is_mistral else {"url": part}
+        context.extend([
         {
             "role": "user",
             "content": [
                 {"type": "text", "text": text},
                 {
                     "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{base64_image}",
-                    },
+                    "image_url": embedded_part,
                 },
             ],
         }
-    ]
+    ])
 
 
     async def prompt(self, text: str, image=None) -> str:
@@ -642,7 +666,7 @@ class UsersMap():
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'gemini' #'glif' gemini
+        self.DEFAULT_BOT: str = 'mistral'#'gemini' #'glif' gemini
         self.builder: ReplyKeyboardBuilder = self.create_builder()
 
 
@@ -953,7 +977,7 @@ async def photo_handler(message: Message | KeyboardButtonPollType, user_name: st
         user.text = '' # Следуй системным правилам
         # return
     
-    if user.current_bot.name not in {'gemini', 'nvidia', 'groq'}:
+    if user.current_bot.name not in {'gemini', 'nvidia', 'groq', 'mistral'}:
         await user.change_bot('gemini')
         await user.change_context('SDXL')
         await message.reply("Выбран gemini и контекст SDXL")
