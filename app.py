@@ -666,7 +666,7 @@ class UsersMap():
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'mistral'#'gemini' #'glif' gemini
+        self.DEFAULT_BOT: str = 'gemini' #'glif' gemini
         self.builder: ReplyKeyboardBuilder = self.create_builder()
 
 
