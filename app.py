@@ -657,6 +657,26 @@ class UsersMap():
                 It must consist a sarcastic and ironic plot, showing the absurdity of the situation.
                 Wrap each prompt in quotation marks `...`.'''
             }
+        self.help = """  
+**Help Guide**
+Here are the available commands:  
+1. **User Management:**  
+- Add new user: `/add 123456 UserName` 
+- Remove existing user: `/remove UserName`
+
+2. **Agent Context:**
+- `-i`: Get context_body info  
+- `-a`: Add new context  
+- `-r`: Remove existing context
+
+**Usage:**
+- `/context [-i | -r] context_name`  
+- `/context [-a] context_name | context_body`
+
+3. **Generate Image:**  
+- Basic prompt: `/image your_prompt` for prompt enhancer
+- Force provided prompt: `/image -f your_prompt`  
+"""  
         self.buttons: dict = {
                 'Добавить контекст':'change_context', 
                 'Быстрые команды':'template_prompts',
@@ -740,8 +760,8 @@ class UsersMap():
             await asyncio.sleep(0)
 
 
-    def set_kwargs(self, text, reply_markup = None) -> dict:
-        return {'text': text, 
+    def set_kwargs(self, text: str = None, reply_markup = None) -> dict:
+        return {'text': text or escape(self.help), 
                 'parse_mode':self.PARSE_MODE, 
                 'reply_markup': reply_markup or self.builder}
 
@@ -796,6 +816,12 @@ async def start_handler(message: Message):
     await message.answer(f'Доступ открыт. Добро пожаловать {message.from_user.first_name}!')
 
 
+
+@dp.message(Command(commands=["help"]))
+async def help_handler(message: Message):
+    await message.answer(**users.set_kwargs())
+
+    
 @dp.message(Command(commands=["context"]))
 async def context_handler(message: Message, user_name: str):
     # user_name = db.check_user(message.from_user.id)
@@ -803,7 +829,7 @@ async def context_handler(message: Message, user_name: str):
         await message.reply("You don't have admin privileges")
         return
     args = message.text.split(maxsplit=2)
-    if len(args) != 3 and not args[1].startswith('-'):
+    if (len(args) == 1) or (len(args) != 3 and not args[1].startswith('-')):
         await message.reply("Usage: `/context [-i/-r/-a] prompt_name [| prompt]`")
         return
     
@@ -844,7 +870,7 @@ async def add_handler(message: Message, user_name: str):
         return
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.reply("Usage: `/add 123456 YourName`")
+        await message.reply("Usage: `/add 123456 UserName`")
         return
     # Split the argument into user_id and name
     user_id, name = args[1].split(maxsplit=1)
@@ -865,7 +891,7 @@ async def remove_handler(message: Message, user_name: str):
         return
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.reply("Usage: `/remove TargetName`")
+        await message.reply("Usage: `/remove UserName`")
         return
     # Take the argument as the name
     name_to_remove = args[1].strip()
@@ -885,31 +911,6 @@ async def short_command_handler(message: Message, user_name: str):
     kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
     await message.answer(**kwargs)
 
-
-if False:
-    ...
-    # @dp.message(Command(commands=["image"]))
-    # async def image_gen_handler(message: Message, user_name: str):
-    #     user = await users.check_and_clear(message, "image", user_name)
-    #     if user is None:
-    #         return
-    #     args = message.text.split(maxsplit=1)
-    #     if len(args) != 2:
-    #         await message.reply("Usage: `/image prompt` or `/image -f prompt`")
-    #         return
-    #     await message.reply('Картинка генерируется...')
-    #     kwargs = await GlifAPI().fetch_image(args[1])
-    #     try:
-    #         if 'error' in kwargs:
-    #             raise Exception()
-    #         ## max caption length 1024
-    #         kwargs['caption'] = f'`{escape(kwargs['caption'][:1000])}`'
-    #         if kwargs['photo']:
-    #             await message.answer_photo(**kwargs, parse_mode=users.PARSE_MODE)
-    #         else:
-    #             await message.reply(**users.set_kwargs(kwargs['caption']))
-    #     except Exception:
-    #         await message.reply(f"Ошибка: {kwargs}")
 
 
 @dp.message(Command(commands=["image"]))
@@ -1002,8 +1003,8 @@ async def photo_handler(message: Message | KeyboardButtonPollType, user_name: st
 @dp.message(F.content_type.in_({'text'}))
 async def echo_handler(message: Message | KeyboardButtonPollType, user_name: str):
     user = await users.check_and_clear(message, 'text', user_name)
-    if user.text is None:
-        return
+    if user.text is None or user.text == '/':
+        return await message.answer(**users.set_kwargs())
     try:
         await message.reply('Ожидайте...')
         output = await user.prompt(user.text)
