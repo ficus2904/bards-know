@@ -145,7 +145,7 @@ class GeminiAPI(BaseAPIInterface):
             },
             'system_instruction': None
         }
-        self.models = ['gemini-1.5-pro-exp-0827','gemini-1.5-flash-latest', ] # gemini-1.5-pro-latest
+        self.models = ['gemini-1.5-pro-002','gemini-1.5-flash-002', ] # gemini-1.5-pro-latest
         self.current_model = self.models[0]
         self.client = None
         # self.context = []
