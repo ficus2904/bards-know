@@ -474,7 +474,7 @@ class GlifAPI(BaseAPIInterface):
                 
 
     async def fetch_image_fal(self, prompt: str) -> dict:
-        url = "https://fal.run/fal-ai/flux-pro"
+        url = "https://fal.run/fal-ai/flux-pro/v1.1" #"https://fal.run/fal-ai/flux-pro/new"
         headers = {"Authorization": f"Key {os.getenv('FAL_API_KEY')}",
                    'Content-Type': 'application/json'}
         body = {"prompt": prompt,
@@ -482,6 +482,7 @@ class GlifAPI(BaseAPIInterface):
                 "num_inference_steps": 30,
                 "guidance_scale": 3.5,
                 "num_images": 1,
+                "enable_safety_checker": False,
                 "safety_tolerance": "5"}
         async with aiohttp.ClientSession() as session:
             async with session.post(url=url,headers=headers,json=body, timeout=90) as response:
@@ -935,7 +936,6 @@ async def image_gen_handler(message: Message, user_name: str):
             # caption = await user.prompt(user.text)
 
         image_url = await GlifAPI().fetch_image_fal(caption or args[1])
-
         if 'error' in image_url:
             raise Exception()
         kwargs = {'photo': image_url, 'caption': caption}
@@ -945,8 +945,8 @@ async def image_gen_handler(message: Message, user_name: str):
             await message.answer_photo(**kwargs, parse_mode=users.PARSE_MODE)
         else:
             await message.reply(**users.set_kwargs(kwargs['caption']))
-    except Exception:
-        await message.reply(f"Ошибка: {kwargs}")
+    except Exception as e:
+        await message.reply(f"Ошибка: {e}")
 
 
 
