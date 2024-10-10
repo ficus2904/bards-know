@@ -166,7 +166,8 @@ class GeminiAPI(BaseAPIInterface):
 
 
     async def get_enhanced_prompt(self, init_prompt: str) -> str:
-        self.settings['system_instruction'] = users.context_dict.get('SDXL')
+        # self.settings['system_instruction'] = users.context_dict[''].get('SDXL')
+        self.settings['system_instruction'] = users.get_subcontext('SDXL')
         self.reset_chat()
         enhanced_prompt = await self.prompt(init_prompt)
         return enhanced_prompt
@@ -418,7 +419,7 @@ class GlifAPI(BaseAPIInterface):
 
     def form_system_prompt(self) -> str:
         if not self.context:
-            default_prompt = users.context_dict.get('Универсальный промпт')
+            default_prompt = users.context_dict.get('Универсальный')
             self.context.append({'role':'system', 'content': default_prompt})
         return self.context[0].get('content')
     
@@ -549,9 +550,19 @@ class User:
         self.text = None
         
 
-    async def change_context(self, context_name: str) -> str:
+    async def change_context(self, context_name: str) -> str | dict:
         self.clear()
+        if context_name == '◀️':
+            return users.context_dict
+        
         context = users.context_dict.get(context_name)
+
+        if isinstance(context, dict): # subgroup
+            context.setdefault('◀️','◀️')
+            return context
+        elif context is None: # final set in subgroup
+            context = users.get_subcontext(context_name)
+
         if isinstance(self.current_bot, GeminiAPI):
             self.current_bot.settings['system_instruction'] = context
             self.current_bot.reset_chat()
@@ -769,7 +780,7 @@ Here are the available commands:
 
 
     async def check_and_clear(self, message: Message, type_prompt: str, user_name: str = '') -> User:
-        user = self.get(message.from_user.id)
+        user: User = self.get(message.from_user.id)
         if type_prompt in ['callback']:
             return user
         # if not user_name:
@@ -788,6 +799,17 @@ Here are the available commands:
         return user
 
 
+    def get_subcontext(self, context_name: str) -> str | None:
+        return next((v[context_name] for v in self.context_dict.values() 
+                    if isinstance(v, dict) and context_name in v), None)
+    
+
+    def create_inline_kb(self, dict_iter: dict, cb_type: str):
+        builder_inline = InlineKeyboardBuilder()
+        for value in dict_iter:
+            data = CallbackClass(cb_type=cb_type, name=users.make_short_name(value)).pack()
+            builder_inline.button(text=users.make_short_name(value), callback_data=data)
+        return builder_inline.adjust(*[1]*len(dict_iter)).as_markup()
 
 
 users = UsersMap()
@@ -951,22 +973,18 @@ async def image_gen_handler(message: Message, user_name: str):
 
 
 @dp.message(lambda message: message.text in users.buttons)
-async def clear_command(message: Message):
+async def reply_kb_command(message: Message):
     user = await users.check_and_clear(message, 'text')
     if user.text in {'info','clear'}:
         kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
     else:
-        builder_inline = InlineKeyboardBuilder()
         command_dict = {'bot': [user.api_factory.bots, 'бота'],
                         'model': [user.current_bot.models, 'модель'],
                         'context':[users.context_dict, 'контекст'],
                         'prompts':[users.template_prompts, 'промпт']}
         items = command_dict.get(user.text.split('_')[-1])
-        for value in items[0]:
-            data = CallbackClass(cb_type=user.text, name=users.make_short_name(value)).pack()
-            builder_inline.button(text=users.make_short_name(value), callback_data=data)
-        kwargs = users.set_kwargs(f'Выберите {items[-1]}:', 
-                                       builder_inline.adjust(*[1]*len(items)).as_markup())
+        builder_inline = users.create_inline_kb(items[0], user.text)
+        kwargs = users.set_kwargs(f'Выберите {items[-1]}:',  builder_inline)
     
     await message.answer(**kwargs)
 
@@ -1022,8 +1040,11 @@ async def echo_handler(message: Message | KeyboardButtonPollType, user_name: str
 async def change_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
     user = await users.check_and_clear(query, 'callback')
     output = await getattr(user, callback_data.cb_type)(callback_data.name)
-    await query.message.edit_reply_markup(reply_markup=None)
-    await query.message.answer(output)
+    is_final_set = isinstance(output, str) and callback_data.name != '◀️'
+    reply_markup = None if is_final_set else users.create_inline_kb(output, user.text)
+    await query.message.edit_reply_markup(reply_markup=reply_markup)
+    if is_final_set:
+        await query.message.answer(output)
     await query.answer()
 
 
