@@ -555,13 +555,15 @@ class User:
         if context_name == '◀️':
             return users.context_dict
         
-        context = users.context_dict.get(context_name)
+        # context = users.context_dict.get(context_name, 
+        #                                  users.get_subcontext(context_name))
+        context = users.get_context(context_name)
 
         if isinstance(context, dict): # subgroup
             context.setdefault('◀️','◀️')
             return context
-        elif context is None: # final set in subgroup
-            context = users.get_subcontext(context_name)
+        # elif context is None: # final set in subgroup
+        #     context = users.get_subcontext(context_name)
 
         if isinstance(self.current_bot, GeminiAPI):
             self.current_bot.settings['system_instruction'] = context
@@ -799,9 +801,10 @@ Here are the available commands:
         return user
 
 
-    def get_subcontext(self, context_name: str) -> str | None:
-        return next((v[context_name] for v in self.context_dict.values() 
-                    if isinstance(v, dict) and context_name in v), None)
+    def get_context(self, key: str, data: dict = None) -> str | dict | None:
+        data = data or self.context_dict
+        return data.get(key) or next(
+            (r for v in data.values() if isinstance(v, dict) and (r := self.get_context(key, v))), None)
     
 
     def create_inline_kb(self, dict_iter: dict, cb_type: str):
@@ -848,7 +851,6 @@ async def help_handler(message: Message):
     
 @dp.message(Command(commands=["context"]))
 async def context_handler(message: Message, user_name: str):
-    # user_name = db.check_user(message.from_user.id)
     if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
@@ -858,14 +860,15 @@ async def context_handler(message: Message, user_name: str):
         return
     
     _, arg, prompt_body = args
-    if arg == '-i' and prompt_body in users.context_dict:
-        await message.reply(**users.set_kwargs(escape(users.context_dict[prompt_body])))
+    if arg == '-i':
+        text = users.get_context(prompt_body) or 'Context name not found'
+        await message.reply(**users.set_kwargs(escape(text)))
         return
     
     if arg == '-r' and prompt_body in users.context_dict:
         users.context_dict.pop(prompt_body)
         with open('./prompts.json', 'w', encoding="utf-8") as f:
-            json.dump(users.context_dict, f, ensure_ascii=False)
+            json.dump(users.context_dict, f, ensure_ascii=False, indent=4)
         await message.reply(f"Context {prompt_body} removed successfully.")
         return
     
@@ -877,7 +880,7 @@ async def context_handler(message: Message, user_name: str):
         try:
             users.context_dict[prompt_name] = prompt
             with open('./prompts.json', 'w', encoding="utf-8") as f:
-                json.dump(users.context_dict, f, ensure_ascii=False)
+                json.dump(users.context_dict, f, ensure_ascii=False, indent=4)
             await message.reply(f"Context {prompt_name} added successfully.")
         except Exception as e:
             await message.reply(f"An error occurred: {e}.")
