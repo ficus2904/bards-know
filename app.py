@@ -167,7 +167,7 @@ class GeminiAPI(BaseAPIInterface):
 
     async def get_enhanced_prompt(self, init_prompt: str) -> str:
         # self.settings['system_instruction'] = users.context_dict[''].get('SDXL')
-        self.settings['system_instruction'] = users.get_subcontext('SDXL')
+        self.settings['system_instruction'] = users.get_context('SDXL')
         self.reset_chat()
         enhanced_prompt = await self.prompt(init_prompt)
         return enhanced_prompt
