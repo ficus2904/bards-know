@@ -145,7 +145,9 @@ class GeminiAPI(BaseAPIInterface):
             },
             'system_instruction': None
         }
-        self.models = ['gemini-1.5-pro-exp-0827','gemini-1.5-pro-002','gemini-1.5-flash-002', ] # gemini-1.5-pro-latest
+        self.models = ['gemini-1.5-pro-exp-0827',
+                       'gemini-1.5-pro-002',
+                       'gemini-1.5-flash-002', ] # gemini-1.5-pro-latest
         self.current_model = self.models[0]
         self.client = None
         # self.context = []
@@ -651,7 +653,7 @@ class User:
         output = await queue_manager.enqueue_request(self.current_bot.name, 
                                                      self.current_bot.prompt(text, image))
         # output = await self.current_bot.prompt(text, image)
-        print(output)
+        # print(output)
         return escape(output) 
 
 
@@ -997,7 +999,7 @@ async def reply_kb_command(message: Message):
 async def photo_handler(message: Message | KeyboardButtonPollType, user_name: str):
     user = await users.check_and_clear(message, 'photo', user_name)
     if user.text is None:
-        user.text = 'Следуй системным правилам' # Следуй системным правилам
+        user.text = 'the provided image' # Следуй системным правилам
         # return
     
     if user.current_bot.name not in {'gemini', 'nvidia', 'groq', 'mistral'}:
