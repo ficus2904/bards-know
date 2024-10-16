@@ -756,8 +756,8 @@ Here are the available commands:
 
     async def split_text(self, text: str, max_length=4096):
         trigger = 'Closing Prompt'
-        if (trigger_index := text.find(trigger, 3000)) != -1:  
-            text = text[trigger_index + len(trigger):].strip(':\n"')
+        if (trigger_index := text.find(trigger, 2500)) != -1:  
+            text = f'`{text[trigger_index + len(trigger):].strip(':\n"*_')}`'
 
         start = 0
         while start < len(text):
