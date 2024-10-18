@@ -239,6 +239,7 @@ class MistralAPI(BaseAPIInterface):
         self.client = Mistral(api_key=self.api_key)
         self.models = ['mistral-small-latest',
                        'mistral-large-latest',
+                       'ministral-8b-latest',
                        'pixtral-12b-2409'] # https://docs.mistral.ai/getting-started/models/
         self.current_model = self.models[0]
 
