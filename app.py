@@ -142,6 +142,7 @@ class GeminiAPI(BaseAPIInterface):
                 HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
+                HarmCategory.HARM_CATEGORY_UNSPECIFIED: HarmBlockThreshold.BLOCK_NONE, 
             },
             'system_instruction': None
         }
@@ -155,11 +156,15 @@ class GeminiAPI(BaseAPIInterface):
         self.reset_chat()
 
     async def prompt(self, text: str, image = None) -> str:
-        if image is None:
-            response = self.chat.send_message(text)
-        else:
-            response = self.chat.send_message([Image.open(image), text])
-        return response.text
+        try:
+            if image is None:
+                response = self.chat.send_message(text)
+            else:
+                response = self.chat.send_message([Image.open(image), text])
+            return response.text
+        except Exception as e:
+            return e
+    
     
     def reset_chat(self):
         self.client = genai.GenerativeModel(self.current_model, **self.settings)
