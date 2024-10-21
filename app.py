@@ -445,8 +445,7 @@ class GlifAPI(BaseAPIInterface):
                     return 'Error exception'
                 
 
-
-    async def fetch_image_glif(self, prompt: str) -> dict:
+    async def gen_image(self, prompt: str) -> dict:
         url = "https://simple-api.glif.app"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         body = {"id": {
@@ -478,12 +477,52 @@ class GlifAPI(BaseAPIInterface):
                     return {'error': error_msg}
                 
 
-    async def fetch_image_fal(self, prompt: str) -> dict:
-        url = "https://fal.run/fal-ai/flux-pro/v1.1" #"https://fal.run/fal-ai/flux-pro/new"
-        headers = {"Authorization": f"Key {os.getenv('FAL_API_KEY')}",
+    async def prompt(self, text, image = None) -> str:
+        system_prompt = self.form_system_prompt()
+        self.context.append({"role": "user","content": text})
+        main_prompt = self.form_main_prompt()
+        output = await self.fetch_data(main_prompt, system_prompt)
+        self.context.append({'role':'assistant', 'content': output})
+        return output
+
+
+
+class FalAPI(BaseAPIInterface):
+    """Class for Fal API"""
+    name = 'fal'
+    
+    def __init__(self):
+        self.models = ["v1.1",]      
+        self.current_model = self.models[0]
+        self.image_size = None
+        self.change_image_size('3:4')
+
+    
+    async def prompt(self, *args, **kwargs):
+        pass
+
+
+    def change_image_size(self, image_size: str):
+        self.image_size = {
+            "9:16":"portrait_16_9", 
+            "3:4":"portrait_4_3",
+            "1:1":"square_hd", 
+            "4:3":"landscape_4_3", 
+            "16:9":"landscape_16_9",
+        }.get(image_size, 'portrait_4_3')
+
+
+    async def gen_image(self, prompt: str, image_size: str | None) -> str:
+        if image_size:
+            self.change_image_size(image_size)
+        if prompt == '':
+            return '✅ image size will be changed to ' + self.image_size
+        
+        url = "https://fal.run/fal-ai/flux-pro/" + self.current_model #"https://fal.run/fal-ai/flux-pro/new"
+        headers = {"Authorization": f"Key {self.api_key}",
                    'Content-Type': 'application/json'}
         body = {"prompt": prompt,
-                "image_size": "portrait_4_3", # Possible values: "square_hd", "square", "portrait_4_3", "portrait_16_9", "landscape_4_3", "landscape_16_9"
+                "image_size": self.image_size,
                 "num_inference_steps": 30,
                 "guidance_scale": 3.5,
                 "num_images": 1,
@@ -508,16 +547,7 @@ class GlifAPI(BaseAPIInterface):
                             logging.error(error_msg := 'No output data')
                         case _:
                             logging.error(error_msg := f'Unexpected error: {str(e)}')
-                    return {'error': error_msg}
-                
-
-    async def prompt(self, text, image = None) -> str:
-        system_prompt = self.form_system_prompt()
-        self.context.append({"role": "user","content": text})
-        main_prompt = self.form_main_prompt()
-        output = await self.fetch_data(main_prompt, system_prompt)
-        self.context.append({'role':'assistant', 'content': output})
-        return output
+                    return f'❌: {error_msg}'
 
 
 
@@ -525,6 +555,8 @@ class APIFactory:
     '''A factory pattern for creating bot interfaces'''
     bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI]
     bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
+    image_bots_lst: list = [FalAPI]
+    image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
     def __init__(self):
         self._instances: dict[str,BaseAPIInterface] = {}
 
@@ -536,7 +568,8 @@ class APIFactory:
 
 class RateLimitedQueueManager:
     def __init__(self):
-        self.limiters = {name:AsyncLimiter(1, 30) for name in APIFactory.bots}
+        self.all_bots = APIFactory.bots | APIFactory.image_bots
+        self.limiters = {name:AsyncLimiter(1, 30) for name in self.all_bots}
     
     async def enqueue_request(self, api_name: str, task):
         limiter = self.limiters[api_name]
@@ -545,11 +578,13 @@ class RateLimitedQueueManager:
 
 
 
+
 class User:
     '''Specific user interface in chat'''
     def __init__(self):
         self.api_factory = APIFactory()
         self.current_bot: BaseAPIInterface = self.api_factory.get(users.DEFAULT_BOT)
+        self.current_image_bot = FalAPI()
         self.time_dump = time()
         self.text = None
         
@@ -654,9 +689,13 @@ class User:
     async def prompt(self, text: str, image=None) -> str:
         output = await queue_manager.enqueue_request(self.current_bot.name, 
                                                      self.current_bot.prompt(text, image))
-        # output = await self.current_bot.prompt(text, image)
-        # print(output)
-        return escape(output) 
+        return escape(output)
+    
+
+    async def gen_image(self, prompt, image_size) -> str:
+        output = await queue_manager.enqueue_request(self.current_image_bot.name,
+                                                     self.current_image_bot.gen_image(prompt, image_size))
+        return output
 
 
 
@@ -692,9 +731,12 @@ Here are the available commands:
 - `/context [-i | -r] context_name`  
 - `/context [-a] context_name | context_body`
 
-3. **Generate Image:**  
-- Basic prompt: `/image your_prompt` for prompt enhancer
-- Force provided prompt: `/image -f your_prompt`  
+3. **Generate Image:**
+- Equal commands: `/image` or `/i`
+- Default size with prompt: `/image your_prompt` with 3:4 default size
+- Target size with prompt: `/image your_prompt --ar 9:16` 
+- Only change size: `/i --ar 9:16`
+- Acceptable ratio size: 9:16, 3:4, 1:1, 4:3, 16:9
 """  
         self.buttons: dict = {
                 'Добавить контекст':'change_context', 
@@ -793,9 +835,7 @@ Here are the available commands:
         user: User = self.get(message.from_user.id)
         if type_prompt in ['callback']:
             return user
-        # if not user_name:
-        #     user_name = db.check_user(message.from_user.id)
-        if type_prompt in ['image']:
+        elif type_prompt in ['image']:
             logging.info(f'{user_name or message.from_user.id}: "{message.text}"')
             return user
         ## clear context after 30 minutes
@@ -948,38 +988,30 @@ async def short_command_handler(message: Message, user_name: str):
 
 
 
-@dp.message(Command(commands=["image"]))
+@dp.message(Command(commands=["i","image"]))
 async def image_gen_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, "image", user_name)
-    if user is None:
-        return
     args = message.text.split(maxsplit=1)
     if len(args) != 2:
-        await message.reply("Usage: `/image prompt` or `/image -f prompt`")
+        text = "Usage: `/i prompt` or `/i prompt --ar 9:16`" \
+                "\nFor changing size: `/i --ar 9:16`"
+        await message.reply(escape(text), parse_mode=users.PARSE_MODE)
         return
     
-    await message.reply('Картинка генерируется...')
+    await message.reply('Картинка генерируется ⏳')
 
     try:
-        if args[1].startswith("-f"):
-            caption = ''
+        prompt, image_size = args[1], None
+        if '--ar ' in prompt:
+            prompt, image_size = prompt.split('--ar ')
+        image_url = await user.gen_image(prompt, image_size)
+        if image_url.startswith(('✅','❌')):
+            await message.reply(image_url)
         else:
-            caption = await GeminiAPI().get_enhanced_prompt(args[1].lstrip('-f '))
-            # await user.change_context('SDXL')
-            # caption = await user.prompt(user.text)
+            await message.answer_photo(photo=image_url)
 
-        image_url = await GlifAPI().fetch_image_fal(caption or args[1])
-        if 'error' in image_url:
-            raise Exception()
-        kwargs = {'photo': image_url, 'caption': caption}
-        ## max caption length 1024
-        kwargs['caption'] = f'`{escape(kwargs['caption'][:1000])}`'
-        if kwargs['photo']:
-            await message.answer_photo(**kwargs, parse_mode=users.PARSE_MODE)
-        else:
-            await message.reply(**users.set_kwargs(kwargs['caption']))
     except Exception as e:
-        await message.reply(f"Ошибка: {e}")
+        await message.reply(f"❌ Ошибка: {e}")
 
 
 
@@ -1017,9 +1049,7 @@ async def photo_handler(message: Message | KeyboardButtonPollType, user_name: st
     #     await user.change_context('SDXL')
     #     await message.reply("Выбран nvidia")
 
-
-    
-    text_reply = "Изображение получено! Ожидайте..."
+    text_reply = "Изображение получено! Ожидайте ⏳"
     if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
         text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
     await message.reply(text_reply)
@@ -1036,7 +1066,7 @@ async def echo_handler(message: Message | KeyboardButtonPollType, user_name: str
     if user.text is None or user.text == '/':
         return await message.answer(**users.set_kwargs())
     try:
-        await message.reply('Ожидайте...')
+        await message.reply('Ожидайте ⏳')
         output = await user.prompt(user.text)
         async for part in users.split_text(output):
             await message.answer(**users.set_kwargs(part))
