@@ -153,7 +153,7 @@ class GeminiAPI(BaseAPIInterface):
         # self.context = []
         self.chat = None
         self.reset_chat()
-        self.imagen = genai.ImageGenerationModel("imagen-3.0-generate-001")
+        # self.imagen = genai.ImageGenerationModel("imagen-3.0-generate-001")
 
     async def prompt(self, text: str, image = None) -> str:
         try:
