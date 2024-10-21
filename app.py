@@ -573,6 +573,8 @@ class APIFactory:
     '''A factory pattern for creating bot interfaces'''
     bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI]
     bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
+    image_bots_lst: list = [FalAPI]
+    image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
     
     def __init__(self):
         self._instances: dict[str,BaseAPIInterface] = {}
