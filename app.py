@@ -142,7 +142,6 @@ class GeminiAPI(BaseAPIInterface):
                 HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
-                HarmCategory.HARM_CATEGORY_UNSPECIFIED: HarmBlockThreshold.BLOCK_NONE, 
             },
             'system_instruction': None
         }
@@ -154,6 +153,7 @@ class GeminiAPI(BaseAPIInterface):
         # self.context = []
         self.chat = None
         self.reset_chat()
+        self.imagen = genai.ImageGenerationModel("imagen-3.0-generate-001")
 
     async def prompt(self, text: str, image = None) -> str:
         try:
@@ -163,7 +163,7 @@ class GeminiAPI(BaseAPIInterface):
                 response = self.chat.send_message([Image.open(image), text])
             return response.text
         except Exception as e:
-            return e
+            return f'error: {e}'
     
     
     def reset_chat(self):
@@ -172,7 +172,20 @@ class GeminiAPI(BaseAPIInterface):
         self.chat = self.client.start_chat(history=self.context)
 
 
+    async def gen_image(self, prompt, image_size):
+        result = self.imagen.generate_images(
+            prompt=prompt,
+            number_of_images=1,
+            safety_filter_level="block_only_high",
+            person_generation="allow_adult",
+            aspect_ratio=image_size or "3:4",
+            # negative_prompt="Outside",
+        )
+        return result.images
+
+
     async def get_enhanced_prompt(self, init_prompt: str) -> str:
+        '''DEPRECATED'''
         # self.settings['system_instruction'] = users.context_dict[''].get('SDXL')
         self.settings['system_instruction'] = users.get_context('SDXL')
         self.reset_chat()
@@ -560,8 +573,7 @@ class APIFactory:
     '''A factory pattern for creating bot interfaces'''
     bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI]
     bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
-    image_bots_lst: list = [FalAPI]
-    image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
+    
     def __init__(self):
         self._instances: dict[str,BaseAPIInterface] = {}
 
@@ -1014,6 +1026,32 @@ async def image_gen_handler(message: Message, user_name: str):
             await message.reply(image_url)
         else:
             await message.answer_photo(photo=image_url)
+
+    except Exception as e:
+        await message.reply(f"❌ Ошибка: {e}")
+
+
+
+@dp.message(Command(commands=["imagen"]))
+async def imagen_handler(message: Message, user_name: str):
+    user = await users.check_and_clear(message, "image", user_name)
+    args = message.text.split(maxsplit=1)
+    if len(args) != 2:
+        text = "Usage: `/i prompt` or `/i prompt --ar 9:16`" \
+                "\nFor changing size: `/i --ar 9:16`"
+        await message.reply(escape(text), parse_mode=users.PARSE_MODE)
+        return
+    
+    await message.reply('Картинка генерируется ⏳')
+
+    try:
+        prompt, image_size = args[1], None
+        if '--ar ' in prompt:
+            prompt, image_size = prompt.split('--ar ')
+        images = await user.current_bot.gen_image(prompt, image_size)
+
+        for image in images:
+            await message.answer_photo(photo=image)
 
     except Exception as e:
         await message.reply(f"❌ Ошибка: {e}")
