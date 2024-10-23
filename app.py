@@ -136,15 +136,12 @@ class GeminiAPI(BaseAPIInterface):
     name = 'gemini'
 
     def __init__(self):
-        self.settings = { 
-            'safety_settings': {
+        self.safety_settings = {
                 HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
-            },
-            'system_instruction': None
-        }
+            }
         self.models = ['gemini-1.5-pro-exp-0827',
                        'gemini-1.5-pro-002',
                        'gemini-1.5-flash-002', ] # gemini-1.5-pro-latest
@@ -166,11 +163,16 @@ class GeminiAPI(BaseAPIInterface):
             return f'error: {e}'
     
     
-    def reset_chat(self):
-        self.client = genai.GenerativeModel(self.current_model, **self.settings)
-        self.context = []
-        self.chat = self.client.start_chat(history=self.context)
+    def reset_chat(self, context: str = None, clear_system: bool = False):
+        if context or clear_system or self.client is None:
+            self.client = genai.GenerativeModel(self.current_model, 
+                                                self.safety_settings,
+                                                system_instruction=context)
+        self.chat = self.client.start_chat()
 
+
+    def length(self) -> int: 
+        return int(self.client._system_instruction is not None) + len(self.chat.history)
 
     async def gen_image(self, prompt, image_size):
         result = self.imagen.generate_images(
@@ -624,8 +626,8 @@ class User:
         #     context = users.get_subcontext(context_name)
 
         if isinstance(self.current_bot, GeminiAPI):
-            self.current_bot.settings['system_instruction'] = context
-            self.current_bot.reset_chat()
+            # self.current_bot.settings['system_instruction'] = context
+            self.current_bot.reset_chat(context=context)
             return f'Контекст {context_name} добавлен'
         
         elif isinstance(self.current_bot, CohereAPI):
@@ -646,13 +648,14 @@ class User:
     def info(self) -> str:
         check_vlm = hasattr(self.current_bot, 'vlm_params')
         is_gemini = self.current_bot.name == 'gemini'
-        if is_gemini:
-            context = bool(self.current_bot.settings['system_instruction']) + len(self.current_bot.chat.history)
+        # if is_gemini:
+            # context = bool(self.current_bot.settings['system_instruction']) + len(self.current_bot.chat.history)
+            # context = not (self.current_bot.client._system_instruction is None) + len(self.current_bot.chat.history)
         return '\n'.join(['',
             f'* Текущий бот: {self.current_bot.name}',
             f'* Модель: {self.current_bot.current_model}',
             f'* Модель vlm: {self.current_bot.current_vlm_model}' if check_vlm else '',
-            f'* Размер контекста: {len(self.current_bot.context) if not is_gemini else context}'])
+            f'* Размер контекста: {len(self.current_bot.context) if not is_gemini else self.current_bot.length()}'])
     
 
     def show_prompts_list(self) -> str:
@@ -677,10 +680,12 @@ class User:
 
 
     def clear(self) -> str:
-        self.current_bot.context.clear()
         if self.current_bot.name == 'gemini':
-            self.current_bot.settings['system_instruction'] = None
-            self.current_bot.reset_chat()
+            clear_system = True if self.current_bot.length() == 1 else False
+            self.current_bot.reset_chat(clear_system=clear_system)
+        else:
+            ct = self.current_bot.context
+            self.current_bot.context = [] if len(ct) in {0,1} else ct[:1]
         return 'Контекст диалога отчищен'
     
 
@@ -857,8 +862,8 @@ Here are the available commands:
         elif type_prompt in ['image']:
             logging.info(f'{user_name or message.from_user.id}: "{message.text}"')
             return user
-        ## clear context after 30 minutes
-        if (time() - user.time_dump) > 1800:
+        ## clear dialog context after 1 hour
+        if (time() - user.time_dump) > 3600:
             user.clear()
         user.time_dump = time()
         type_prompt = {'text': message.text, 'photo': message.caption}.get(type_prompt, type_prompt)
