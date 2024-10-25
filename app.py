@@ -43,6 +43,19 @@ class CallbackClass(CallbackData, prefix='callback'):
 
 
 
+class UserFilterMiddleware(BaseMiddleware):
+    async def __call__(self, handler: callable, event: TelegramObject, data: dict):
+        USER_ID = data['event_from_user'].id
+        if user_name:= users.db.check_user(USER_ID):
+            data.setdefault('user_name', user_name)
+            await handler(event, data)
+        else:
+            if isinstance(event, Message):
+                await bot.send_message(event.chat.id, 
+                f'Доступ запрещен. Обратитесь к администратору. Ваш id: {USER_ID}')
+
+
+
 class DBConnection:
     """Singleton class for SQLite3 database connection"""
     _instance = None
@@ -59,9 +72,6 @@ class DBConnection:
         if not self.check_table():
             self.init_table()
 
-    # def execute(self, *args):
-    #     self.cursor.execute(*args)
-
     def fetchone(self, *args) -> tuple | None:
         # self.execute(*args)
         self.cursor.execute(*args)
@@ -76,8 +86,6 @@ class DBConnection:
         return self.fetchone(query)[0]
     
     def init_table(self) -> None:
-        # self.execute('''CREATE TABLE IF NOT EXISTS users
-        #                 (id INT PRIMARY KEY, name TEXT)''')
         self.cursor.execute('''CREATE TABLE IF NOT EXISTS users
                             (id INT PRIMARY KEY, name TEXT)''')
         self.conn.commit()
@@ -104,9 +112,6 @@ class DBConnection:
     def check_user(self, user_id: int) -> str | None:
         answer = self.fetchone("SELECT name FROM users WHERE id = ? LIMIT 1", (user_id,))
         return answer[0] if answer else None
-
-    # def commit(self):
-    #     self.conn.commit()
 
     def close(self):
         self.conn.close()
@@ -515,7 +520,7 @@ class FalAPI(BaseAPIInterface):
         self.models = ["v1.1",]      
         self.current_model = self.models[0]
         self.image_size = None
-        self.change_image_size('3:4')
+        self.change_image_size('9:16') #
 
     
     async def prompt(self, *args, **kwargs):
@@ -615,18 +620,13 @@ class User:
         if context_name == '◀️':
             return users.context_dict
         
-        # context = users.context_dict.get(context_name, 
-        #                                  users.get_subcontext(context_name))
         context = users.get_context(context_name)
 
         if isinstance(context, dict): # subgroup
             context.setdefault('◀️','◀️')
             return context
-        # elif context is None: # final set in subgroup
-        #     context = users.get_subcontext(context_name)
 
         if isinstance(self.current_bot, GeminiAPI):
-            # self.current_bot.settings['system_instruction'] = context
             self.current_bot.reset_chat(context=context)
             return f'Контекст {context_name} добавлен'
         
@@ -711,14 +711,14 @@ class User:
 
 
     async def prompt(self, text: str, image=None) -> str:
-        output = await queue_manager.enqueue_request(self.current_bot.name, 
-                                                     self.current_bot.prompt(text, image))
+        output = await users.queue_manager.enqueue_request(self.current_bot.name, 
+                                            self.current_bot.prompt(text, image))
         return escape(output)
     
 
-    async def gen_image(self, prompt, image_size) -> str:
-        output = await queue_manager.enqueue_request(self.current_image_bot.name,
-                                                     self.current_image_bot.gen_image(prompt, image_size))
+    async def gen_image(self, prompt: str, image_size: str) -> str:
+        output = await users.queue_manager.enqueue_request(self.current_image_bot.name,
+                                    self.current_image_bot.gen_image(prompt, image_size))
         return output
 
 
@@ -726,6 +726,8 @@ class User:
 class UsersMap():
     '''Main storage of user's sessions, common variables and functions'''
     def __init__(self):
+        self.db = DBConnection()
+        self.queue_manager = RateLimitedQueueManager()
         self._user_instances: dict[int, User] = {}
         self.context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
         self.template_prompts: dict = {
@@ -757,7 +759,7 @@ Here are the available commands:
 
 3. **Generate Image:**
 - Equal commands: `/image` or `/i`
-- Default size with prompt: `/image your_prompt` with 3:4 default size
+- Default size with prompt: `/image your_prompt` with 9:16 default size
 - Target size with prompt: `/image your_prompt --ar 9:16` 
 - Only change size: `/i --ar 9:16`
 - Acceptable ratio size: 9:16, 3:4, 1:1, 4:3, 16:9
@@ -874,6 +876,7 @@ Here are the available commands:
 
 
     def get_context(self, key: str, data: dict = None) -> str | dict | None:
+        '''Get target context in multilevel dict structure'''
         data = data or self.context_dict
         return data.get(key) or next(
             (r for v in data.values() if isinstance(v, dict) and (r := self.get_context(key, v))), None)
@@ -888,24 +891,8 @@ Here are the available commands:
 
 
 users = UsersMap()
-queue_manager = RateLimitedQueueManager()
 bot = Bot(token=os.getenv('TELEGRAM_API_KEY'))
-db = DBConnection()
 dp = Dispatcher()
-
-
-class UserFilterMiddleware(BaseMiddleware):
-    async def __call__(self, handler: callable, event: TelegramObject, data: dict):
-        USER_ID = data['event_from_user'].id
-        if user_name:= db.check_user(USER_ID):
-            data.setdefault('user_name', user_name)
-            await handler(event, data)
-        else:
-            if isinstance(event, Message):
-                await bot.send_message(event.chat.id, 
-                f'Доступ запрещен. Обратитесь к администратору. Ваш id: {USER_ID}')
-
-
 dp.message.middleware(UserFilterMiddleware())
 dp.callback_query.middleware(UserFilterMiddleware())
 
@@ -913,7 +900,6 @@ dp.callback_query.middleware(UserFilterMiddleware())
 @dp.message(CommandStart())
 async def start_handler(message: Message):
     await message.answer(f'Доступ открыт. Добро пожаловать {message.from_user.first_name}!')
-
 
 
 @dp.message(Command(commands=["help"]))
@@ -963,7 +949,6 @@ async def context_handler(message: Message, user_name: str):
 
 @dp.message(Command(commands=["add_user"]))
 async def add_handler(message: Message, user_name: str):
-    # user_name = db.check_user(message.from_user.id)
     if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
@@ -974,7 +959,7 @@ async def add_handler(message: Message, user_name: str):
     # Split the argument into user_id and name
     user_id, name = args[1].split(maxsplit=1)
     try:
-        db.add_user(int(user_id), name)
+        users.db.add_user(int(user_id), name)
         await message.reply(f"User {name} with ID {user_id} added successfully.")
     except sqlite3.IntegrityError:
         await message.reply("This user ID already exists.")
@@ -984,7 +969,6 @@ async def add_handler(message: Message, user_name: str):
 
 @dp.message(Command(commands=["remove_user"]))
 async def remove_handler(message: Message, user_name: str):
-    # user_name = db.check_user(message.from_user.id)
     if user_name != 'ADMIN':
         await message.reply("You don't have admin privileges")
         return
@@ -996,7 +980,7 @@ async def remove_handler(message: Message, user_name: str):
     name_to_remove = args[1].strip()
     try:
         if user_name:
-            db.remove_user(name_to_remove)
+            users.db.remove_user(name_to_remove)
             await message.reply(f"User `{name_to_remove}` removed successfully.")
         else:
             await message.reply(f"User `{name_to_remove}` not found.")
@@ -1088,16 +1072,11 @@ async def photo_handler(message: Message | KeyboardButtonPollType, user_name: st
     user = await users.check_and_clear(message, 'photo', user_name)
     if user.text is None:
         user.text = 'the provided image' # Следуй системным правилам
-        # return
     
     if user.current_bot.name not in {'gemini', 'nvidia', 'groq', 'mistral'}:
         await user.change_bot('gemini')
-        await user.change_context('SDXL')
-        await message.reply("Выбран gemini и контекст SDXL")
-    # if user.current_bot.name != 'nvidia':
-    #     await user.change_bot('nvidia')
-    #     await user.change_context('SDXL')
-    #     await message.reply("Выбран nvidia")
+        await users.get_context('Универсальный')
+        await message.reply("Выбран gemini и контекст Универсальный")
 
     text_reply = "Изображение получено! Ожидайте ⏳"
     if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
@@ -1107,7 +1086,6 @@ async def photo_handler(message: Message | KeyboardButtonPollType, user_name: st
     output = await user.prompt(user.text, tg_photo)
     async for part in users.split_text(output):
         await message.answer(**users.set_kwargs(part))
-    return
 
 
 @dp.message(F.content_type.in_({'text'}))
