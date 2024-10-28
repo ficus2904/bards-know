@@ -448,7 +448,7 @@ class GlifAPI(BaseAPIInterface):
 
     def form_system_prompt(self) -> str:
         if not self.context:
-            default_prompt = users.context_dict.get('Универсальный')
+            default_prompt = users.get_context('♾️ Универсальный')
             self.context.append({'role':'system', 'content': default_prompt})
         return self.context[0].get('content')
     
@@ -625,18 +625,25 @@ class User:
         if isinstance(context, dict): # subgroup
             context.setdefault('◀️','◀️')
             return context
+        
+        output_text = f'Контекст {context_name} добавлен'
+        
+        if context_name in users.context_dict['🖼️ Image_desc']:
+            output_text += f'\n📏 {self.current_image_bot.image_size}'
+
 
         if isinstance(self.current_bot, GeminiAPI):
             self.current_bot.reset_chat(context=context)
-            return f'Контекст {context_name} добавлен'
+            return output_text
         
-        elif isinstance(self.current_bot, CohereAPI):
+        if isinstance(self.current_bot, CohereAPI):
             body = {"role": 'SYSTEM', "message": context}
-        elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI,TogetherAPI,GlifAPI,MistralAPI)):
+        # elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI,TogetherAPI,GlifAPI,MistralAPI)):
+        else:
             body = {'role':'system', 'content': context}
 
         self.current_bot.context.append(body)
-        return f'Контекст {context_name} добавлен'
+        return output_text
 
 
     async def template_prompts(self, template: str) -> str:
@@ -666,7 +673,7 @@ class User:
     async def change_bot(self, bot_name: str) -> str:
         self.current_bot = self.api_factory.get(bot_name)
         self.clear()
-        return f'Смена бота на {self.current_bot.name}'
+        return f'🤖 Смена бота на {self.current_bot.name}'
     
 
     async def change_model(self, model_name: str) -> str:
@@ -676,17 +683,19 @@ class User:
         if hasattr(cur_bot, 'vlm_params') and model_name in cur_bot.vlm_params:
             self.current_bot.current_vlm_model = model_name
         self.clear()
-        return f'Смена модели на {users.make_short_name(model_name)}'
+        return f'🔄 Смена модели на {users.make_short_name(model_name)}'
 
 
     def clear(self) -> str:
         if self.current_bot.name == 'gemini':
-            clear_system = True if self.current_bot.length() == 1 else False
+            clear_system = self.current_bot.length() == 1
             self.current_bot.reset_chat(clear_system=clear_system)
         else:
             ct = self.current_bot.context
-            self.current_bot.context = [] if len(ct) in {0,1} else ct[:1]
-        return 'Контекст диалога отчищен'
+            clear_system = len(ct) <= 1
+            self.current_bot.context = [] if clear_system else ct[:1]
+        status = ' полностью' if clear_system else ' кроме системного'
+        return f'🧹 Диалог очищен{status}'
     
 
     def make_multi_modal_body(text, image, context: list, is_mistral = False) -> None:
@@ -1061,7 +1070,7 @@ async def reply_kb_command(message: Message):
                         'prompts':[users.template_prompts, 'промпт']}
         items = command_dict.get(user.text.split('_')[-1])
         builder_inline = users.create_inline_kb(items[0], user.text)
-        kwargs = users.set_kwargs(f'Выберите {items[-1]}:',  builder_inline)
+        kwargs = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
     
     await message.answer(**kwargs)
 
@@ -1075,12 +1084,12 @@ async def photo_handler(message: Message | KeyboardButtonPollType, user_name: st
     
     if user.current_bot.name not in {'gemini', 'nvidia', 'groq', 'mistral'}:
         await user.change_bot('gemini')
-        await users.get_context('Универсальный')
-        await message.reply("Выбран gemini и контекст Универсальный")
+        await users.get_context('♾️ Универсальный')
+        await message.reply("Выбран gemini и контекст ♾️ Универсальный")
 
     text_reply = "Изображение получено! Ожидайте ⏳"
     if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
-        text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model}..."
+        text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model} ⏳"
     await message.reply(text_reply)
     tg_photo = await bot.download(message.photo[-1].file_id)
     output = await user.prompt(user.text, tg_photo)
@@ -1122,7 +1131,7 @@ async def template_callback_handler(query: CallbackQuery, callback_data: Callbac
     try:
         user = await users.check_and_clear(query, 'callback')
         await query.message.edit_reply_markup(reply_markup=None)
-        await query.message.reply('Ожидайте...')
+        await query.message.reply('Ожидайте ⏳')
         output = await user.template_prompts(callback_data.name)
         await query.message.answer(**users.set_kwargs(output))
         await query.answer()
