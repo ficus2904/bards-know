@@ -517,7 +517,7 @@ class FalAPI(BaseAPIInterface):
     name = 'fal'
     
     def __init__(self):
-        self.models = ["v1.1",]      
+        self.models = ["v1.1-ultra","v1.1",]
         self.current_model = self.models[0]
         self.image_size = None
         self.change_image_size('9:16') #
@@ -549,10 +549,12 @@ class FalAPI(BaseAPIInterface):
         body = {"prompt": prompt,
                 "image_size": self.image_size,
                 "num_inference_steps": 30,
-                "guidance_scale": 3.5,
+                # "guidance_scale": 3.5,
                 "num_images": 1,
                 "enable_safety_checker": False,
-                "safety_tolerance": "5"}
+                "safety_tolerance": "5",
+                "raw": True,
+                }
         async with aiohttp.ClientSession() as session:
             async with session.post(url=url,headers=headers,json=body, timeout=90) as response:
                 try:
@@ -1005,7 +1007,7 @@ async def short_command_handler(message: Message, user_name: str):
 
 
 
-@dp.message(Command(commands=["i","image"]))
+@dp.message(Command(commands=["i","I","image"]))
 async def image_gen_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, "image", user_name)
     args = message.text.split(maxsplit=1)
