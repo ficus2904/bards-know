@@ -527,7 +527,7 @@ class FalAPI(BaseAPIInterface):
         pass
 
 
-    def change_image_size(self, image_size: str):
+    def change_image_size_old(self, image_size: str):
         self.image_size = {
             "9:16":"portrait_16_9", 
             "3:4":"portrait_4_3",
@@ -535,6 +535,13 @@ class FalAPI(BaseAPIInterface):
             "4:3":"landscape_4_3", 
             "16:9":"landscape_16_9",
         }.get(image_size, 'portrait_4_3')
+
+
+    def change_image_size(self, image_size: str):
+        if image_size in {"9:21","9:16","3:4","1:1","4:3","16:9","21:9"}:
+            self.image_size = image_size
+        else:
+            self.image_size = "9:16"
 
 
     async def gen_image(self, prompt: str, image_size: str | None) -> str:
@@ -553,7 +560,7 @@ class FalAPI(BaseAPIInterface):
                 "num_images": 1,
                 "enable_safety_checker": False,
                 "safety_tolerance": "5",
-                "aspect_ratio": image_size or '9:16',
+                "aspect_ratio": self.image_size,
                 "raw": True,
                 }
         async with aiohttp.ClientSession() as session:
