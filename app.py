@@ -537,7 +537,7 @@ class FalAPI(BaseAPIInterface):
         }.get(image_size, 'portrait_4_3')
 
 
-    async def gen_image(self, prompt: str, image_size: str | None) -> str:
+    async def gen_image(self, prompt: str, image_size: str | None = '9:16') -> str:
         if image_size:
             self.change_image_size(image_size)
         if prompt == '':
@@ -547,12 +547,13 @@ class FalAPI(BaseAPIInterface):
         headers = {"Authorization": f"Key {self.api_key}",
                    'Content-Type': 'application/json'}
         body = {"prompt": prompt,
-                "image_size": self.image_size,
+                # "image_size": self.image_size,
                 "num_inference_steps": 30,
                 # "guidance_scale": 3.5,
                 "num_images": 1,
                 "enable_safety_checker": False,
                 "safety_tolerance": "5",
+                "aspect_ratio": image_size,
                 "raw": True,
                 }
         async with aiohttp.ClientSession() as session:
