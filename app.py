@@ -2,14 +2,16 @@ import os
 import io
 import re
 import json
+import shlex
+import atexit
 import base64
+import sqlite3
 import asyncio
 import aiohttp
 import logging
 import warnings
-import sqlite3
 import cohere
-import atexit
+from argparse import ArgumentParser
 from mistralai import Mistral
 import google.generativeai as genai
 from abc import ABC, abstractmethod
@@ -519,15 +521,31 @@ class FalAPI(BaseAPIInterface):
     def __init__(self):
         self.models = ["v1.1-ultra","v1.1",]
         self.current_model = self.models[0]
-        self.image_size = None
-        self.change_image_size('9:16') #
+        self.image_size = '9:16'
+        self.raw = True
 
-    
+
+    def change_model(self, model):
+        self.current_model = {
+            "ultra": "v1.1-ultra",
+            "1.1": "v1.1",
+        }.get(model, "v1.1-ultra")
+        if model == 'raw':
+            self.raw = True
+        elif model in {'no_raw','wo_raw'}:
+            self.raw = False
+
+
     async def prompt(self, *args, **kwargs):
         pass
 
 
-    def change_image_size_old(self, image_size: str):
+    def get_info(self) -> str:
+        return (f'\n📏 Ratio: {self.image_size}\n'
+                f'🤖 Model: {self.current_model} {int(self.raw)}')
+
+
+    def change_image_size_old(self, image_size: str) -> str:
         self.image_size = {
             "9:16":"portrait_16_9", 
             "3:4":"portrait_4_3",
@@ -535,34 +553,51 @@ class FalAPI(BaseAPIInterface):
             "4:3":"landscape_4_3", 
             "16:9":"landscape_16_9",
         }.get(image_size, 'portrait_4_3')
+        return self.image_size
 
 
-    def change_image_size(self, image_size: str):
+    def change_image_size(self, image_size: str) -> str:
         if image_size in {"9:21","9:16","3:4","1:1","4:3","16:9","21:9"}:
             self.image_size = image_size
         else:
             self.image_size = "9:16"
+        return self.image_size
+    
+
+    def get_kwargs(self, image_size: str, model: str) -> dict:
+        if model:
+            self.change_model(model)
+
+        if self.current_model == 'v1.1':
+            kwargs = {
+                "image_size": self.change_image_size_old(image_size),
+            }
+        elif self.current_model == 'v1.1-ultra':
+            kwargs = {
+                "aspect_ratio": self.change_image_size(image_size),
+                "raw": self.raw,
+            }
+        return kwargs
 
 
-    async def gen_image(self, prompt: str, image_size: str | None) -> str:
-        if image_size:
-            self.change_image_size(image_size)
+    async def gen_image(self, prompt: str, 
+                        image_size: str | None = None, 
+                        model: str | None = None) -> str:
+
+        kwargs = self.get_kwargs(image_size, model)
+
         if prompt == '':
-            return '✅ image size will be changed to ' + self.image_size
+            return self.get_info()
         
-        url = "https://fal.run/fal-ai/flux-pro/" + self.current_model #"https://fal.run/fal-ai/flux-pro/new"
+        url = "https://fal.run/fal-ai/flux-pro/" + self.current_model
         headers = {"Authorization": f"Key {self.api_key}",
                    'Content-Type': 'application/json'}
-        body = {"prompt": prompt,
-                # "image_size": self.image_size,
-                # "num_inference_steps": 30,
-                # "guidance_scale": 3.5,
+        body = {
+                "prompt": prompt,
                 "num_images": 1,
                 "enable_safety_checker": False,
                 "safety_tolerance": "5",
-                "aspect_ratio": self.image_size,
-                "raw": True,
-                }
+                } | kwargs
         async with aiohttp.ClientSession() as session:
             async with session.post(url=url,headers=headers,json=body, timeout=90) as response:
                 try:
@@ -614,6 +649,30 @@ class RateLimitedQueueManager:
 
 
 
+class ImageGenArgParser:
+    def __init__(self):
+        self.parser = ArgumentParser(prog='/i', description='Generate images with custom parameters')
+        self.parser.add_argument('prompt', nargs='*', help='Image generation prompt')
+        self.parser.add_argument('--ar', dest='aspect_ratio', help='Aspect ratio (e.g., 9:16)')
+        self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[1, 2]
+
+    def parse_args(self, args_str: str) -> tuple:
+        try:
+            args = shlex.split(args_str)
+            parsed_args = self.parser.parse_args(args)
+            prompt = ' '.join(parsed_args.prompt) if parsed_args.prompt else ''
+            return prompt, parsed_args.aspect_ratio, parsed_args.model
+        except Exception as e:
+            raise ValueError(f"Invalid arguments: {str(e)}")
+
+    def get_usage(self) -> str:
+        return ("Usage examples:\n"
+                "• Basic: `/i your prompt here`\n"
+                "• With aspect ratio: `/i your prompt here --ar 9:16`\n"
+                "• With model selection: `/i your prompt here --m 1.1`\n"
+                "• Combined: `/i your prompt here --ar 9:16 --m ultra`")
+
+
 
 class User:
     '''Specific user interface in chat'''
@@ -639,7 +698,9 @@ class User:
         output_text = f'Контекст {context_name} добавлен'
         
         if context_name in users.context_dict['🖼️ Image_desc']:
-            output_text += f'\n📏 {self.current_image_bot.image_size}'
+            # output_text += f'\n🤖 {self.current_image_bot.current_model}'
+            # output_text += f'\n📏 {self.current_image_bot.image_size}'
+            output_text += self.current_image_bot.get_info()
 
 
         if isinstance(self.current_bot, GeminiAPI):
@@ -735,9 +796,9 @@ class User:
         return escape(output)
     
 
-    async def gen_image(self, prompt: str, image_size: str) -> str:
+    async def gen_image(self, *args, **kwargs) -> str:
         output = await users.queue_manager.enqueue_request(self.current_image_bot.name,
-                                    self.current_image_bot.gen_image(prompt, image_size))
+                                    self.current_image_bot.gen_image(*args, **kwargs))
         return output
 
 
@@ -794,6 +855,7 @@ Here are the available commands:
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
         self.DEFAULT_BOT: str = 'gemini' #'glif' gemini
         self.builder: ReplyKeyboardBuilder = self.create_builder()
+        self.parser = ImageGenArgParser()
 
 
     def create_builder(self) -> ReplyKeyboardBuilder:
@@ -1020,19 +1082,16 @@ async def image_gen_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, "image", user_name)
     args = message.text.split(maxsplit=1)
     if len(args) != 2:
-        text = "Usage: `/i prompt` or `/i prompt --ar 9:16`" \
-                "\nFor changing size: `/i --ar 9:16`"
-        await message.reply(escape(text), parse_mode=users.PARSE_MODE)
+        await message.reply(escape(
+            users.parser.get_usage() + user.current_image_bot.get_info()
+            ), parse_mode=users.PARSE_MODE)
         return
     
     await message.reply('Картинка генерируется ⏳')
 
     try:
-        prompt, image_size = args[1], None
-        if '--ar ' in prompt:
-            prompt, image_size = prompt.split('--ar ')
-        image_url = await user.gen_image(prompt, image_size)
-        if image_url.startswith(('✅','❌')):
+        image_url = await user.gen_image(*users.parser.parse_args(args[1]))
+        if image_url.startswith(('\n📏','❌')):
             await message.reply(image_url)
         else:
             await message.answer_photo(photo=image_url)
