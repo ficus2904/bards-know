@@ -2,7 +2,6 @@ import os
 import io
 import re
 import json
-import shlex
 import atexit
 import base64
 import sqlite3
@@ -651,17 +650,16 @@ class RateLimitedQueueManager:
 
 class ImageGenArgParser:
     def __init__(self):
-        self.parser = ArgumentParser(prog='/i', description='Generate images with custom parameters')
+        self.parser = ArgumentParser(description='Generate images with custom parameters')
         self.parser.add_argument('prompt', nargs='*', help='Image generation prompt')
         self.parser.add_argument('--ar', dest='aspect_ratio', help='Aspect ratio (e.g., 9:16)')
         self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[1, 2]
 
-    def parse_args(self, args_str: str) -> tuple:
+    def get_args(self, args_str: str) -> tuple:
         try:
-            args = shlex.split(args_str)
-            parsed_args = self.parser.parse_args(args)
-            prompt = ' '.join(parsed_args.prompt) if parsed_args.prompt else ''
-            return prompt, parsed_args.aspect_ratio, parsed_args.model
+            prompt, flags = args_str.split('--', 1) if '--' in args_str else (args_str, '')
+            args = self.parser.parse_args((f"--{flags}" if flags else '').split())
+            return prompt.strip(), args.aspect_ratio, args.model
         except Exception as e:
             raise ValueError(f"Invalid arguments: {str(e)}")
 
@@ -670,7 +668,9 @@ class ImageGenArgParser:
                 "• Basic: `/i your prompt here`\n"
                 "• With aspect ratio: `/i your prompt here --ar 9:16`\n"
                 "• With model selection: `/i your prompt here --m 1.1`\n"
-                "• Combined: `/i your prompt here --ar 9:16 --m ultra`")
+                "• Combined: `/i your prompt here --ar 9:16 --m ultra`\n"
+                "• Raw mode in ultra: `/i prompt --m raw`\n"
+                "• Unable Raw mode in ultra: `/i --m no_raw OR wo_raw`")
 
 
 
@@ -1090,7 +1090,7 @@ async def image_gen_handler(message: Message, user_name: str):
     await message.reply('Картинка генерируется ⏳')
 
     try:
-        image_url = await user.gen_image(*users.parser.parse_args(args[1]))
+        image_url = await user.gen_image(*users.parser.get_args(args[1]))
         if image_url.startswith(('\n📏','❌')):
             await message.reply(image_url)
         else:
