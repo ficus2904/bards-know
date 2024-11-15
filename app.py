@@ -148,10 +148,12 @@ class GeminiAPI(BaseAPIInterface):
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
             }
-        self.models = ['gemini-1.5-pro-exp-0827',
-                       'gemini-1.5-pro-002',
-                       'gemini-1.5-flash-002', 
-                       'gemini-exp-1114'] # gemini-1.5-pro-latest
+        self.models = [
+            'gemini-exp-1114',
+            'gemini-1.5-pro-exp-0827',
+            'gemini-1.5-pro-002',
+            'gemini-1.5-flash-002', 
+                       ] # gemini-1.5-pro-latest
         self.current_model = self.models[0]
         self.client = None
         # self.context = []
@@ -760,7 +762,7 @@ class User:
 
     def clear(self) -> str:
         if self.current_bot.name == 'gemini':
-            clear_system = self.current_bot.length() == 1
+            clear_system = self.current_bot.length() in {1,0}
             self.current_bot.reset_chat(clear_system=clear_system)
         else:
             ct = self.current_bot.context
