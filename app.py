@@ -149,11 +149,11 @@ class GeminiAPI(BaseAPIInterface):
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
             }
         self.models = [
+            'gemini-exp-1114',
             'gemini-1.5-pro-exp-0827',
             'gemini-1.5-pro-002',
             'gemini-1.5-flash-002', 
-            'gemini-exp-1114',
-                       ] # gemini-1.5-pro-latest
+            ] # gemini-1.5-pro-latest
         self.current_model = self.models[0]
         self.client = None
         # self.context = []
