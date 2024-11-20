@@ -36,6 +36,7 @@ warnings.simplefilter('ignore')
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 logging.basicConfig(filename='./app.log', level=logging.INFO, encoding='utf-8',
                     format='%(asctime)19s %(levelname)s: %(message)s')
+logging.getLogger('aiogram').setLevel(logging.WARNING)
 
 
 class CallbackClass(CallbackData, prefix='callback'):
@@ -52,6 +53,7 @@ class UserFilterMiddleware(BaseMiddleware):
             await handler(event, data)
         else:
             if isinstance(event, Message):
+                logging.warning(f'Unknown user {USER_ID}')
                 await bot.send_message(event.chat.id, 
                 f'Доступ запрещен. Обратитесь к администратору. Ваш id: {USER_ID}')
 
@@ -268,8 +270,8 @@ class MistralAPI(BaseAPIInterface):
     def __init__(self):
         self.client = Mistral(api_key=self.api_key)
         self.models = [
-            'mistral-large-latest',
             'pixtral-large-latest',
+            'mistral-large-latest',
             'mistral-small-latest',
                        ] # https://docs.mistral.ai/getting-started/models/
         self.current_model = self.models[0]
@@ -1208,11 +1210,11 @@ async def template_callback_handler(query: CallbackQuery, callback_data: Callbac
         user = await users.check_and_clear(query, 'callback')
         await query.message.edit_reply_markup(reply_markup=None)
         await query.message.reply('Ожидайте ⏳')
+        await query.answer()
         output = await user.template_prompts(callback_data.name)
         await query.message.answer(**users.set_kwargs(output))
-        await query.answer()
     except Exception as e:
-        logging.info(e)
+        logging.exception(e)
         await query.message.answer("Error processing message. See logs for details")
         return
 
@@ -1223,5 +1225,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    print('Starting')
+    print('Start polling')
+    logging.warning('Start polling')
     asyncio.run(main())
