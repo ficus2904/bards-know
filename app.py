@@ -821,8 +821,10 @@ class UsersMap():
                 'Факт': 'Выступи в роли профессионального энциклопедиста и напиши один занимательный факт. Ответом должен быть только текст с фактом',
                 'Квиз': '''Выступи в роли профессионального энциклопедиста и напиши три вопроса для занимательного квиза. 
                             Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов''',
+                'QuizPlease': '''Выступи в роли профессионального ведущего quiz - вечеринок. Напиши 5 вопросов по теме кино и сериалы. 
+                                Вопросы должны быть минимум продвинутого уровня, рассчитанные на искушённых киноманов.''',
                 'Промпт': '''
-                Write 4 interesting and unusual prompts for Stable Diffusion XL in different visual styles. 
+                Write 4 interesting and unusual prompts for Stable Diffusion in different visual styles. 
                 It must consist a sarcastic and ironic plot, showing the absurdity of the situation.
                 Wrap each prompt in quotation marks `...`.'''
             }
