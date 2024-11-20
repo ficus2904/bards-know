@@ -150,6 +150,7 @@ class GeminiAPI(BaseAPIInterface):
             }
         self.models = [
             'gemini-exp-1114',
+            'learnlm-1.5-pro-experimental',
             'gemini-1.5-pro-exp-0827',
             'gemini-1.5-pro-002',
             'gemini-1.5-flash-002', 
@@ -266,10 +267,11 @@ class MistralAPI(BaseAPIInterface):
 
     def __init__(self):
         self.client = Mistral(api_key=self.api_key)
-        self.models = ['mistral-small-latest',
-                       'mistral-large-latest',
-                       'ministral-8b-latest',
-                       'pixtral-12b-2409'] # https://docs.mistral.ai/getting-started/models/
+        self.models = [
+            'mistral-large-latest',
+            'pixtral-large-latest',
+            'mistral-small-latest',
+                       ] # https://docs.mistral.ai/getting-started/models/
         self.current_model = self.models[0]
 
 
