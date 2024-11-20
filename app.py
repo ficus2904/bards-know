@@ -36,7 +36,8 @@ warnings.simplefilter('ignore')
 genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 logging.basicConfig(filename='./app.log', level=logging.INFO, encoding='utf-8',
                     format='%(asctime)19s %(levelname)s: %(message)s')
-logging.getLogger('aiogram').setLevel(logging.WARNING)
+for name in ['aiogram','httpx']: 
+    logging.getLogger(name).setLevel(logging.WARNING)
 
 
 class CallbackClass(CallbackData, prefix='callback'):
@@ -50,7 +51,11 @@ class UserFilterMiddleware(BaseMiddleware):
         USER_ID = data['event_from_user'].id
         if user_name:= users.db.check_user(USER_ID):
             data.setdefault('user_name', user_name)
-            await handler(event, data)
+            try:
+                await handler(event, data)
+            except Exception as e:
+                logging.exception(e)
+                await bot.send_message(event.chat.id, f'❌ Error: {e}')
         else:
             if isinstance(event, Message):
                 logging.warning(f'Unknown user {USER_ID}')
@@ -238,12 +243,14 @@ class GroqAPI(BaseAPIInterface):
 
     def __init__(self):
         self.client = Groq(api_key=self.api_key)
-        self.models = ['llama-3.2-11b-vision-preview',
-                       'llama-3.2-90b-vision-preview',
-                       'llama-3.1-70b-versatile',
-                       'llama3-70b-8192',
-                       'llama3-groq-70b-8192-tool-use-preview',
-                       'llava-v1.5-7b-4096-preview'] # https://console.groq.com/docs/models
+        self.models = [
+            'llama-3.2-11b-vision-preview',
+            'llama-3.2-90b-vision-preview',
+            'llama-3.1-70b-versatile',
+            'llama3-70b-8192',
+            'llama3-groq-70b-8192-tool-use-preview',
+            'llava-v1.5-7b-4096-preview',
+            ] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
 
 
@@ -271,9 +278,9 @@ class MistralAPI(BaseAPIInterface):
         self.client = Mistral(api_key=self.api_key)
         self.models = [
             'pixtral-large-latest',
-            'mistral-large-latest',
             'mistral-small-latest',
-                       ] # https://docs.mistral.ai/getting-started/models/
+            'mistral-large-latest',
+            ] # https://docs.mistral.ai/getting-started/models/
         self.current_model = self.models[0]
 
 
@@ -862,7 +869,7 @@ Here are the available commands:
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'gemini' #'glif' gemini
+        self.DEFAULT_BOT: str = 'mistral' #'glif' gemini
         self.builder: ReplyKeyboardBuilder = self.create_builder()
         self.parser = ImageGenArgParser()
 
@@ -989,7 +996,10 @@ dp.callback_query.middleware(UserFilterMiddleware())
 
 @dp.message(CommandStart())
 async def start_handler(message: Message):
-    await message.answer(f'Доступ открыт. Добро пожаловать {message.from_user.first_name}!')
+    output = f'Доступ открыт.\n'\
+            f'Добро пожаловать {message.from_user.first_name}!'\
+            '\nОтправьте /help для дополнительной информации'
+    await message.answer(output)
 
 
 @dp.message(Command(commands=["help"]))
@@ -1098,15 +1108,11 @@ async def image_gen_handler(message: Message, user_name: str):
     
     await message.reply('Картинка генерируется ⏳')
 
-    try:
-        image_url = await user.gen_image(*users.parser.get_args(args[1]))
-        if image_url.startswith(('\n📏','❌')):
-            await message.reply(image_url)
-        else:
-            await message.answer_photo(photo=image_url)
-
-    except Exception as e:
-        await message.reply(f"❌ Ошибка: {e}")
+    image_url = await user.gen_image(*users.parser.get_args(args[1]))
+    if image_url.startswith(('\n📏','❌')):
+        await message.reply(image_url)
+    else:
+        await message.answer_photo(photo=image_url)
 
 
 
@@ -1180,17 +1186,12 @@ async def echo_handler(message: Message | KeyboardButtonPollType, user_name: str
     user = await users.check_and_clear(message, 'text', user_name)
     if user.text is None or user.text == '/':
         return await message.answer(**users.set_kwargs())
-    try:
-        await message.reply('Ожидайте ⏳')
-        output = await user.prompt(user.text)
-        async for part in users.split_text(output):
-            await message.answer(**users.set_kwargs(part))
-        return
-    except Exception as e:
-        logging.info(e)
-        await message.answer(f"{e}")
-        return
 
+    await message.reply('Ожидайте ⏳')
+    output = await user.prompt(user.text)
+    async for part in users.split_text(output):
+        await message.answer(**users.set_kwargs(part))
+        
 
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')))
 async def change_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
