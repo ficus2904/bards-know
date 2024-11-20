@@ -257,7 +257,7 @@ class GroqAPI(BaseAPIInterface):
     async def prompt(self, text: str, image = None) -> str:
         if image:
             self.context.clear()
-            User.make_multi_modal_body(text or "What's in this image?", image, self.context)
+            await User.make_multi_modal_body(text or "What's in this image?", image, self.context)
         else:
             body = {'role':'user', 'content': text}
             self.context.append(body)
@@ -277,16 +277,17 @@ class MistralAPI(BaseAPIInterface):
     def __init__(self):
         self.client = Mistral(api_key=self.api_key)
         self.models = [
-            'pixtral-large-latest',
+            'mistral-large-2411',
+            'pixtral-large-2411',
             'mistral-small-latest',
-            'mistral-large-latest',
+            'pixtral-12b-2409',
             ] # https://docs.mistral.ai/getting-started/models/
         self.current_model = self.models[0]
 
 
     async def prompt(self, text: str, image = None) -> str:
         if image:
-            User.make_multi_modal_body(text or "What's in this image?", 
+            await User.make_multi_modal_body(text or "What's in this image?", 
                                         image, self.context, is_mistral=True)
         else:
             body = {'role':'user', 'content': text}
@@ -699,7 +700,7 @@ class User:
         
 
     async def change_context(self, context_name: str) -> str | dict:
-        self.clear()
+        await self.clear()
         if context_name == '◀️':
             return users.context_dict
         
@@ -712,10 +713,7 @@ class User:
         output_text = f'Контекст {context_name} добавлен'
         
         if context_name in users.context_dict['🖼️ Image_desc']:
-            # output_text += f'\n🤖 {self.current_image_bot.current_model}'
-            # output_text += f'\n📏 {self.current_image_bot.image_size}'
             output_text += self.current_image_bot.get_info()
-
 
         if isinstance(self.current_bot, GeminiAPI):
             self.current_bot.reset_chat(context=context)
@@ -737,12 +735,9 @@ class User:
         return output
     
 
-    def info(self) -> str:
+    async def info(self) -> str:
         check_vlm = hasattr(self.current_bot, 'vlm_params')
         is_gemini = self.current_bot.name == 'gemini'
-        # if is_gemini:
-            # context = bool(self.current_bot.settings['system_instruction']) + len(self.current_bot.chat.history)
-            # context = not (self.current_bot.client._system_instruction is None) + len(self.current_bot.chat.history)
         return '\n'.join(['',
             f'* Текущий бот: {self.current_bot.name}',
             f'* Модель: {self.current_bot.current_model}',
@@ -750,14 +745,14 @@ class User:
             f'* Размер контекста: {len(self.current_bot.context) if not is_gemini else self.current_bot.length()}'])
     
 
-    def show_prompts_list(self) -> str:
-        all_list = "\n".join([f"{k} - {v[-1]}" for k,v in self.prompts_dict.items() if k != "Дополнительные промпты"])
-        return f'{all_list}\n[Дополнительные промпты]({self.prompts_dict["Дополнительные промпты"]})'
+    # def show_prompts_list(self) -> str:
+    #     all_list = "\n".join([f"{k} - {v[-1]}" for k,v in self.prompts_dict.items() if k != "Дополнительные промпты"])
+    #     return f'{all_list}\n[Дополнительные промпты]({self.prompts_dict["Дополнительные промпты"]})'
 
 
     async def change_bot(self, bot_name: str) -> str:
         self.current_bot = self.api_factory.get(bot_name)
-        self.clear()
+        await self.clear()
         return f'🤖 Смена бота на {self.current_bot.name}'
     
 
@@ -767,23 +762,23 @@ class User:
         self.current_bot.current_model = model
         if hasattr(cur_bot, 'vlm_params') and model_name in cur_bot.vlm_params:
             self.current_bot.current_vlm_model = model_name
-        self.clear()
+        await self.clear()
         return f'🔄 Смена модели на {users.make_short_name(model_name)}'
 
 
-    def clear(self) -> str:
+    async def clear(self) -> str:
         if self.current_bot.name == 'gemini':
             clear_system = self.current_bot.length() in {1,0}
             self.current_bot.reset_chat(clear_system=clear_system)
         else:
             ct = self.current_bot.context
-            clear_system = len(ct) <= 1
+            clear_system = True #len(ct) <= 1
             self.current_bot.context = [] if clear_system else ct[:1]
         status = ' полностью' if clear_system else ' кроме системного'
         return f'🧹 Диалог очищен{status}'
     
 
-    def make_multi_modal_body(text, image, context: list, is_mistral = False) -> None:
+    async def make_multi_modal_body(text, image, context: list, is_mistral = False) -> None:
         image_b64 = base64.b64encode(image.getvalue()).decode()
         if len(image_b64) > 180_000:
             print("Слишком большое изображение, сжимаем...")
@@ -1091,7 +1086,7 @@ async def remove_handler(message: Message, user_name: str):
 @dp.message(Command(commands=["info","clear"]))
 async def short_command_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, message.text.lstrip('/'), user_name)
-    kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
+    kwargs = await users.set_kwargs(escape(getattr(user, user.text)()))
     await message.answer(**kwargs)
 
 
@@ -1146,7 +1141,8 @@ async def imagen_handler(message: Message, user_name: str):
 async def reply_kb_command(message: Message):
     user = await users.check_and_clear(message, 'text')
     if user.text in {'info','clear'}:
-        kwargs = users.set_kwargs(escape(getattr(user, user.text)()))
+        output = await getattr(user, user.text)()
+        kwargs = users.set_kwargs(escape(output))
     else:
         command_dict = {'bot': [user.api_factory.bots, 'бота'],
                         'model': [user.current_bot.models, 'модель'],
