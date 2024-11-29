@@ -156,6 +156,7 @@ class GeminiAPI(BaseAPIInterface):
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
             }
         self.models = [
+            'gemini-exp-1121',
             'gemini-exp-1114',
             'learnlm-1.5-pro-experimental',
             'gemini-1.5-pro-exp-0827',
