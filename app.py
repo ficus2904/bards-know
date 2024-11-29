@@ -538,7 +538,7 @@ class FalAPI(BaseAPIInterface):
         self.models = ["v1.1-ultra","v1.1",]
         self.current_model = self.models[0]
         self.image_size = '9:16'
-        self.raw = True
+        self.raw = False
 
 
     def change_model(self, model):
