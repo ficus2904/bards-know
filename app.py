@@ -245,12 +245,8 @@ class GroqAPI(BaseAPIInterface):
     def __init__(self):
         self.client = Groq(api_key=self.api_key)
         self.models = [
-            'llama-3.2-11b-vision-preview',
-            'llama-3.2-90b-vision-preview',
-            'llama-3.1-70b-versatile',
-            'llama-3.1-70b-specdec',
-            'llama3-70b-8192',
-            'llama3-groq-70b-8192-tool-use-preview',
+            'llama-3.3-70b-versatile',
+            'llama-3.3-70b-specdec',
             'llava-v1.5-7b-4096-preview',
             ] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
