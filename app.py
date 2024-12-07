@@ -156,8 +156,8 @@ class GeminiAPI(BaseAPIInterface):
                 HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
             }
         self.models = [
+            'gemini-exp-1206',
             'gemini-exp-1121',
-            'gemini-exp-1114',
             'learnlm-1.5-pro-experimental',
             'gemini-1.5-pro-exp-0827',
             'gemini-1.5-pro-002',
@@ -866,7 +866,7 @@ Here are the available commands:
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'mistral' #'glif' gemini
+        self.DEFAULT_BOT: str = 'gemini' #'glif' gemini
         self.builder: ReplyKeyboardBuilder = self.create_builder()
         self.parser = ImageGenArgParser()
 
