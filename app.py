@@ -157,11 +157,10 @@ class GeminiAPI(BaseAPIInterface):
             }
         self.models = [
             'gemini-exp-1206',
-            'gemini-exp-1121',
+            'gemini-2.0-flash-exp',
             'learnlm-1.5-pro-experimental',
             'gemini-1.5-pro-exp-0827',
             'gemini-1.5-pro-002',
-            'gemini-1.5-flash-002', 
             ] # gemini-1.5-pro-latest
         self.current_model = self.models[0]
         self.client = None
