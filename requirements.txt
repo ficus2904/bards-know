@@ -1,5 +1,6 @@
 aiogram
-google-generativeai
+# google-generativeai
+google-genai
 python-dotenv
 cohere
 pillow
