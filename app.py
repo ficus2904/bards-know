@@ -9,13 +9,14 @@ import asyncio
 import aiohttp
 import logging
 import warnings
-import cohere
+# import cohere
+import openai
 from argparse import ArgumentParser
 from mistralai import Mistral
-import google.generativeai as genai
+from google import genai
+from google.genai.types import GenerateContentConfig, SafetySetting, HarmCategory #, Tool, GoogleSearch
 from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 from functools import lru_cache
 from time import time
 from groq import Groq
@@ -33,7 +34,6 @@ load_dotenv()
 warnings.simplefilter('ignore')
 
 # python app.py
-genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
 logging.basicConfig(filename='./app.log', level=logging.INFO, encoding='utf-8',
                     format='%(asctime)19s %(levelname)s: %(message)s')
 for name in ['aiogram','httpx']: 
@@ -149,22 +149,16 @@ class GeminiAPI(BaseAPIInterface):
     name = 'gemini'
 
     def __init__(self):
-        self.safety_settings = {
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE, 
-            }
+        self.safety_settings = [SafetySetting(category=category, threshold="OFF") for category in HarmCategory.__args__[1:]]
         self.models = [
-            'gemini-exp-1206',
             'gemini-2.0-flash-exp',
+            'gemini-exp-1206',
             'learnlm-1.5-pro-experimental',
             'gemini-1.5-pro-exp-0827',
             'gemini-1.5-pro-002',
-            ] # gemini-1.5-pro-latest
+            ]
         self.current_model = self.models[0]
-        self.client = None
-        # self.context = []
+        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.chat = None
         self.reset_chat()
         # self.imagen = genai.ImageGenerationModel("imagen-3.0-generate-001")
@@ -181,15 +175,17 @@ class GeminiAPI(BaseAPIInterface):
     
     
     def reset_chat(self, context: str = None, clear_system: bool = False):
-        if context or clear_system or self.client is None:
-            self.client = genai.GenerativeModel(self.current_model, 
-                                                self.safety_settings,
-                                                system_instruction=context)
-        self.chat = self.client.start_chat()
+        if context or clear_system or self.chat is None:
+            config = GenerateContentConfig(
+                    system_instruction=context,
+                    safety_settings=self.safety_settings, 
+                    # tools=[Tool(google_search=GoogleSearch())]
+                    )
+            self.chat = self.client.chats.create(model=self.current_model, config=config)
 
 
     def length(self) -> int: 
-        return int(self.client._system_instruction is not None) + len(self.chat.history)
+        return int(self.chat._config.system_instruction is not None) + len(self.chat._curated_history)
 
     async def gen_image(self, prompt, image_size):
         result = self.imagen.generate_images(
@@ -218,7 +214,7 @@ class CohereAPI(BaseAPIInterface):
     name = 'cohere'
 
     def __init__(self):
-        self.client = cohere.Client(self.api_key)
+        self.client = openai.Client(self.api_key)
         self.models = ['command-r-plus-08-2024','command-nightly','c4ai-aya-23-35b']
         self.current_model = self.models[0]
         self.context = []
