@@ -10,7 +10,6 @@ import aiohttp
 import logging
 import warnings
 # import cohere
-import openai
 from argparse import ArgumentParser
 from mistralai import Mistral
 from google import genai
@@ -209,27 +208,27 @@ class GeminiAPI(BaseAPIInterface):
 
 
 
-class CohereAPI(BaseAPIInterface):
-    """Class for Cohere API"""
-    name = 'cohere'
+# class CohereAPI(BaseAPIInterface):
+#     """Class for Cohere API"""
+#     name = 'cohere'
 
-    def __init__(self):
-        self.client = openai.Client(self.api_key)
-        self.models = ['command-r-plus-08-2024','command-nightly','c4ai-aya-23-35b']
-        self.current_model = self.models[0]
-        self.context = []
+#     def __init__(self):
+#         self.client = openai.Client(self.api_key)
+#         self.models = ['command-r-plus-08-2024','command-nightly','c4ai-aya-23-35b']
+#         self.current_model = self.models[0]
+#         self.context = []
     
 
-    async def prompt(self, text, image = None) -> str:
-        response = self.client.chat(
-            model=self.current_model,
-            chat_history=self.context or None,
-            message=text,
-            safety_mode='NONE'
-        )
-        self.context = response.chat_history
-        # print(response.text)
-        return response.text
+#     async def prompt(self, text, image = None) -> str:
+#         response = self.client.chat(
+#             model=self.current_model,
+#             chat_history=self.context or None,
+#             message=text,
+#             safety_mode='NONE'
+#         )
+#         self.context = response.chat_history
+#         # print(response.text)
+#         return response.text
 
 
 
@@ -630,7 +629,7 @@ class FalAPI(BaseAPIInterface):
 
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
-    bots_lst: list = [NvidiaAPI, CohereAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI]
+    bots_lst: list = [NvidiaAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI] # CohereAPI
     bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
     image_bots_lst: list = [FalAPI]
     image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
@@ -712,9 +711,9 @@ class User:
             self.current_bot.reset_chat(context=context)
             return output_text
         
-        if isinstance(self.current_bot, CohereAPI):
-            body = {"role": 'SYSTEM', "message": context}
-        # elif isinstance(self.current_bot, (GroqAPI,NvidiaAPI,TogetherAPI,GlifAPI,MistralAPI)):
+        # if isinstance(self.current_bot, CohereAPI):
+        #     body = {"role": 'SYSTEM', "message": context}
+
         else:
             body = {'role':'system', 'content': context}
 
