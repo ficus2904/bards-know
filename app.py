@@ -1125,8 +1125,7 @@ async def config_handler(message: Message, user_name: str):
             users.config_arg_parser.get_usage()), parse_mode=users.PARSE_MODE)
         return
     
-    args_dict = users.config_arg_parser.get_args(args[1])
-    output = user.change_config(args_dict)
+    output = await user.change_config(users.config_arg_parser.get_args(args[1]))
     await message.reply(output)
 
 
