@@ -13,7 +13,7 @@ import warnings
 from argparse import ArgumentParser
 from mistralai import Mistral
 from google import genai
-from google.genai.types import GenerateContentConfig, SafetySetting, HarmCategory #, Tool, GoogleSearch
+from google.genai.types import GenerateContentConfig, SafetySetting, HarmCategory, Tool, GoogleSearch
 from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
 from functools import lru_cache
@@ -173,12 +173,12 @@ class GeminiAPI(BaseAPIInterface):
             return f'error: {e}'
     
     
-    def reset_chat(self, context: str = None, clear_system: bool = False):
+    def reset_chat(self, context: str = None, clear_system: bool = False, enable_search: bool = False):
         if context or clear_system or self.chat is None:
             config = GenerateContentConfig(
                     system_instruction=context,
                     safety_settings=self.safety_settings, 
-                    # tools=[Tool(google_search=GoogleSearch())]
+                    tools=[Tool(google_search=GoogleSearch())] if enable_search else None
                     )
             self.chat = self.client.chats.create(model=self.current_model, config=config)
 
@@ -678,6 +678,27 @@ class ImageGenArgParser:
                 "• Combined: `/i your prompt here --ar 9:16 --m ultra`\n"
                 "• Raw mode in ultra: `/i prompt --m raw`\n"
                 "• Unable Raw mode in ultra: `/i --m no_raw OR wo_raw`")
+    
+
+
+class ConfigArgParser:
+    def __init__(self):
+        self.parser = ArgumentParser(description='Change configuration options')
+        self.parser.add_argument('--es', dest='enable_search', help='Turn search in gemini',type=bool, choices=[0, 1])
+        # self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[1, 2]
+
+    def get_args(self, args_str: str) -> dict:
+        try:
+            args = self.parser.parse_args(args_str.split())
+            return vars(args)
+        except Exception as e:
+            raise ValueError(f"Invalid arguments: {str(e)}")
+
+    def get_usage(self) -> str:
+        return ("Usage examples:\n"
+                "• Turn ON search in gemini: `/conf --es 1`\n"
+                "• Turn OFF search in gemini: `/conf --es 0`\n"
+                "• Another setting: `/config --some some`\n")
 
 
 
@@ -737,9 +758,16 @@ class User:
             f'* Размер контекста: {len(self.current_bot.context) if not is_gemini else self.current_bot.length()}'])
     
 
-    # def show_prompts_list(self) -> str:
-    #     all_list = "\n".join([f"{k} - {v[-1]}" for k,v in self.prompts_dict.items() if k != "Дополнительные промпты"])
-    #     return f'{all_list}\n[Дополнительные промпты]({self.prompts_dict["Дополнительные промпты"]})'
+    async def change_config(self, kwargs: dict) -> str:
+        output = ''
+        if self.current_bot.name == 'gemini':
+            if 'enable_search' in kwargs:
+                self.current_bot.reset_chat(clear_system = True, 
+                                            enable_search = kwargs['enable_search'])
+                status = 'включен ✅' if kwargs['enable_search'] else 'выключен ❌'
+                output += f'Поиск в gemini {status}\n' 
+        return output.strip()
+
 
 
     async def change_bot(self, bot_name: str) -> str:
@@ -858,7 +886,8 @@ Here are the available commands:
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
         self.DEFAULT_BOT: str = 'gemini' #'glif' gemini
         self.builder: ReplyKeyboardBuilder = self.create_builder()
-        self.parser = ImageGenArgParser()
+        self.image_arg_parser = ImageGenArgParser()
+        self.config_arg_parser = ConfigArgParser()
 
 
     def create_builder(self) -> ReplyKeyboardBuilder:
@@ -1082,6 +1111,24 @@ async def short_command_handler(message: Message, user_name: str):
     await message.answer(**kwargs)
 
 
+@dp.message(Command(commands=["conf","config"]))
+async def config_handler(message: Message, user_name: str):
+    user: User = users.get(message.from_user.id)
+    if user_name != 'ADMIN':
+        await message.reply("You don't have admin privileges")
+        return
+    
+    args = message.text.split(maxsplit=1)
+
+    if len(args) != 2:
+        await message.reply(escape(
+            users.image_arg_parser.get_usage()), parse_mode=users.PARSE_MODE)
+        return
+    
+    args_dict = users.config_arg_parser(args[1])
+    output = user.change_config(args_dict)
+    await message.reply(output)
+
 
 @dp.message(Command(commands=["i","I","image"]))
 async def image_gen_handler(message: Message, user_name: str):
@@ -1089,13 +1136,13 @@ async def image_gen_handler(message: Message, user_name: str):
     args = message.text.split(maxsplit=1)
     if len(args) != 2:
         await message.reply(escape(
-            users.parser.get_usage() + user.current_image_bot.get_info()
+            users.image_arg_parser.get_usage() + user.current_image_bot.get_info()
             ), parse_mode=users.PARSE_MODE)
         return
     
     await message.reply('Картинка генерируется ⏳')
 
-    image_url = await user.gen_image(*users.parser.get_args(args[1]))
+    image_url = await user.gen_image(*users.image_arg_parser.get_args(args[1]))
     if image_url.startswith(('\n📏','❌')):
         await message.reply(image_url)
     else:
