@@ -684,7 +684,7 @@ class ImageGenArgParser:
 class ConfigArgParser:
     def __init__(self):
         self.parser = ArgumentParser(description='Change configuration options')
-        self.parser.add_argument('--es', dest='enable_search', help='Turn search in gemini',type=bool, choices=[0, 1])
+        self.parser.add_argument('--es', dest='enable_search', help='Turn search in gemini',type=int, choices=[0, 1])
         # self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[1, 2]
 
     def get_args(self, args_str: str) -> dict:
