@@ -1122,10 +1122,10 @@ async def config_handler(message: Message, user_name: str):
 
     if len(args) != 2:
         await message.reply(escape(
-            users.image_arg_parser.get_usage()), parse_mode=users.PARSE_MODE)
+            users.config_arg_parser.get_usage()), parse_mode=users.PARSE_MODE)
         return
     
-    args_dict = users.config_arg_parser(args[1])
+    args_dict = users.config_arg_parser.get_args(args[1])
     output = user.change_config(args_dict)
     await message.reply(output)
 
