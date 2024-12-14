@@ -2,7 +2,7 @@ aiogram
 # google-generativeai
 google-genai
 python-dotenv
-cohere
+# cohere
 pillow
 groq
 openai
