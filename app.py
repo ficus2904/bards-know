@@ -685,20 +685,20 @@ class ConfigArgParser:
     def __init__(self):
         self.parser = ArgumentParser(description='Change configuration options')
         self.parser.add_argument('--es', dest='enable_search', help='Turn search in gemini',type=int, choices=[0, 1])
-        # self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[1, 2]
+        # self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[0, 1]
 
     def get_args(self, args_str: str) -> dict:
         try:
             args = self.parser.parse_args(args_str.split())
-            return vars(args)
+            return {k:v for k,v in (vars(args).items()) if v is not None}
         except Exception as e:
             raise ValueError(f"Invalid arguments: {str(e)}")
 
     def get_usage(self) -> str:
         return ("Usage examples:\n"
-                "• Turn ON search in gemini: `/conf --es 1`\n"
-                "• Turn OFF search in gemini: `/conf --es 0`\n"
-                "• Another setting: `/config --some some`\n")
+                "• Search on in gemini: `/conf --es 1`\n"
+                "• Search off search in gemini: `/conf --es 0`\n"
+                "• Another setting: `/conf --some some`\n")
 
 
 
