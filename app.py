@@ -13,7 +13,13 @@ import warnings
 from argparse import ArgumentParser
 from mistralai import Mistral
 from google import genai
-from google.genai.types import GenerateContentConfig, SafetySetting, HarmCategory, Tool, GoogleSearch
+from google.genai.types import (
+    GenerateContentConfig, 
+    SafetySetting, 
+    HarmCategory, 
+    Tool, 
+    GoogleSearch, 
+    Part) #, Content)
 from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
 from functools import lru_cache
@@ -148,7 +154,7 @@ class GeminiAPI(BaseAPIInterface):
     name = 'gemini'
 
     def __init__(self):
-        self.safety_settings = [SafetySetting(category=category, threshold="OFF") for category in HarmCategory.__args__[1:]]
+        self.safety_settings = [SafetySetting(category=category, threshold="BLOCK_NONE") for category in HarmCategory.__args__[1:]]
         self.models = [
             'gemini-2.0-flash-exp',
             'gemini-exp-1206',
@@ -162,25 +168,38 @@ class GeminiAPI(BaseAPIInterface):
         self.reset_chat()
         # self.imagen = genai.ImageGenerationModel("imagen-3.0-generate-001")
 
-    async def prompt(self, text: str, image = None) -> str:
+    async def prompt(self, text: str = None, data: dict = None) -> str:
         try:
-            if image is None:
-                response = self.chat.send_message(text)
-            else:
-                response = self.chat.send_message([Image.open(image), text])
+            content = [Part.from_bytes(**data), text] if data else text
+            response = await self.chat.send_message(content)
             return response.text
         except Exception as e:
-            return f'error: {e}'
+            logging.exception(e)
+            return f'Gemini error: {e}'
     
     
-    def reset_chat(self, context: str = None, clear_system: bool = False, enable_search: bool = False):
-        if context or clear_system or self.chat is None:
-            config = GenerateContentConfig(
-                    system_instruction=context,
-                    safety_settings=self.safety_settings, 
-                    tools=[Tool(google_search=GoogleSearch())] if enable_search else None
-                    )
-            self.chat = self.client.chats.create(model=self.current_model, config=config)
+    def reset_chat(self, context: str = None):
+        config = GenerateContentConfig(system_instruction=context, 
+                                       safety_settings=self.safety_settings)
+        self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
+
+
+    def change_chat_config(self, clear: bool = None, enable_search: bool = None) -> str | None:
+        if self.chat._model != self.current_model:
+            return self.reset_chat()
+
+        if clear:
+            self.chat._curated_history.clear()
+            if self.chat._curated_history and self.chat._config.system_instruction:
+                return 'кроме системного'
+            else:
+                self.chat._config.system_instruction = None
+                return 'полностью'
+
+        if isinstance(enable_search, bool):
+            self.chat._config.tools = [Tool(google_search=GoogleSearch())] if enable_search else None
+            return 'включен ✅' if enable_search else 'выключен ❌'
+        
 
 
     def length(self) -> int: 
@@ -207,28 +226,29 @@ class GeminiAPI(BaseAPIInterface):
         return enhanced_prompt
 
 
+if False:
+    pass
+    # class CohereAPI(BaseAPIInterface):
+    #     """Class for Cohere API"""
+    #     name = 'cohere'
 
-# class CohereAPI(BaseAPIInterface):
-#     """Class for Cohere API"""
-#     name = 'cohere'
+    #     def __init__(self):
+    #         self.client = openai.Client(self.api_key)
+    #         self.models = ['command-r-plus-08-2024','command-nightly','c4ai-aya-23-35b']
+    #         self.current_model = self.models[0]
+    #         self.context = []
+        
 
-#     def __init__(self):
-#         self.client = openai.Client(self.api_key)
-#         self.models = ['command-r-plus-08-2024','command-nightly','c4ai-aya-23-35b']
-#         self.current_model = self.models[0]
-#         self.context = []
-    
-
-#     async def prompt(self, text, image = None) -> str:
-#         response = self.client.chat(
-#             model=self.current_model,
-#             chat_history=self.context or None,
-#             message=text,
-#             safety_mode='NONE'
-#         )
-#         self.context = response.chat_history
-#         # print(response.text)
-#         return response.text
+    #     async def prompt(self, text, image = None) -> str:
+    #         response = self.client.chat(
+    #             model=self.current_model,
+    #             chat_history=self.context or None,
+    #             message=text,
+    #             safety_mode='NONE'
+    #         )
+    #         self.context = response.chat_history
+    #         # print(response.text)
+    #         return response.text
 
 
 
@@ -762,9 +782,7 @@ class User:
         output = ''
         if self.current_bot.name == 'gemini':
             if 'enable_search' in kwargs:
-                self.current_bot.reset_chat(clear_system = True, 
-                                            enable_search = kwargs['enable_search'])
-                status = 'включен ✅' if kwargs['enable_search'] else 'выключен ❌'
+                status = self.current_bot.change_chat_config(enable_search=kwargs['enable_search'])
                 output += f'Поиск в gemini {status}\n' 
         return output.strip()
 
@@ -788,14 +806,19 @@ class User:
 
     async def clear(self) -> str:
         if self.current_bot.name == 'gemini':
-            clear_system = self.current_bot.length() in {1,0}
-            self.current_bot.reset_chat(clear_system=clear_system)
+            status = self.current_bot.change_chat_config(clear=True)
         else:
             ct = self.current_bot.context
-            clear_system = True #len(ct) <= 1
-            self.current_bot.context = [] if clear_system else ct[:1]
-        status = ' полностью' if clear_system else ' кроме системного'
-        return f'🧹 Диалог очищен{status}'
+            if len(ct) > 1 and ct[0].get('role') == 'system':
+                self.current_bot.context.clear()
+                status = 'полностью'
+            else:
+                self.current_bot.context = ct[:1]
+                status = 'кроме системного'
+            # clear_system = False if len(ct) > 1 and ct[0].get('role') == 'system' else True
+            # self.current_bot.context = [] if clear_system else ct[:1]
+            # status = 'полностью' if clear_system else 'кроме системного'
+        return f'🧹 Диалог очищен {status}'
     
 
     async def make_multi_modal_body(text, image, context: list, is_mistral = False) -> None:
@@ -819,9 +842,9 @@ class User:
     ])
 
 
-    async def prompt(self, text: str, image=None) -> str:
+    async def prompt(self, *args, **kwargs) -> str: # text: str, image=None, voice=None
         output = await users.queue_manager.enqueue_request(self.current_bot.name, 
-                                            self.current_bot.prompt(text, image))
+                                            self.current_bot.prompt(*args,**kwargs)) # text, image
         return escape(output)
     
 
@@ -974,17 +997,23 @@ Here are the available commands:
         user: User = self.get(message.from_user.id)
         if type_prompt in ['callback']:
             return user
-        elif type_prompt in ['image']:
+        elif type_prompt in ['gen_image']:
             logging.info(f'{user_name or message.from_user.id}: "{message.text}"')
             return user
         ## clear dialog context after 1 hour
         if (time() - user.time_dump) > 3600:
             user.clear()
         user.time_dump = time()
-        type_prompt = {'text': message.text, 'photo': message.caption}.get(type_prompt, type_prompt)
+
+        if type_prompt == 'text':
+            user.text = self.buttons.get(message.text, type_prompt)
+        else:
+            user.text = message.caption or f"the provided {type_prompt}."
+            type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt)
+        
         if user_name:
             logging.info(f'{user_name}: "{type_prompt}"')
-        user.text = self.buttons.get(type_prompt, type_prompt)
+         
         return user
 
 
@@ -1111,7 +1140,7 @@ async def short_command_handler(message: Message, user_name: str):
     await message.answer(**kwargs)
 
 
-@dp.message(Command(commands=["conf","config"]))
+@dp.message(Command(commands=["conf"]))
 async def config_handler(message: Message, user_name: str):
     user: User = users.get(message.from_user.id)
     if user_name != 'ADMIN':
@@ -1131,7 +1160,7 @@ async def config_handler(message: Message, user_name: str):
 
 @dp.message(Command(commands=["i","I","image"]))
 async def image_gen_handler(message: Message, user_name: str):
-    user = await users.check_and_clear(message, "image", user_name)
+    user = await users.check_and_clear(message, "gen_image", user_name)
     args = message.text.split(maxsplit=1)
     if len(args) != 2:
         await message.reply(escape(
@@ -1151,7 +1180,7 @@ async def image_gen_handler(message: Message, user_name: str):
 
 @dp.message(Command(commands=["imagen"]))
 async def imagen_handler(message: Message, user_name: str):
-    user = await users.check_and_clear(message, "image", user_name)
+    user = await users.check_and_clear(message, "gen_image", user_name)
     args = message.text.split(maxsplit=1)
     if len(args) != 2:
         text = "Usage: `/i prompt` or `/i prompt --ar 9:16`" \
@@ -1195,11 +1224,8 @@ async def reply_kb_command(message: Message):
 
 
 @dp.message(F.content_type.in_({'photo'}))
-async def photo_handler(message: Message | KeyboardButtonPollType, user_name: str):
-    user = await users.check_and_clear(message, 'photo', user_name)
-    if user.text is None:
-        user.text = 'the provided image' # Следуй системным правилам
-    
+async def photo_handler(message: Message, user_name: str):
+    user = await users.check_and_clear(message, 'image', user_name)
     if user.current_bot.name not in {'gemini', 'nvidia', 'groq', 'mistral'}:
         await user.change_bot('gemini')
         await users.get_context('♾️ Универсальный')
@@ -1209,14 +1235,32 @@ async def photo_handler(message: Message | KeyboardButtonPollType, user_name: st
     if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
         text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model} ⏳"
     await message.reply(text_reply)
+
     tg_photo = await bot.download(message.photo[-1].file_id)
-    output = await user.prompt(user.text, tg_photo)
+    output = await user.prompt(user.text, {'data': tg_photo.getvalue(), 'mime_type': 'image/jpeg'})
     async for part in users.split_text(output):
         await message.answer(**users.set_kwargs(part))
 
 
+@dp.message(F.content_type.in_({'voice','video_note','video'}))
+async def voice_handler(message: Message, user_name: str):
+    data_info = message.voice or message.video_note or message.video
+    data_type = data_info.mime_type.split('/')[0]
+    user = await users.check_and_clear(message, data_type, user_name)
+    if user.current_bot.name not in {'gemini'}:
+        await user.change_bot('gemini')
+
+    await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
+
+    data = await bot.download(data_info.file_id)
+    output = await user.prompt(user.text, {'data': data.getvalue(), 'mime_type': data_info.mime_type})
+    async for part in users.split_text(output):
+        await message.answer(**users.set_kwargs(part))
+
+
+
 @dp.message(F.content_type.in_({'text'}))
-async def echo_handler(message: Message | KeyboardButtonPollType, user_name: str):
+async def text_handler(message: Message | KeyboardButtonPollType, user_name: str):
     user = await users.check_and_clear(message, 'text', user_name)
     if user.text is None or user.text == '/':
         return await message.answer(**users.set_kwargs())
