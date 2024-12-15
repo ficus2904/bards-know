@@ -189,10 +189,11 @@ class GeminiAPI(BaseAPIInterface):
             return self.reset_chat()
 
         if clear:
-            self.chat._curated_history.clear()
             if self.chat._curated_history and self.chat._config.system_instruction:
+                self.chat._curated_history.clear()
                 return 'кроме системного'
             else:
+                self.chat._curated_history.clear()
                 self.chat._config.system_instruction = None
                 return 'полностью'
 
@@ -842,9 +843,9 @@ class User:
     ])
 
 
-    async def prompt(self, *args, **kwargs) -> str: # text: str, image=None, voice=None
+    async def prompt(self, *args) -> str: # text: str, image=None, voice=None
         output = await users.queue_manager.enqueue_request(self.current_bot.name, 
-                                            self.current_bot.prompt(*args,**kwargs)) # text, image
+                                            self.current_bot.prompt(*args))
         return escape(output)
     
 
@@ -1006,7 +1007,8 @@ Here are the available commands:
         user.time_dump = time()
 
         if type_prompt == 'text':
-            user.text = self.buttons.get(message.text, type_prompt)
+            user.text = self.buttons.get(message.text, message.text)
+            type_prompt = message.text
         else:
             user.text = message.caption or f"the provided {type_prompt}."
             type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt)
