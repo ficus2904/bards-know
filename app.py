@@ -184,7 +184,7 @@ class GeminiAPI(BaseAPIInterface):
         self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
 
 
-    def change_chat_config(self, clear: bool = None, enable_search: bool = None) -> str | None:
+    def change_chat_config(self, clear: bool = None, enable_search: int = None) -> str | None:
         if self.chat._model != self.current_model:
             return self.reset_chat()
 
@@ -197,14 +197,14 @@ class GeminiAPI(BaseAPIInterface):
                 self.chat._config.system_instruction = None
                 return 'полностью'
 
-        if isinstance(enable_search, bool):
+        if enable_search is not None:
             self.chat._config.tools = [Tool(google_search=GoogleSearch())] if enable_search else None
             return 'включен ✅' if enable_search else 'выключен ❌'
         
 
-
     def length(self) -> int: 
         return int(self.chat._config.system_instruction is not None) + len(self.chat._curated_history)
+
 
     async def gen_image(self, prompt, image_size):
         result = self.imagen.generate_images(
