@@ -52,6 +52,23 @@ class CallbackClass(CallbackData, prefix='callback'):
 
 
 class UserFilterMiddleware(BaseMiddleware):
+    """
+    UserFilterMiddleware is a middleware class that checks if a user is registered in the database before allowing them to proceed with the handler.
+
+    Methods:
+        __call__(handler: callable, event: TelegramObject, data: dict):
+            Asynchronously checks if the user is registered in the database.
+            If the user is registered, it adds the user's name to the data dictionary and calls the handler.
+            If the user is not registered, it sends a warning message to the user and logs the event.
+
+    Args:
+        handler (callable): The handler function to be called if the user is registered.
+        event (TelegramObject): The event object containing information about the Telegram event.
+        data (dict): A dictionary containing event data, including the user information.
+
+    Raises:
+        Exception: If an error occurs while calling the handler, it logs the exception and sends an error message to the user.
+    """
     async def __call__(self, handler: callable, event: TelegramObject, data: dict):
         USER_ID = data['event_from_user'].id
         if user_name:= users.db.check_user(USER_ID):
@@ -665,6 +682,15 @@ class APIFactory:
 
 
 class RateLimitedQueueManager:
+    """
+    Manages a queue of API requests with rate limiting.
+    Attributes:
+        all_bots (set): A set of all bot names from APIFactory.
+        limiters (dict): A dictionary mapping bot names to their respective AsyncLimiter instances.
+    Methods:
+        enqueue_request(api_name: str, task):
+            Enqueues an API request for the specified bot, ensuring it adheres to the rate limit.
+    """
     def __init__(self):
         self.all_bots = APIFactory.bots | APIFactory.image_bots
         self.limiters = {name:AsyncLimiter(1, 30) for name in self.all_bots}
@@ -703,6 +729,22 @@ class ImageGenArgParser:
 
 
 class ConfigArgParser:
+    """
+    A class to parse and handle configuration arguments for the application.
+    ----
+    get_args(args_str: str) -> dict:
+        Parses the provided argument string and returns a dictionary of arguments and their values.
+        Parameters:
+            args_str (str): A string of arguments to be parsed.
+        Returns:
+            dict: A dictionary containing the parsed arguments and their values.
+        Raises:
+            ValueError: If the arguments are invalid.
+    get_usage() -> str:
+        Provides usage examples for the argument parser.
+        Returns:
+            str: A string containing usage examples.
+    """
     def __init__(self):
         self.parser = ArgumentParser(description='Change configuration options')
         self.parser.add_argument('--es', dest='enable_search', help='Turn search in gemini',type=int, choices=[0, 1])
