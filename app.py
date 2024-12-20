@@ -177,8 +177,7 @@ class GeminiAPI(BaseAPIInterface):
             'gemini-2.0-flash-thinking-exp-1219',
             'gemini-exp-1206',
             'learnlm-1.5-pro-experimental',
-            'gemini-1.5-pro-exp-0827',
-            'gemini-1.5-pro-002',
+            'gemini-1.5-pro-latest',
             ]
         self.current_model = self.models[0]
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -202,9 +201,13 @@ class GeminiAPI(BaseAPIInterface):
         self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
 
 
-    def change_chat_config(self, clear: bool = None, enable_search: int = None) -> str | None:
+    def change_chat_config(self, clear: bool = None, enable_search: int = None, new_model: str = None) -> str | None:
         if self.chat._model != self.current_model:
             return self.reset_chat()
+        
+        if new_model:
+            self.models.append(new_model)
+            return f'В gemini добавлена модель {new_model}'
 
         if clear:
             if self.chat._curated_history and self.chat._config.system_instruction:
@@ -217,7 +220,7 @@ class GeminiAPI(BaseAPIInterface):
 
         if enable_search is not None:
             self.chat._config.tools = [Tool(google_search=GoogleSearch())] if enable_search else None
-            return 'включен ✅' if enable_search else 'выключен ❌'
+            return 'Поиск в gemini включен ✅' if enable_search else 'Поиск в gemini выключен ❌'
         
 
     def length(self) -> int: 
@@ -749,6 +752,7 @@ class ConfigArgParser:
     def __init__(self):
         self.parser = ArgumentParser(description='Change configuration options')
         self.parser.add_argument('--es', dest='enable_search', help='Turn search in gemini',type=int, choices=[0, 1])
+        self.parser.add_argument('--nm', dest='new_model', help='Add new model in gemini',type=str)
         # self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[0, 1]
 
     def get_args(self, args_str: str) -> dict:
@@ -762,6 +766,7 @@ class ConfigArgParser:
         return ("Usage examples:\n"
                 "• Search on in gemini: `/conf --es 1`\n"
                 "• Search off search in gemini: `/conf --es 0`\n"
+                "• Add new model to gemini: `/conf --nm gemini-2.0`\n"
                 "• Another setting: `/conf --some some`\n")
 
 
@@ -825,9 +830,14 @@ class User:
     async def change_config(self, kwargs: dict) -> str:
         output = ''
         if self.current_bot.name == 'gemini':
-            if 'enable_search' in kwargs:
-                status = self.current_bot.change_chat_config(enable_search=kwargs['enable_search'])
-                output += f'Поиск в gemini {status}\n' 
+            # if 'enable_search' in kwargs:
+            #     status = self.current_bot.change_chat_config(enable_search=kwargs['enable_search'])
+            #     output += f'Поиск в gemini {status}\n' 
+            # if 'new_model' in kwargs:
+            #     model_name = self.current_bot.change_chat_config(new_model=kwargs['new_model'])
+            #     output += f'В gemini добавлена модель {model_name}\n' 
+            output += f'{self.current_bot.change_chat_config(**kwargs)}\n' 
+
         return output.strip()
 
 
