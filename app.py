@@ -171,10 +171,11 @@ class GeminiAPI(BaseAPIInterface):
     name = 'gemini'
 
     def __init__(self):
-        self.safety_settings = [SafetySetting(category=category, threshold="BLOCK_NONE") for category in HarmCategory.__args__[1:]]
+        self.safety_settings = [SafetySetting(category=category, threshold="BLOCK_NONE") for category 
+                                in HarmCategory.__args__[1:]]
         self.models = [
             'gemini-2.0-flash-exp',
-            'gemini-2.0-flash-thinking-exp-1219',
+            'gemini-2.0-flash-thinking-exp',
             'gemini-exp-1206',
             'learnlm-1.5-pro-experimental',
             'gemini-1.5-pro-latest',
@@ -201,11 +202,13 @@ class GeminiAPI(BaseAPIInterface):
         self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
 
 
-    def change_chat_config(self, clear: bool = None, enable_search: int = None, new_model: str = None) -> str | None:
+    async def change_chat_config(self, clear: bool = None, enable_search: int = None, new_model: str = None) -> str | None:
         if self.chat._model != self.current_model:
             return self.reset_chat()
         
         if new_model:
+            if new_model == 'list':
+                return "\n".join(await self.list_models())
             self.models.append(new_model)
             return f'В gemini добавлена модель {new_model}'
 
@@ -246,6 +249,16 @@ class GeminiAPI(BaseAPIInterface):
         self.reset_chat()
         enhanced_prompt = await self.prompt(init_prompt)
         return enhanced_prompt
+
+
+    async def list_models(self) -> list:
+        async with aiohttp.ClientSession() as session:
+            url = "https://generativelanguage.googleapis.com/v1beta/models"
+            async with session.get(url, params={'key': self.api_key}) as response:
+                response.raise_for_status()
+                response = await response.json()
+                return [model['name'].split('/')[1] for model in response['models'] 
+                        if 'generateContent' in model['supportedGenerationMethods']]
 
 
 if False:
@@ -765,9 +778,10 @@ class ConfigArgParser:
     def get_usage(self) -> str:
         return ("Usage examples:\n"
                 "• Search on in gemini: `/conf --es 1`\n"
-                "• Search off search in gemini: `/conf --es 0`\n"
-                "• Add new model to gemini: `/conf --nm gemini-2.0`\n"
-                "• Another setting: `/conf --some some`\n")
+                "• Search off in gemini: `/conf --es 0`\n"
+                "• Gemini's models: `/conf --nm list`\n"
+                "• Add model to gemini: `/conf --nm str`\n"
+                )
 
 
 
@@ -836,7 +850,7 @@ class User:
             # if 'new_model' in kwargs:
             #     model_name = self.current_bot.change_chat_config(new_model=kwargs['new_model'])
             #     output += f'В gemini добавлена модель {model_name}\n' 
-            output += f'{self.current_bot.change_chat_config(**kwargs)}\n' 
+            output += f'{await self.current_bot.change_chat_config(**kwargs)}\n' 
 
         return output.strip()
 
@@ -860,7 +874,7 @@ class User:
 
     async def clear(self) -> str:
         if self.current_bot.name == 'gemini':
-            status = self.current_bot.change_chat_config(clear=True)
+            status = await self.current_bot.change_chat_config(clear=True)
         else:
             ct = self.current_bot.context
             if len(ct) > 1 and ct[0].get('role') == 'system':
