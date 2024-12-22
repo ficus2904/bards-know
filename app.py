@@ -190,7 +190,10 @@ class GeminiAPI(BaseAPIInterface):
         try:
             content = [Part.from_bytes(**data), text] if data else text
             response = await self.chat.send_message(content)
-            return response.text
+            if 'thinking' in self.current_model:
+                return response.candidates[0].content.parts[1].text
+            else:
+                return response.text
         except Exception as e:
             logging.exception(e)
             return f'Gemini error: {e}'
