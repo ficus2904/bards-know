@@ -1,60 +1,93 @@
-# README.md
+# Bard Knows Telegram Bot
 
-## Bard Knows Telegram Bot
+A versatile Telegram bot that provides access to various AI models for text generation, image analysis, and multimedia processing.
 
-This Python Telegram bot can provide users with quotes, jokes, facts, historical events, and trivia questions.
+## Features
 
-## How to use
+- Multiple AI model support (Gemini, Nvidia, Groq, Mistral, Together, Glif)
+- Image generation and analysis
+- Voice and video message processing
+- Custom context management
+- Admin controls for user access
+- Rate limiting for API requests
 
-1. Start the bot by running the following command:
+## Commands
 
-Create a virtual environment and install the dependencies with the following command:
+### User Commands
+- `/start` - Initialize bot interaction
+- `/help` - Show available commands
+- `/i` or `/image` - Generate images with custom parameters
+  ```
+  Usage examples:
+  • Basic: /i your prompt here
+  • With aspect ratio: /i your prompt here --ar 9:16
+  • With model selection: /i your prompt here --m 1.1
+  • Combined: /i your prompt here --ar 9:16 --m ultra
+  ```
+- `/clear` - Clear conversation context
+- `/info` - Display current bot settings
 
+### Admin Commands
+- `/add_user [ID] [Name]` - Add new user access
+- `/remove_user [Name]` - Remove user access
+- `/context` - Manage prompt contexts
+  ```
+  Usage:
+  /context [-i/-r/-a] context_name [| context_body]
+  -i: Get context info
+  -r: Remove context
+  -a: Add new context
+  ```
+- `/conf` - Configure bot settings
+  ```
+  Usage examples:
+  • Search on in gemini: /conf --es 1
+  • Search off in gemini: /conf --es 0
+  • List Gemini's models: /conf --nm list
+  ```
+
+## Setup
+
+1. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-```python
+
+2. Configure API keys:
+Create an `.env` file with environment variables:
+```env
+TELEGRAM_API_KEY=your-telegram-token
+GEMINI_API_KEY=your-gemini-key
+NVIDIA_API_KEY=your-nvidia-key
+GROQ_API_KEY=your-groq-key
+MISTRAL_API_KEY=your-mistral-key
+TOGETHER_API_KEY=your-together-key
+GLIF_API_KEY=your-glif-key
+FAL_API_KEY=your-fal-key
+```
+
+3. Run the bot:
+```bash
 python app.py
 ```
-
-2. For getting access to the bot, it must first add telegram user ID to sqlite3 database, which was created after running bot (telegram user ID write in logs)
-```
->>> /start
-"Доступ запрещен. Обратитесь к администратору"
+OR with docker-compose
+```bash
+docker-compose up
 ```
 
-2. Type the name of the category you want to receive information from. For example, to receive a random quote, type "Цитата".
+## Usage
 
-3. The bot will send you the requested information.
-
-## Examples
-
-```
->>> Цитата
-"Жизнь слишком коротка, чтобы тратить ее на маленькие мысли." Марк Аврелий
-
->>> Шутка
-Что общего у слона и балерины? Они оба на ногах стоят.
-
->>> Факт
-Самая большая страна в мире по площади - Россия.
-
->>> Квиз
-Какой самый большой океан на Земле?
-```
-
-## Set api keys
-
-Place the api_keys.json file in the project. 
-Schema:
-```json
-{
-    "api_key_bot": "your-telegram-token",
-    "api_key_riddle": "your-api-token-from: api-ninjas.com", 
-    "gemini": "your-gemini-api-key"
-}
-```
+1. Start with `/start` command
+2. Send text messages for AI responses
+3. Send images for analysis
+4. Send voice/video messages for processing
+5. Use keyboard buttons for quick actions:
+   - Change context
+   - Switch AI models
+   - Quick commands
+   - Clear context
+   - Show info
 
 ## Support
 
-If you have any questions or suggestions, please feel free to contact me.
+For issues or suggestions, please check the logs at `./app.log` or contact the administrator.
