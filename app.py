@@ -181,7 +181,7 @@ class GeminiAPI(BaseAPIInterface):
             'gemini-1.5-pro-latest',
             ]
         self.current_model = self.models[0]
-        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.client = genai.Client(api_key=self.api_key)
         self.chat = None
         self.reset_chat()
         # self.imagen = genai.ImageGenerationModel("imagen-3.0-generate-001")
