@@ -327,9 +327,9 @@ class MistralAPI(BaseAPIInterface):
     def __init__(self):
         self.client = Mistral(api_key=self.api_key)
         self.models = [
-            'mistral-large-2411',
-            'pixtral-large-2411',
-            'mistral-small-latest',
+            'mistral-large-latest',
+            'pixtral-large-latest',
+            'codestral-latest',
             'pixtral-12b-2409',
             ] # https://docs.mistral.ai/getting-started/models/
         self.current_model = self.models[0]
@@ -463,9 +463,8 @@ class TogetherAPI(BaseAPIInterface):
         self.client = OpenAI(api_key=self.api_key,
                              base_url="https://api.together.xyz/v1")
         self.models = [
-                        'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',
-                        'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
-                        'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo',
+                        'Qwen/Qwen2-72B-Instruct',
+                        'deepseek-ai/deepseek-llm-67b-chat',
                        ] # https://docs.together.ai/docs/inference-models
 
         self.current_model = self.models[0]
