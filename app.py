@@ -1303,7 +1303,7 @@ async def imagen_handler(message: Message, user_name: str):
 @dp.message(lambda message: message.text in users.buttons)
 async def reply_kb_command(message: Message):
     user = await users.check_and_clear(message, 'text')
-    user.last_msg.setdefault('user', message.message_id)
+    user.last_msg['user'] = message.message_id
     if user.text in {'info','clear'}:
         output = await getattr(user, user.text)()
         kwargs = users.set_kwargs(escape(output))
@@ -1317,7 +1317,7 @@ async def reply_kb_command(message: Message):
         kwargs = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
     
     msg = await message.answer(**kwargs)
-    user.last_msg.setdefault('bot', msg.message_id)
+    user.last_msg['bot'] = msg.message_id
 
 @dp.message(F.content_type.in_({'photo'}))
 async def photo_handler(message: Message, user_name: str):
