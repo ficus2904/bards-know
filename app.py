@@ -86,7 +86,7 @@ class UserFilterMiddleware(BaseMiddleware):
     Raises:
         Exception: If an error occurs while calling the handler, it logs the exception and sends an error message to the user.
     """
-    async def __call__(self, handler: callable, event: TelegramObject, data: dict):
+    async def __call__(self, handler: callable, event: TelegramObject | CallbackQuery, data: dict):
         USER_ID = data['event_from_user'].id
         if user_name:= users.db.check_user(USER_ID):
             data.setdefault('user_name', user_name)
@@ -94,7 +94,8 @@ class UserFilterMiddleware(BaseMiddleware):
                 await handler(event, data)
             except Exception as e:
                 logging.exception(e)
-                await bot.send_message(event.chat.id, f'❌ Error: {e}')
+                if isinstance(event, Message):
+                    await bot.send_message(event.chat.id, f'❌ Error: {e}')
         else:
             if isinstance(event, Message):
                 logging.warning(f'Unknown user {USER_ID}')
@@ -818,6 +819,7 @@ class User:
         self.current_image_bot = FalAPI()
         self.time_dump = time()
         self.text = None
+        self.last_msg = {} # for deleting messages when using change callback
         
 
     async def change_context(self, context_name: str) -> str | dict:
@@ -935,7 +937,7 @@ class User:
     ])
 
 
-    async def prompt(self, *args) -> str: # text: str, image=None, voice=None
+    async def prompt(self, *args) -> str:
         output = await users.queue_manager.enqueue_request(self.current_bot.name, 
                                             self.current_bot.prompt(*args))
         return escape(output)
@@ -1301,6 +1303,7 @@ async def imagen_handler(message: Message, user_name: str):
 @dp.message(lambda message: message.text in users.buttons)
 async def reply_kb_command(message: Message):
     user = await users.check_and_clear(message, 'text')
+    user.last_msg.setdefault('user', message.message_id)
     if user.text in {'info','clear'}:
         output = await getattr(user, user.text)()
         kwargs = users.set_kwargs(escape(output))
@@ -1313,8 +1316,8 @@ async def reply_kb_command(message: Message):
         builder_inline = users.create_inline_kb(items[0], user.text)
         kwargs = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
     
-    await message.answer(**kwargs)
-
+    msg = await message.answer(**kwargs)
+    user.last_msg.setdefault('bot', msg.message_id)
 
 @dp.message(F.content_type.in_({'photo'}))
 async def photo_handler(message: Message, user_name: str):
@@ -1373,6 +1376,11 @@ async def change_callback_handler(query: CallbackQuery, callback_data: CallbackC
     await query.message.edit_reply_markup(reply_markup=reply_markup)
     if is_final_set:
         await query.message.answer(output)
+    # delete last sys messages
+    for msg in ['user','bot']:
+        if user.last_msg.get(msg):
+            await bot.delete_message(query.message.chat.id, user.last_msg.pop(msg))
+        
     await query.answer()
 
 
