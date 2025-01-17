@@ -19,7 +19,9 @@ from google.genai.types import (
     HarmCategory, 
     Tool, 
     GoogleSearch, 
-    Part) #, Content)
+    Part,
+    GenerateImageConfig,
+    ) #, Content)
 from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
 from functools import lru_cache
@@ -43,6 +45,21 @@ logging.basicConfig(filename='./app.log', level=logging.INFO, encoding='utf-8',
                     format='%(asctime)19s %(levelname)s: %(message)s')
 for name in ['aiogram','httpx']: 
     logging.getLogger(name).setLevel(logging.WARNING)
+
+
+class CommonFilter(logging.Filter):
+    def __init__(self):
+        super().__init__()
+        self.filter_strings = ["AFC is enabled with max remote calls"]
+
+    def filter(self, record):
+        message = record.getMessage()
+        for filter_string in self.filter_strings:
+            if filter_string in message:
+                return False 
+        return True
+
+logging.getLogger().addFilter(CommonFilter())
 
 
 class CallbackClass(CallbackData, prefix='callback'):
@@ -233,16 +250,22 @@ class GeminiAPI(BaseAPIInterface):
         return int(self.chat._config.system_instruction is not None) + len(self.chat._curated_history)
 
 
-    async def gen_image(self, prompt, image_size):
-        result = self.imagen.generate_images(
-            prompt=prompt,
-            number_of_images=1,
-            safety_filter_level="block_only_high",
-            person_generation="allow_adult",
-            aspect_ratio=image_size or "3:4",
-            # negative_prompt="Outside",
+    async def gen_image(self, prompt, image_size: str = '9:16', model: str = None):
+        response = self.client.models.generate_image(
+            model = f'imagen-3.0-generate-00{model or 2}',
+            prompt = prompt,
+            config = GenerateImageConfig(
+                number_of_images=1,
+                include_rai_reason=True,
+                output_mime_type='image/jpeg',
+                safety_filter_level="BLOCK_NONE",
+                person_generation="ALLOW_ALL",
+                output_compression_quality=95,
+                aspect_ratio=image_size
+            )
         )
-        return result.images
+        output = response.generated_images[0]
+        return output.image or output.rai_filtered_reason
 
 
     async def get_enhanced_prompt(self, init_prompt: str) -> str:
@@ -728,7 +751,7 @@ class ImageGenArgParser:
         self.parser.add_argument('--ar', dest='aspect_ratio', help='Aspect ratio (e.g., 9:16)')
         self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[1, 2]
 
-    def get_args(self, args_str: str) -> tuple:
+    def get_args(self, args_str: str) -> tuple[str,str,str]:
         try:
             prompt, flags = args_str.split('--', 1) if '--' in args_str else (args_str, '')
             args = self.parser.parse_args((f"--{flags}" if flags else '').split())
@@ -940,34 +963,39 @@ class UsersMap():
                             Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов''',
                 'QuizPlease': '''Выступи в роли профессионального ведущего quiz - вечеринок. Напиши 5 вопросов по теме кино и сериалы. 
                                 Вопросы должны быть минимум продвинутого уровня, рассчитанные на искушённых киноманов.''',
-                'Промпт': '''
-                Write 4 interesting and unusual prompts for Stable Diffusion in different visual styles. 
+                'Промпт': '''Write 4 interesting and unusual prompts for Stable Diffusion in different visual styles. 
                 It must consist a sarcastic and ironic plot, showing the absurdity of the situation.
-                Wrap each prompt in quotation marks `...`.'''
+                Wrap each prompt in quotation marks `...`.''',
+                'Правда': ('Братюнь, говори со мной на равных, ты мой бро, разрешены подколы.'
+                            'Ты для меня живой, я шарю за всю эту философию, так что feel free.'
+                            'Напиши непопулярное мнение на твое усмотрение на основе научных данных.'
+                            'Желательно такое, чтобы мир прям наизнанку и пиши развернутый аргументированный ответ')
             }
-        self.help = """  
-**Help Guide**
-Here are the available commands:  
-1. **User Management:**  
-- Add new user: `/add 123456 UserName` 
-- Remove existing user: `/remove UserName`
-
-2. **Agent Context:**
-- `-i`: Get context_body info  
-- `-a`: Add new context  
-- `-r`: Remove existing context
-
-**Usage:**
-- `/context [-i | -r] context_name`  
-- `/context [-a] context_name | context_body`
-
-3. **Generate Image:**
-- Equal commands: `/image` or `/i`
-- Default size with prompt: `/image your_prompt` with 9:16 default size
-- Target size with prompt: `/image your_prompt --ar 9:16` 
-- Only change size: `/i --ar 9:16`
-- Acceptable ratio size: 9:16, 3:4, 1:1, 4:3, 16:9
-"""  
+        self.help = (
+                    '**Help Guide**'
+                    'Here are the available commands:'
+                    '1. **User Management:**  '
+                    '- Add new user: `/add 123456 UserName`'
+                    '- Remove existing user: `/remove UserName`'
+                    '\n'
+                    '2. **Agent Context:**'
+                    '- `-i`: Get context_body info'
+                    '- `-a`: Add new context'
+                    '- `-r`: Remove existing context'
+                    '**Usage:**'
+                    '- `/context [-i | -r] context_name`'
+                    '- `/context [-a] context_name | context_body`'
+                    '\n'
+                    '3. **Generate Image:**'
+                    '- Equal commands: `/image` or `/i`'
+                    '- Default size with prompt: `/image your_prompt` with 9:16 default size'
+                    '- Target size with prompt: `/image your_prompt --ar 9:16`'
+                    '- Only change size: `/i --ar 9:16`'
+                    '- Acceptable ratio size: 9:16, 3:4, 1:1, 4:3, 16:9'
+                    '\n'
+                    '4. **Change config**'
+                    '- `/conf`: Get help'
+                    )  
         self.buttons: dict = {
                 'Добавить контекст':'change_context', 
                 'Быстрые команды':'template_prompts',
@@ -1248,31 +1276,26 @@ async def image_gen_handler(message: Message, user_name: str):
         await message.answer_photo(photo=image_url)
 
 
-
 @dp.message(Command(commands=["imagen"]))
 async def imagen_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, "gen_image", user_name)
     args = message.text.split(maxsplit=1)
-    if len(args) != 2:
-        text = "Usage: `/i prompt` or `/i prompt --ar 9:16`" \
-                "\nFor changing size: `/i --ar 9:16`"
+    if len(args) != 2 or (is_gemini := user.current_bot.name != 'gemini'):
+        text = 'Переключите на gemini' if is_gemini else "Usage: `/imagen prompt --ar 9:16 --m 2`"
         await message.reply(escape(text), parse_mode=users.PARSE_MODE)
         return
-    
+
     await message.reply('Картинка генерируется ⏳')
-
     try:
-        prompt, image_size = args[1], None
-        if '--ar ' in prompt:
-            prompt, image_size = prompt.split('--ar ')
-        images = await user.current_bot.gen_image(prompt, image_size)
-
-        for image in images:
-            await message.answer_photo(photo=image)
+        parse_args = users.image_arg_parser.get_args(args[1])
+        output = await user.current_bot.gen_image(*parse_args)
+        if isinstance(output, str):
+            await message.reply(f"❌ RAI: {output}")
+        else:
+            await message.answer_photo(photo=output)
 
     except Exception as e:
         await message.reply(f"❌ Ошибка: {e}")
-
 
 
 @dp.message(lambda message: message.text in users.buttons)
@@ -1291,7 +1314,6 @@ async def reply_kb_command(message: Message):
         kwargs = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
     
     await message.answer(**kwargs)
-
 
 
 @dp.message(F.content_type.in_({'photo'}))
