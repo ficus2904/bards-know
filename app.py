@@ -1376,10 +1376,10 @@ async def change_callback_handler(query: CallbackQuery, callback_data: CallbackC
     await query.message.edit_reply_markup(reply_markup=reply_markup)
     if is_final_set:
         await query.message.answer(output)
-    # delete last sys messages
-    for msg in ['user','bot']:
-        if user.last_msg.get(msg):
-            await bot.delete_message(query.message.chat.id, user.last_msg.pop(msg))
+        # delete last sys messages
+        for msg in ['user','bot']:
+            if user.last_msg.get(msg):
+                await bot.delete_message(query.message.chat.id, user.last_msg.pop(msg))
         
     await query.answer()
 
