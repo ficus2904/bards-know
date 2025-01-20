@@ -29,10 +29,17 @@ from time import time
 from groq import Groq
 from openai import OpenAI
 from aiogram import Bot, Dispatcher, BaseMiddleware, F
-from aiogram.types import TelegramObject, Message, CallbackQuery, KeyboardButtonPollType
+from aiogram.types import (
+    TelegramObject, 
+    Message, 
+    CallbackQuery, 
+    KeyboardButtonPollType,
+    )
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
+from aiogram.utils.chat_action import ChatActionMiddleware
+from aiogram import flags
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
 from PIL import Image, ImageOps
@@ -1137,6 +1144,7 @@ users = UsersMap()
 bot = Bot(token=os.getenv('TELEGRAM_API_KEY'))
 dp = Dispatcher()
 dp.message.middleware(UserFilterMiddleware())
+dp.message.middleware(ChatActionMiddleware())
 dp.callback_query.middleware(UserFilterMiddleware())
 
 
@@ -1260,6 +1268,7 @@ async def config_handler(message: Message, user_name: str):
 
 
 @dp.message(Command(commands=["i","I","image"]))
+@flags.chat_action("upload_photo")
 async def image_gen_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, "gen_image", user_name)
     args = message.text.split(maxsplit=1)
@@ -1279,6 +1288,7 @@ async def image_gen_handler(message: Message, user_name: str):
 
 
 @dp.message(Command(commands=["imagen"]))
+@flags.chat_action("upload_photo")
 async def imagen_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, "gen_image", user_name)
     args = message.text.split(maxsplit=1)
@@ -1339,6 +1349,7 @@ async def photo_handler(message: Message, user_name: str):
 
 
 @dp.message(F.content_type.in_({'voice','video_note','video'}))
+@flags.chat_action("typing")
 async def voice_handler(message: Message, user_name: str):
     data_info = message.voice or message.video_note or message.video
     data_type = data_info.mime_type.split('/')[0]
@@ -1356,6 +1367,7 @@ async def voice_handler(message: Message, user_name: str):
 
 
 @dp.message(F.content_type.in_({'text'}))
+@flags.chat_action("typing")
 async def text_handler(message: Message | KeyboardButtonPollType, user_name: str):
     user = await users.check_and_clear(message, 'text', user_name)
     if user.text is None or user.text == '/':
