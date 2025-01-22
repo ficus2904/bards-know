@@ -21,7 +21,7 @@ from google.genai.types import (
     GoogleSearch, 
     Part,
     GenerateImageConfig,
-    ) #, Content)
+    )
 from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
 from functools import lru_cache
@@ -197,7 +197,7 @@ class GeminiAPI(BaseAPIInterface):
 
     def __init__(self):
         self.safety_settings = [SafetySetting(category=category, threshold="BLOCK_NONE") for category 
-                                in HarmCategory.__args__[1:]]
+                                in HarmCategory._member_names_[1:]]
         self.models = [
             'gemini-2.0-flash-exp',
             'gemini-2.0-flash-thinking-exp',
@@ -206,10 +206,10 @@ class GeminiAPI(BaseAPIInterface):
             'gemini-1.5-pro-latest',
             ]
         self.current_model = self.models[0]
-        self.client = genai.Client(api_key=self.api_key)
+        self.client = genai.Client(api_key=self.api_key, http_options={'api_version':'v1alpha'})
         self.chat = None
         self.reset_chat()
-        # self.imagen = genai.ImageGenerationModel("imagen-3.0-generate-001")
+        
 
     async def prompt(self, text: str = None, data: dict = None) -> str:
         try:
