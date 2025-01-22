@@ -332,8 +332,7 @@ class GroqAPI(BaseAPIInterface):
         self.client = Groq(api_key=self.api_key)
         self.models = [
             'llama-3.3-70b-versatile',
-            'llama-3.3-70b-specdec',
-            'llava-v1.5-7b-4096-preview',
+            'llama-3.2-90b-vision-preview',
             ] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
 
@@ -927,7 +926,7 @@ class User:
     
 
     async def make_multi_modal_body(text, image, context: list, is_mistral = False) -> None:
-        image_b64 = base64.b64encode(image.getvalue()).decode()
+        image_b64 = base64.b64encode(image.get('data')).decode()
         if len(image_b64) > 180_000:
             print("Слишком большое изображение, сжимаем...")
             image_b64 = users.resize_image(image)
