@@ -1350,11 +1350,12 @@ async def photo_handler(message: Message, user_name: str):
         await message.answer(**users.set_kwargs(part))
 
 
-@dp.message(F.content_type.in_({'voice','video_note','video'}))
+@dp.message(F.content_type.in_({'voice','video_note','video','document'}))
 @flags.chat_action("typing")
-async def voice_handler(message: Message, user_name: str):
-    data_info = message.voice or message.video_note or message.video
-    data_type = data_info.mime_type.split('/')[0]
+async def data_handler(message: Message, user_name: str):
+    data_info = getattr(message, message.content_type, None)
+    mime_type = getattr(data_info, 'mime_type', None)
+    data_type = mime_type.split('/')[0]
     user = await users.check_and_clear(message, data_type, user_name)
     if user.current_bot.name not in {'gemini'}:
         await user.change_bot('gemini')
@@ -1362,7 +1363,7 @@ async def voice_handler(message: Message, user_name: str):
     await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
 
     data = await bot.download(data_info.file_id)
-    output = await user.prompt(user.text, {'data': data.getvalue(), 'mime_type': data_info.mime_type})
+    output = await user.prompt(user.text, {'data': data.getvalue(), 'mime_type': mime_type})
     async for part in users.split_text(output):
         await message.answer(**users.set_kwargs(part))
 
