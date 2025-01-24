@@ -913,15 +913,13 @@ class User:
             status = await self.current_bot.change_chat_config(clear=True)
         else:
             ct = self.current_bot.context
-            if len(ct) > 1 and ct[0].get('role') == 'system':
+            if not len(ct) or (len(ct) == 1 and ct[0].get('role') == 'system'):
                 self.current_bot.context.clear()
                 status = 'полностью'
             else:
                 self.current_bot.context = ct[:1]
                 status = 'кроме системного'
-            # clear_system = False if len(ct) > 1 and ct[0].get('role') == 'system' else True
-            # self.current_bot.context = [] if clear_system else ct[:1]
-            # status = 'полностью' if clear_system else 'кроме системного'
+
         return f'🧹 Диалог очищен {status}'
     
 
@@ -1016,7 +1014,7 @@ class UsersMap():
                 'Изменить модель бота':'change_model'
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'gemini' #'glif' gemini
+        self.DEFAULT_BOT: str = 'mistral' #'glif' gemini mistral
         self.builder: ReplyKeyboardBuilder = self.create_builder()
         self.image_arg_parser = ImageGenArgParser()
         self.config_arg_parser = ConfigArgParser()
