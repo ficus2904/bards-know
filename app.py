@@ -228,6 +228,7 @@ class GeminiAPI(BaseAPIInterface):
     
     
     def reset_chat(self, context: str = None):
+        self.context = [{'role':'system', 'content': context}]
         config = GenerateContentConfig(system_instruction=context, 
                                        safety_settings=self.safety_settings)
         self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
@@ -827,7 +828,7 @@ class User:
         self.current_bot: BaseAPIInterface = self.api_factory.get(users.DEFAULT_BOT)
         self.current_image_bot = FalAPI()
         self.time_dump = time()
-        self.text = None
+        self.text: str = None
         self.last_msg = {} # for deleting messages when using change callback
         
 
@@ -981,29 +982,29 @@ class UsersMap():
                             'Желательно такое, чтобы мир прям наизнанку и пиши развернутый аргументированный ответ')
             }
         self.help = (
-                    '**Help Guide**'
-                    'Here are the available commands:'
-                    '1. **User Management:**  '
-                    '- Add new user: `/add 123456 UserName`'
-                    '- Remove existing user: `/remove UserName`'
+                    '**Help Guide**\n'
+                    'Here are the available commands:\n'
+                    '1. **User Management:**\n'
+                    '- Add new user: `/add 123456 UserName`\n'
+                    '- Remove existing user: `/remove UserName`\n'
                     '\n'
-                    '2. **Agent Context:**'
-                    '- `-i`: Get context_body info'
-                    '- `-a`: Add new context'
-                    '- `-r`: Remove existing context'
-                    '**Usage:**'
-                    '- `/context [-i | -r] context_name`'
-                    '- `/context [-a] context_name | context_body`'
+                    '2. **Agent Context:**\n'
+                    '- `-i`: Get context_body info\n'
+                    '- `-a`: Add new context\n'
+                    '- `-r`: Remove existing context\n'
+                    '**Usage:**\n'
+                    '- `/context [-i | -r] [context_name | c OR current]`\n'
+                    '- `/context [-a] context_name | context_body`\n'
                     '\n'
-                    '3. **Generate Image:**'
-                    '- Equal commands: `/image` or `/i`'
-                    '- Default size with prompt: `/image your_prompt` with 9:16 default size'
-                    '- Target size with prompt: `/image your_prompt --ar 9:16`'
-                    '- Only change size: `/i --ar 9:16`'
-                    '- Acceptable ratio size: 9:16, 3:4, 1:1, 4:3, 16:9'
+                    '3. **Generate Image:**\n'
+                    '- Equal commands: `/image` or `/i`\n'
+                    '- Default size with prompt: `/image your_prompt` with 9:16 default size\n'
+                    '- Target size with prompt: `/image your_prompt --ar 9:16`\n'
+                    '- Only change size: `/i --ar 9:16`\n'
+                    '- Acceptable ratio size: 9:16, 3:4, 1:1, 4:3, 16:9\n'
                     '\n'
-                    '4. **Change config**'
-                    '- `/conf`: Get help'
+                    '4. **Change config**\n'
+                    '- `/conf`: Get help\n'
                     )  
         self.buttons: dict = {
                 'Добавить контекст':'change_context', 
@@ -1111,14 +1112,13 @@ class UsersMap():
         if (time() - user.time_dump) > 3600:
             user.clear()
         user.time_dump = time()
-
         if type_prompt == 'text':
             user.text = self.buttons.get(message.text, message.text)
             type_prompt = message.text
         else:
             user.text = message.caption or f"the provided {type_prompt}."
             type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt)
-        
+        user.text = user.text.lstrip('/')
         if user_name:
             logging.info(f'{user_name}: "{type_prompt}"')
          
@@ -1138,6 +1138,14 @@ class UsersMap():
             data = CallbackClass(cb_type=cb_type, name=users.make_short_name(value)).pack()
             builder_inline.button(text=users.make_short_name(value), callback_data=data)
         return builder_inline.adjust(*[1]*len(dict_iter)).as_markup()
+
+
+    def get_current_context(self, user_id: int) -> str:
+        user: User = self.get(user_id)
+        ct = user.current_bot.context
+        if len(ct) and ct[0].get('role') == 'system':
+            return ct[0].get('content')
+        return 'No current context'
 
 
 users = UsersMap()
@@ -1173,7 +1181,11 @@ async def context_handler(message: Message, user_name: str):
     
     _, arg, prompt_body = args
     if arg == '-i':
-        text = users.get_context(prompt_body) or 'Context name not found'
+        if prompt_body in ['c', 'current']:
+            text = users.get_current_context(message.from_user.id)
+        else:
+            text = users.get_context(prompt_body) or 'Context name not found'
+        text = f'```plaintext\n{text}\n```'
         await message.reply(**users.set_kwargs(escape(text)))
         return
     
@@ -1201,52 +1213,133 @@ async def context_handler(message: Message, user_name: str):
         return
     
 
-@dp.message(Command(commands=["add_user"]))
-async def add_handler(message: Message, user_name: str):
-    if user_name != 'ADMIN':
-        await message.reply("You don't have admin privileges")
-        return
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.reply("Usage: `/add 123456 UserName`")
-        return
-    # Split the argument into user_id and name
-    user_id, name = args[1].split(maxsplit=1)
-    try:
-        users.db.add_user(int(user_id), name)
-        await message.reply(f"User {name} with ID {user_id} added successfully.")
-    except sqlite3.IntegrityError:
-        await message.reply("This user ID already exists.")
-    except Exception as e:
-        await message.reply(f"An error occurred: {e}.")
+@dp.message(Command(commands=["add_user","remove_user"]))
+async def add_remove_user_handler(message: Message, user_name: str):
+    """
+    Handles the addition and removal of users based on the command received.
 
+    Parameters
+    ----------
+    message : types.Message
+        The message object containing the command and arguments.
+    
+    user_name : str
+        The user name if user in base
 
-@dp.message(Command(commands=["remove_user"]))
-async def remove_handler(message: Message, user_name: str):
-    if user_name != 'ADMIN':
-        await message.reply("You don't have admin privileges")
-        return
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.reply("Usage: `/remove UserName`")
-        return
-    # Take the argument as the name
-    name_to_remove = args[1].strip()
+    Returns
+    -------
+    None
+        The function sends a reply message to the user and does not return any value.
+
+    Raises
+    ------
+    Exception
+        
+    sqlite3.IntegrityError
+        If the user ID already exists in the database.
+    Exception
+        If the user does not have admin privileges or if the command usage is incorrect. 
+        OR For any other unexpected errors.
+
+    Notes
+    -----
+    - The function checks if the user has admin privileges by verifying the username.
+    - It splits the message text to extract the command and arguments.
+    - If the command is `/add_user`, it expects a user ID and a username, adds the user to the database, and sends a success message.
+    - If the command is `/remove_user`, it expects a username, checks if the user exists, removes the user from the database, and sends a success message.
+    - If the user does not exist, it sends a warning message.
+    - The function handles various exceptions and provides appropriate feedback to the user.
+
+    Examples
+    --------
+    >>> # Example of adding a user
+    >>> message_text = "/add_user 123456 JohnDoe"
+    >>> await add_remove_user_handler(message)
+    ✅ User JohnDoe with ID 123456 added successfully.
+
+    >>> # Example of removing a user
+    >>> message_text = "/remove_user JohnDoe"
+    >>> await add_remove_user_handler(message)
+    ✅ User `JohnDoe` removed successfully.
+
+    >>> # Example of invalid usage
+    >>> message_text = "/add_user"
+    >>> await add_remove_user_handler(message)
+    ❌ An error occurred: Usage: /add_user 123456 UserName
+    """
     try:
-        if user_name:
-            users.db.remove_user(name_to_remove)
-            await message.reply(f"User `{name_to_remove}` removed successfully.")
+        if user_name != 'ADMIN':
+            raise Exception("You don't have admin privileges")
+        
+        is_add_command = message.text.startswith('/add')
+        args = message.text.split(maxsplit=1)
+        if len(args) < 2:
+            raise Exception(f"Usage: `/add {'123456 ' if is_add_command else ''}UserName`")
+    
+        if is_add_command:
+            user_id, name = args[1].split(maxsplit=1)
+            users.db.add_user(int(user_id), name)
+            output = f"✅ User {name} with ID {user_id} added successfully."
         else:
-            await message.reply(f"User `{name_to_remove}` not found.")
+            name_to_remove = args[1].strip()
+            if user_name:
+                users.db.remove_user(name_to_remove)
+                output = f"✅ User `{name_to_remove}` removed successfully."
+            else:
+                output = f"⚠️ User `{name_to_remove}` not found."
+
+    except sqlite3.IntegrityError:
+        output = "⚠️ This user ID already exists."
     except Exception as e:
-        await message.reply(f"An error occurred: {e}.")
+        output = f"❌ An error occurred: {e}."
+    finally:
+        await message.reply(output)
+
+
+# @dp.message(Command(commands=["add_user"]))
+# async def add_handler(message: Message, user_name: str):
+#     if user_name != 'ADMIN':
+#         await message.reply("You don't have admin privileges")
+#         return
+#     args = message.text.split(maxsplit=1)
+#     if len(args) < 2:
+#         await message.reply("Usage: `/add 123456 UserName`")
+#         return
+#     # Split the argument into user_id and name
+#     user_id, name = args[1].split(maxsplit=1)
+#     try:
+#         users.db.add_user(int(user_id), name)
+#         await message.reply(f"User {name} with ID {user_id} added successfully.")
+#     except sqlite3.IntegrityError:
+#         await message.reply("This user ID already exists.")
+#     except Exception as e:
+#         await message.reply(f"An error occurred: {e}.")
+
+
+# @dp.message(Command(commands=["remove_user"]))
+# async def remove_handler(message: Message, user_name: str):
+#     if user_name != 'ADMIN':
+#         await message.reply("You don't have admin privileges")
+#         return
+#     args = message.text.split(maxsplit=1)
+#     if len(args) < 2:
+#         await message.reply("Usage: `/remove UserName`")
+#         return
+#     # Take the argument as the name
+#     name_to_remove = args[1].strip()
+#     try:
+#         if user_name:
+#             users.db.remove_user(name_to_remove)
+#             await message.reply(f"User `{name_to_remove}` removed successfully.")
+#         else:
+#             await message.reply(f"User `{name_to_remove}` not found.")
+#     except Exception as e:
+#         await message.reply(f"An error occurred: {e}.")
 
 
 @dp.message(Command(commands=["info","clear"]))
 async def short_command_handler(message: Message, user_name: str):
-    user = await users.check_and_clear(message, message.text.lstrip('/'), user_name)
-    kwargs = await users.set_kwargs(escape(getattr(user, user.text)()))
-    await message.answer(**kwargs)
+    await reply_kb_command(message)
 
 
 @dp.message(Command(commands=["conf"]))
