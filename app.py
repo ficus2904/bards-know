@@ -530,9 +530,9 @@ class GlifAPI(BaseAPIInterface):
         self.models_with_ids = {
                                 "claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
                                 "GPT4o":"clxx330wj000ipbq9rwh4hmp3",
-                                "Llama 3.1 405B":"clyzjs4ht0000iwvdlacfm44y",
+                                "Grok 2":"clyzjs4ht0000iwvdlacfm44y",
                                 }
-        self.models = list(self.models_with_ids.keys()) #['claude 3.5 sonnet', 'GPT4o','Llama 3.1 405B']
+        self.models = list(self.models_with_ids.keys())
         self.current_model = self.models[0]
         # self.context = []
 
