@@ -894,9 +894,9 @@ class User:
             # if 'new_model' in kwargs:
             #     model_name = self.current_bot.change_chat_config(new_model=kwargs['new_model'])
             #     output += f'В gemini добавлена модель {model_name}\n' 
-            output += f'{await self.current_bot.change_chat_config(**kwargs)}\n' 
+            output += f'{await self.current_bot.change_chat_config(**kwargs)}\n'
 
-        return output.strip()
+        return output.strip().strip('None')
 
 
 
