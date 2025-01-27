@@ -43,8 +43,8 @@ from aiogram import flags
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
 from PIL import Image, ImageOps
-from dotenv import load_dotenv
-load_dotenv()
+# from dotenv import load_dotenv
+# load_dotenv()
 warnings.simplefilter('ignore')
 
 # python app.py
@@ -802,6 +802,7 @@ class ConfigArgParser:
         self.parser = ArgumentParser(description='Change configuration options')
         self.parser.add_argument('--es', dest='enable_search', help='Turn search in gemini',type=int, choices=[0, 1])
         self.parser.add_argument('--nm', dest='new_model', help='Add new model in gemini',type=str)
+        self.parser.add_argument('--rr', dest='turn_proxy', help='Turn proxy globally',type=int, choices=[0, 1])
         # self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[0, 1]
 
     def get_args(self, args_str: str) -> dict:
@@ -817,6 +818,7 @@ class ConfigArgParser:
                 "• Search off in gemini: `/conf --es 0`\n"
                 "• Gemini's models: `/conf --nm list`\n"
                 "• Add model to gemini: `/conf --nm str`\n"
+                "• Turn proxy: `/conf --rr 1`\n"
                 )
 
 
@@ -880,6 +882,8 @@ class User:
 
     async def change_config(self, kwargs: dict) -> str:
         output = ''
+        if (proxy := kwargs.get('turn_proxy')) is not None:
+            output += users.turn_proxy(proxy)
         if self.current_bot.name == 'gemini':
             # if 'enable_search' in kwargs:
             #     status = self.current_bot.change_chat_config(enable_search=kwargs['enable_search'])
@@ -1016,6 +1020,7 @@ class UsersMap():
             }
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
         self.DEFAULT_BOT: str = 'gemini' #'glif' gemini mistral
+        self.proxy_settings = os.environ.get('HTTPS_PROXY')
         self.builder: ReplyKeyboardBuilder = self.create_builder()
         self.image_arg_parser = ImageGenArgParser()
         self.config_arg_parser = ConfigArgParser()
@@ -1146,6 +1151,15 @@ class UsersMap():
         if len(ct) and ct[0].get('role') == 'system':
             return ct[0].get('content')
         return 'No current context'
+
+
+    def turn_proxy(self, proxy: int) -> str:
+        if proxy:
+            os.environ['HTTPS_PROXY'] = self.proxy_settings
+        else:
+            os.environ.pop('HTTPS_PROXY', None)
+        return f'Прокси в{'' if proxy else 'ы'}клю' + 'чен\n' 
+
 
 
 users = UsersMap()
