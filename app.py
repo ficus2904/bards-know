@@ -234,7 +234,10 @@ class GeminiAPI(BaseAPIInterface):
         self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
 
 
-    async def change_chat_config(self, clear: bool = None, enable_search: int = None, new_model: str = None) -> str | None:
+    async def change_chat_config(self, clear: bool = None, 
+                                 enable_search: int = None, 
+                                 new_model: str = None, 
+                                 **kwargs) -> str | None:
         if self.chat._model != self.current_model:
             return self.reset_chat()
         
