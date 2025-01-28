@@ -680,13 +680,13 @@ class FalAPI(BaseAPIInterface):
         return kwargs
 
 
-    async def gen_image(self, prompt: str, 
+    async def gen_image(self, prompt: str = None, 
                         image_size: str | None = None, 
                         model: str | None = None) -> str:
 
         kwargs = self.get_kwargs(image_size, model)
 
-        if prompt == '':
+        if not prompt:
             return self.get_info()
         
         url = "https://fal.run/fal-ai/flux-pro/" + self.current_model
@@ -770,8 +770,8 @@ class ImageGenArgParser:
             prompt, flags = args_str.split('--', 1) if '--' in args_str else (args_str, '')
             args = self.parser.parse_args((f"--{flags}" if flags else '').split())
             return prompt.strip(), args.aspect_ratio, args.model
-        except Exception as e:
-            raise ValueError(f"Invalid arguments: {str(e)}")
+        except SystemExit:
+            return prompt, None, None
 
     def get_usage(self) -> str:
         return ("Usage examples:\n"
@@ -812,8 +812,8 @@ class ConfigArgParser:
         try:
             args = self.parser.parse_args(args_str.split())
             return {k:v for k,v in (vars(args).items()) if v is not None}
-        except Exception as e:
-            raise ValueError(f"Invalid arguments: {str(e)}")
+        except SystemExit:
+            return {'SystemExit': "❌ Invalid arguments"}
 
     def get_usage(self) -> str:
         return ("Usage examples:\n"
@@ -888,13 +888,9 @@ class User:
         if (proxy := kwargs.get('turn_proxy')) is not None:
             output += users.turn_proxy(proxy)
         if self.current_bot.name == 'gemini':
-            # if 'enable_search' in kwargs:
-            #     status = self.current_bot.change_chat_config(enable_search=kwargs['enable_search'])
-            #     output += f'Поиск в gemini {status}\n' 
-            # if 'new_model' in kwargs:
-            #     model_name = self.current_bot.change_chat_config(new_model=kwargs['new_model'])
-            #     output += f'В gemini добавлена модель {model_name}\n' 
             output += f'{await self.current_bot.change_chat_config(**kwargs)}\n'
+        if error := kwargs.get('SystemExit'):
+            return error + '\n' + users.config_arg_parser.get_usage()
 
         return output.strip().strip('None')
 
@@ -1161,7 +1157,7 @@ class UsersMap():
             os.environ['HTTPS_PROXY'] = self.proxy_settings
         else:
             os.environ.pop('HTTPS_PROXY', None)
-        return f'Прокси в{'' if proxy else 'ы'}клю' + 'чен\n' 
+        return f'Прокси {'включен ✅' if proxy else 'выключен ❌'}\n'
 
 
 
