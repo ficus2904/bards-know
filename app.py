@@ -208,7 +208,7 @@ class GeminiAPI(BaseAPIInterface):
         self.current_model = self.models[0]
         self.proxy = os.getenv('WORKER')
         self.proxy_key = os.getenv('AUTH_SECRET')
-        self.client = self.create_client(0)
+        self.client = self.create_client(1)
         self.chat = None
         self.reset_chat()
 
