@@ -206,9 +206,22 @@ class GeminiAPI(BaseAPIInterface):
             'gemini-1.5-pro-latest',
             ]
         self.current_model = self.models[0]
-        self.client = genai.Client(api_key=self.api_key, http_options={'api_version':'v1alpha'})
+        self.proxy = os.getenv('WORKER')
+        self.proxy_key = os.getenv('AUTH_SECRET')
+        self.client = self.create_client(0)
         self.chat = None
         self.reset_chat()
+
+
+    def create_client(self, with_proxy: int) -> genai.Client:
+        http_options = {'api_version':'v1alpha'}
+        if with_proxy:
+            http_options = http_options | {
+                'base_url': self.proxy,
+                'headers': {'X-Custom-Auth': self.proxy_key}
+                }
+        return genai.Client(api_key=self.api_key, 
+                            http_options=http_options)
         
 
     async def prompt(self, text: str = None, data: dict = None) -> str:
@@ -227,7 +240,9 @@ class GeminiAPI(BaseAPIInterface):
             return f'Gemini error: {e}'
     
     
-    def reset_chat(self, context: str = None):
+    def reset_chat(self, context: str = None, with_proxy: int = None):
+        if with_proxy:
+            self.client = self.create_client(with_proxy)
         self.context = [{'role':'system', 'content': context}]
         config = GenerateContentConfig(system_instruction=context, 
                                        safety_settings=self.safety_settings)
@@ -237,7 +252,7 @@ class GeminiAPI(BaseAPIInterface):
     async def change_chat_config(self, clear: bool = None, 
                                  enable_search: int = None, 
                                  new_model: str = None, 
-                                 **kwargs) -> str | None:
+                                 proxy: int = None) -> str | None:
         if self.chat._model != self.current_model:
             return self.reset_chat()
         
@@ -259,6 +274,10 @@ class GeminiAPI(BaseAPIInterface):
         if enable_search is not None:
             self.chat._config.tools = [Tool(google_search=GoogleSearch())] if enable_search else None
             return 'Поиск в gemini включен ✅' if enable_search else 'Поиск в gemini выключен ❌'
+        
+        if isinstance(proxy, int):
+            self.reset_chat(with_proxy=proxy)
+            return f'Прокси {'включен ✅' if proxy else 'выключен ❌'}\n'
         
 
     def length(self) -> int: 
@@ -805,7 +824,7 @@ class ConfigArgParser:
         self.parser = ArgumentParser(description='Change configuration options')
         self.parser.add_argument('--es', dest='enable_search', help='Turn search in gemini',type=int, choices=[0, 1])
         self.parser.add_argument('--nm', dest='new_model', help='Add new model in gemini',type=str)
-        self.parser.add_argument('--rr', dest='turn_proxy', help='Turn proxy globally',type=int, choices=[0, 1])
+        self.parser.add_argument('--rr', dest='proxy', help='Turn proxy globally',type=int, choices=[0, 1])
         # self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[0, 1]
 
     def get_args(self, args_str: str) -> dict:
@@ -885,8 +904,8 @@ class User:
 
     async def change_config(self, kwargs: dict) -> str:
         output = ''
-        if (proxy := kwargs.get('turn_proxy')) is not None:
-            output += users.turn_proxy(proxy)
+        # if (proxy := kwargs.get('turn_proxy')) is not None:
+        #     output += users.turn_proxy(proxy)
         if self.current_bot.name == 'gemini':
             output += f'{await self.current_bot.change_chat_config(**kwargs)}\n'
         if error := kwargs.get('SystemExit'):
@@ -1152,12 +1171,12 @@ class UsersMap():
         return 'No current context'
 
 
-    def turn_proxy(self, proxy: int) -> str:
-        if proxy:
-            os.environ['HTTPS_PROXY'] = self.proxy_settings
-        else:
-            os.environ.pop('HTTPS_PROXY', None)
-        return f'Прокси {'включен ✅' if proxy else 'выключен ❌'}\n'
+    # def turn_proxy(self, proxy: int) -> str:
+    #     if proxy:
+    #         os.environ['HTTPS_PROXY'] = self.proxy_settings
+    #     else:
+    #         os.environ.pop('HTTPS_PROXY', None)
+    #     return f'Прокси {'включен ✅' if proxy else 'выключен ❌'}\n'
 
 
 
