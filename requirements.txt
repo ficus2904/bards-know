@@ -1,11 +1,10 @@
 aiogram
-httpx[socks]
-httpx
-requests[socks]
-python-socks[asyncio]
+# httpx[socks]
+# httpx
+# requests[socks]
+# python-socks[asyncio]
 google-genai
-# python-dotenv
-# cohere
+python-dotenv
 pillow
 groq
 openai

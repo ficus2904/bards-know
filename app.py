@@ -9,7 +9,6 @@ import asyncio
 import aiohttp
 import logging
 import warnings
-# import cohere
 from argparse import ArgumentParser
 from mistralai import Mistral
 from google import genai
@@ -20,7 +19,7 @@ from google.genai.types import (
     Tool, 
     GoogleSearch, 
     Part,
-    GenerateImageConfig,
+    GenerateImagesConfig,
     )
 from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
@@ -43,8 +42,8 @@ from aiogram import flags
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
 from PIL import Image, ImageOps
-# from dotenv import load_dotenv
-# load_dotenv()
+from dotenv import load_dotenv
+load_dotenv()
 warnings.simplefilter('ignore')
 
 # python app.py
@@ -288,7 +287,7 @@ class GeminiAPI(BaseAPIInterface):
         response = self.client.models.generate_image(
             model = f'imagen-3.0-generate-00{model or 2}',
             prompt = prompt,
-            config = GenerateImageConfig(
+            config = GenerateImagesConfig(
                 number_of_images=1,
                 include_rai_reason=True,
                 output_mime_type='image/jpeg',
@@ -319,31 +318,6 @@ class GeminiAPI(BaseAPIInterface):
                 response = await response.json()
                 return [model['name'].split('/')[1] for model in response['models'] 
                         if 'generateContent' in model['supportedGenerationMethods']]
-
-
-if False:
-    pass
-    # class CohereAPI(BaseAPIInterface):
-    #     """Class for Cohere API"""
-    #     name = 'cohere'
-
-    #     def __init__(self):
-    #         self.client = openai.Client(self.api_key)
-    #         self.models = ['command-r-plus-08-2024','command-nightly','c4ai-aya-23-35b']
-    #         self.current_model = self.models[0]
-    #         self.context = []
-        
-
-    #     async def prompt(self, text, image = None) -> str:
-    #         response = self.client.chat(
-    #             model=self.current_model,
-    #             chat_history=self.context or None,
-    #             message=text,
-    #             safety_mode='NONE'
-    #         )
-    #         self.context = response.chat_history
-    #         # print(response.text)
-    #         return response.text
 
 
 
@@ -742,7 +716,7 @@ class FalAPI(BaseAPIInterface):
 
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
-    bots_lst: list = [NvidiaAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI] # CohereAPI
+    bots_lst: list = [NvidiaAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI]
     bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
     image_bots_lst: list = [FalAPI]
     image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
@@ -1326,47 +1300,6 @@ async def add_remove_user_handler(message: Message, user_name: str):
         output = f"❌ An error occurred: {e}."
     finally:
         await message.reply(output)
-
-
-# @dp.message(Command(commands=["add_user"]))
-# async def add_handler(message: Message, user_name: str):
-#     if user_name != 'ADMIN':
-#         await message.reply("You don't have admin privileges")
-#         return
-#     args = message.text.split(maxsplit=1)
-#     if len(args) < 2:
-#         await message.reply("Usage: `/add 123456 UserName`")
-#         return
-#     # Split the argument into user_id and name
-#     user_id, name = args[1].split(maxsplit=1)
-#     try:
-#         users.db.add_user(int(user_id), name)
-#         await message.reply(f"User {name} with ID {user_id} added successfully.")
-#     except sqlite3.IntegrityError:
-#         await message.reply("This user ID already exists.")
-#     except Exception as e:
-#         await message.reply(f"An error occurred: {e}.")
-
-
-# @dp.message(Command(commands=["remove_user"]))
-# async def remove_handler(message: Message, user_name: str):
-#     if user_name != 'ADMIN':
-#         await message.reply("You don't have admin privileges")
-#         return
-#     args = message.text.split(maxsplit=1)
-#     if len(args) < 2:
-#         await message.reply("Usage: `/remove UserName`")
-#         return
-#     # Take the argument as the name
-#     name_to_remove = args[1].strip()
-#     try:
-#         if user_name:
-#             users.db.remove_user(name_to_remove)
-#             await message.reply(f"User `{name_to_remove}` removed successfully.")
-#         else:
-#             await message.reply(f"User `{name_to_remove}` not found.")
-#     except Exception as e:
-#         await message.reply(f"An error occurred: {e}.")
 
 
 @dp.message(Command(commands=["info","clear"]))

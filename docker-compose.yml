@@ -5,8 +5,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    env_file:
-      - .env
     container_name: bard-knows
     restart: unless-stopped
     volumes:
