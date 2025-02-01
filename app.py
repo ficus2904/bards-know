@@ -359,6 +359,7 @@ class MistralAPI(BaseAPIInterface):
         self.models = [
             'mistral-large-latest',
             'pixtral-large-latest',
+            'mistral-small-latest',
             'codestral-latest',
             'pixtral-12b-2409',
             ] # https://docs.mistral.ai/getting-started/models/
