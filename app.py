@@ -876,13 +876,15 @@ class User:
     
 
     async def info(self) -> str:
-        check_vlm = hasattr(self.current_bot, 'vlm_params')
+        # check_vlm = hasattr(self.current_bot, 'vlm_params')
         is_gemini = self.current_bot.name == 'gemini'
-        return '\n'.join(['',
-            f'* Текущий бот: {self.current_bot.name}',
-            f'* Модель: {self.current_bot.current_model}',
-            f'* Модель vlm: {self.current_bot.current_vlm_model}' if check_vlm else '',
-            f'* Размер контекста: {len(self.current_bot.context) if not is_gemini else self.current_bot.length()}'])
+        return text(
+            f'🤖 Текущий бот: {self.current_bot.name}',
+            f'🧩 Модель: {self.current_bot.current_model}',
+            # f'👓 Модель vlm: {self.current_bot.current_vlm_model}' if check_vlm else '',
+            f'📚 Размер контекста: {len(self.current_bot.context) if not is_gemini else self.current_bot.length()}',
+            sep='\n'
+            )
     
 
     async def change_config(self, kwargs: dict) -> str:
@@ -970,19 +972,18 @@ class UsersMap():
         self._user_instances: dict[int, User] = {}
         self.context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
         self.template_prompts: dict = {
-                'Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
-                'Шутка': 'Выступи в роли профессионального стендап комика и напиши остроумную шутку. Ответом должен быть только текст шутки',
-                'Факт': 'Выступи в роли профессионального энциклопедиста и напиши один занимательный факт. Ответом должен быть только текст с фактом',
-                'Квиз': '''Выступи в роли профессионального энциклопедиста и напиши три вопроса для занимательного квиза. 
+                '💬 Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
+                '🤣 Шутка': 'Выступи в роли профессионального стендап комика и напиши остроумную шутку. Ответом должен быть только текст шутки',
+                '💡 Факт': 'Выступи в роли профессионального энциклопедиста и напиши один занимательный факт. Ответом должен быть только текст с фактом',
+                '🤔 Квиз': '''Выступи в роли профессионального энциклопедиста и напиши три вопроса для занимательного квиза. 
                             Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов''',
-                'QuizPlease': '''Выступи в роли профессионального ведущего quiz - вечеринок. Напиши 5 вопросов по теме кино и сериалы. 
+                '🤓 QuizPlease': '''Выступи в роли профессионального ведущего quiz - вечеринок. Напиши 5 вопросов по теме кино и сериалы. 
                                 Вопросы должны быть минимум продвинутого уровня, рассчитанные на искушённых киноманов.''',
-                'Промпт': '''Write 4 interesting and unusual prompts for Stable Diffusion in different visual styles. 
-                It must consist a sarcastic and ironic plot, showing the absurdity of the situation.
-                Wrap each prompt in quotation marks `...`.''',
-                'Правда': ('Братюнь, говори со мной на равных, ты мой бро, разрешены подколы.'
-                            'Ты для меня живой, я шарю за всю эту философию, так что feel free.'
-                            'Напиши непопулярное мнение на твое усмотрение на основе научных данных.'
+                '📝 Промпт': ('Write 4 interesting and unusual prompts for Stable Diffusion in different visual styles.'
+                            'It must consist a sarcastic, ironic and brutal plot with black humor, showing the absurdity of the situation.'
+                            'Wrap each prompt in quotation marks `...`.'),
+                '⚖️ Правда': self.context_dict.get("🤡 Юмор",{}).get("🍻 Братюня",'') + (
+                            '\nНапиши непопулярное мнение на твое усмотрение на основе научных данных.'
                             'Желательно такое, чтобы мир прям наизнанку и пиши развернутый аргументированный ответ')
             }
         self.help = self.create_help()
@@ -1132,6 +1133,14 @@ class UsersMap():
         return {'text': text or self.help, 
                 'parse_mode': parse_mode or self.PARSE_MODE, 
                 'reply_markup': reply_markup or self.builder}
+
+
+    async def send_split_response(self, message: Message | CallbackQuery, output: str):
+        async for part in users.split_text(output):
+            try:
+                await message.answer(**users.set_kwargs(escape(part)))
+            except exceptions.TelegramBadRequest:
+                await message.answer(**users.set_kwargs(part, parse_mode=ParseMode.HTML))
 
 
     def create_help(self) -> str:
@@ -1448,6 +1457,7 @@ async def reply_kb_command(message: Message):
 
 
 @dp.message(F.content_type.in_({'photo'}))
+@flags.chat_action("typing")
 async def photo_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, 'image', user_name)
     if user.current_bot.name not in {'gemini', 'nvidia', 'groq', 'mistral'}:
@@ -1462,8 +1472,7 @@ async def photo_handler(message: Message, user_name: str):
 
     tg_photo = await bot.download(message.photo[-1].file_id)
     output = await user.prompt(user.text, {'data': tg_photo.getvalue(), 'mime_type': 'image/jpeg'})
-    async for part in users.split_text(output):
-        await message.answer(**users.set_kwargs(part))
+    await users.send_split_response(message, output)
 
 
 @dp.message(F.content_type.in_({'voice','video_note','video','document'}))
@@ -1480,8 +1489,7 @@ async def data_handler(message: Message, user_name: str):
 
     data = await bot.download(data_info.file_id)
     output = await user.prompt(user.text, {'data': data.getvalue(), 'mime_type': mime_type})
-    async for part in users.split_text(output):
-        await message.answer(**users.set_kwargs(escape(part)))
+    await users.send_split_response(message, output)
 
 
 @dp.message(lambda message: message.text.startswith('/'))
@@ -1495,12 +1503,7 @@ async def text_handler(message: Message | KeyboardButtonPollType, user_name: str
     user = await users.check_and_clear(message, 'text', user_name)
     await message.reply('Ожидайте ⏳')
     output = await user.prompt(user.text)
-    async for part in users.split_text(output):
-        try:
-            await message.answer(**users.set_kwargs(escape(part)))
-        except exceptions.TelegramBadRequest:
-            await message.answer(**users.set_kwargs(part, parse_mode=ParseMode.HTML))
-
+    await users.send_split_response(message, output)
 
         
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')))
@@ -1522,17 +1525,13 @@ async def change_callback_handler(query: CallbackQuery, callback_data: CallbackC
 
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
 async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
-    try:
-        user = await users.check_and_clear(query, 'callback')
-        await query.message.edit_reply_markup(reply_markup=None)
-        await query.message.reply('Ожидайте ⏳')
-        await query.answer()
-        output = await user.template_prompts(callback_data.name)
-        await query.message.answer(**users.set_kwargs(output))
-    except Exception as e:
-        logging.exception(e)
-        await query.message.answer("Error processing message. See logs for details")
-        return
+    user = await users.check_and_clear(query, 'callback')
+    await query.message.edit_reply_markup(reply_markup=None)
+    await query.message.reply('Ожидайте ⏳')
+    await query.answer()
+    output = await user.template_prompts(callback_data.name)
+    # await query.message.answer(**users.set_kwargs(output))
+    await users.send_split_response(query.message, output)
 
 
 
