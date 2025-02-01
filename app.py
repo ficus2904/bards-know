@@ -35,6 +35,7 @@ from aiogram.types import (
     KeyboardButtonPollType,
     )
 from aiogram.filters import Command, CommandStart
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
 from aiogram.utils.chat_action import ChatActionMiddleware
@@ -945,8 +946,7 @@ class User:
     async def prompt(self, *args) -> str:
         output = await users.queue_manager.enqueue_request(self.current_bot.name, 
                                             self.current_bot.prompt(*args))
-        return escape(output)
-    
+        return output
 
     async def gen_image(self, *args, **kwargs) -> str:
         output = await users.queue_manager.enqueue_request(self.current_image_bot.name,
@@ -1066,7 +1066,7 @@ class UsersMap():
             return text.split('/')[1] if '/' in text else text
         
 
-    async def split_text(self, text: str, max_length=4096):
+    async def split_text_old(self, text: str, max_length=4096):
         trigger = 'Closing Prompt'
         if (trigger_index := text.find(trigger, 2500)) != -1:  
             text = f'`{text[trigger_index + len(trigger):].strip(':\n"*_ ')}`'
@@ -1093,9 +1093,61 @@ class UsersMap():
             await asyncio.sleep(0)
 
 
-    def set_kwargs(self, text: str = None, reply_markup = None) -> dict:
+    async def split_text(self, text: str, max_length: int = 4096):
+        """
+        Разбивает текст на фрагменты, учитывая markdown-блоки, так чтобы блоки не делились.
+        """
+        trigger = 'Closing Prompt'
+        if (trigger_index := text.find(trigger, 2500)) != -1:  
+            text = f'`{text[trigger_index + len(trigger):].strip(':\n"*_ ')}`'
+
+        start = 0
+        markers = ["```", "`", "**", "__", "*", "_", "~"]
+
+        while start < len(text):
+            # Если оставшийся текст короче max_length, берём весь
+            if len(text) - start <= max_length:
+                chunk = text[start:]
+            else:
+                # Ищем оптимальную точку разбиения (например, последний перенос строки или пробел)
+                split_index = self.find_split_index(text, start, max_length)
+                chunk = text[start:split_index]
+
+            # Проверка баланса для каждого markdown-маркера
+            for marker in markers:
+                # Если количество вхождений маркера нечётное – блок не закрыт
+                if chunk.count(marker) % 2 != 0:
+                    # Пытаемся найти закрывающий маркер в оставшейся части текста
+                    closing_index = text.find(marker, start + len(chunk))
+                    if closing_index != -1:
+                        # Расширяем фрагмент, включая закрывающий маркер
+                        chunk = text[start:closing_index + len(marker)]
+                    else:
+                        # Если закрывающий маркер не найден, можно добавить его искусственно,
+                        # чтобы не нарушать форматирование (или же оставить так, если это допустимо)
+                        chunk += marker
+
+            yield chunk
+            # Переход к следующему фрагменту – учитываем, что мы могли превысить max_length
+            start += len(chunk)
+
+
+    def find_split_index(self, text: str, start: int, max_length: int) -> int:
+        """
+        Ищет индекс для разбиения текста, ориентируясь на последний перенос строки или пробел.
+        """
+        split_index = start + max_length
+        for separator in ('\n', ' '):
+            last_separator = text.rfind(separator, start, split_index)
+            if last_separator != -1:
+                split_index = last_separator
+                break
+        return split_index
+
+
+    def set_kwargs(self, text: str = None, reply_markup = None, parse_mode: ParseMode = None) -> dict:
         return {'text': text or escape(self.help), 
-                'parse_mode':self.PARSE_MODE, 
+                'parse_mode': parse_mode or self.PARSE_MODE, 
                 'reply_markup': reply_markup or self.builder}
 
 
@@ -1422,23 +1474,28 @@ async def data_handler(message: Message, user_name: str):
     data = await bot.download(data_info.file_id)
     output = await user.prompt(user.text, {'data': data.getvalue(), 'mime_type': mime_type})
     async for part in users.split_text(output):
-        await message.answer(**users.set_kwargs(part))
+        await message.answer(**users.set_kwargs(escape(part)))
 
+
+@dp.message(lambda message: message.text.startswith('/'))
+async def unknown_handler(message: Message, user_name: str):
+    return await message.answer(**users.set_kwargs())
 
 
 @dp.message(F.content_type.in_({'text'}))
 @flags.chat_action("typing")
 async def text_handler(message: Message | KeyboardButtonPollType, user_name: str):
     user = await users.check_and_clear(message, 'text', user_name)
-    if user.text is None or user.text == '/':
-        return await message.answer(**users.set_kwargs())
-
     await message.reply('Ожидайте ⏳')
     output = await user.prompt(user.text)
     async for part in users.split_text(output):
-        await message.answer(**users.set_kwargs(part))
-        
+        try:
+            await message.answer(**users.set_kwargs(escape(part)))
+        except TelegramBadRequest:
+            await message.answer(**users.set_kwargs(part, parse_mode=ParseMode.HTML))
 
+
+        
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')))
 async def change_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
     user = await users.check_and_clear(query, 'callback')
