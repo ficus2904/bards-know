@@ -27,15 +27,21 @@ from functools import lru_cache
 from time import time
 from groq import Groq
 from openai import OpenAI
-from aiogram import Bot, Dispatcher, BaseMiddleware, F
+from aiogram import (
+    Bot, 
+    Dispatcher, 
+    BaseMiddleware,
+    exceptions,
+    F)
 from aiogram.types import (
     TelegramObject, 
     Message, 
     CallbackQuery, 
     KeyboardButtonPollType,
     )
+from aiogram.utils.markdown import text
+from aiogram.utils.formatting import ExpandableBlockQuote
 from aiogram.filters import Command, CommandStart
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
 from aiogram.utils.chat_action import ChatActionMiddleware
@@ -769,13 +775,14 @@ class ImageGenArgParser:
             return prompt, None, None
 
     def get_usage(self) -> str:
-        return ("Usage examples:\n"
-                "• Basic: `/i your prompt here`\n"
-                "• With aspect ratio: `/i your prompt here --ar 9:16`\n"
-                "• With model selection: `/i your prompt here --m 1.1`\n"
-                "• Combined: `/i your prompt here --ar 9:16 --m ultra`\n"
-                "• Raw mode in ultra: `/i prompt --m raw`\n"
-                "• Unable Raw mode in ultra: `/i --m no_raw OR wo_raw`")
+        return text(
+                "🖼️ Basic: `/i your prompt here`",
+                "📐 With aspect ratio: `/i your prompt here --ar 9:16`",
+                "⚙️ With model selection: `/i your prompt here --m 1.1`",
+                "✨ Combined: `/i your prompt here --ar 9:16 --m ultra`",
+                "🎬 Raw mode in ultra: `/i prompt --m raw`", 
+                "🚫 Unable Raw mode in ultra: `/i --m no_raw OR wo_raw`",
+                sep='\n')
     
 
 
@@ -811,12 +818,12 @@ class ConfigArgParser:
             return {'SystemExit': "❌ Invalid arguments"}
 
     def get_usage(self) -> str:
-        return ("Usage examples:\n"
-                "• Search on in gemini: `/conf --es 1`\n"
-                "• Search off in gemini: `/conf --es 0`\n"
-                "• Gemini's models: `/conf --nm list`\n"
-                "• Add model to gemini: `/conf --nm str`\n"
-                "• Turn proxy: `/conf --rr 1`\n"
+        return text(
+                "🔎 Search on in gemini: `/conf --es 1`",  
+                "🚫 Search off in gemini: `/conf --es 0`",  
+                "🤖 Gemini's models: `/conf --nm list`",  
+                "➕ Add model to gemini: `/conf --nm str`",  
+                "🔄 Turn proxy: `/conf --rr 1`", sep='\n'
                 )
 
 
@@ -978,31 +985,7 @@ class UsersMap():
                             'Напиши непопулярное мнение на твое усмотрение на основе научных данных.'
                             'Желательно такое, чтобы мир прям наизнанку и пиши развернутый аргументированный ответ')
             }
-        self.help = (
-                    '**Help Guide**\n'
-                    'Here are the available commands:\n'
-                    '1. **User Management:**\n'
-                    '- Add new user: `/add 123456 UserName`\n'
-                    '- Remove existing user: `/remove UserName`\n'
-                    '\n'
-                    '2. **Agent Context:**\n'
-                    '- `-i`: Get context_body info\n'
-                    '- `-a`: Add new context\n'
-                    '- `-r`: Remove existing context\n'
-                    '**Usage:**\n'
-                    '- `/context [-i | -r] [context_name | c OR current]`\n'
-                    '- `/context [-a] context_name | context_body`\n'
-                    '\n'
-                    '3. **Generate Image:**\n'
-                    '- Equal commands: `/image` or `/i`\n'
-                    '- Default size with prompt: `/image your_prompt` with 9:16 default size\n'
-                    '- Target size with prompt: `/image your_prompt --ar 9:16`\n'
-                    '- Only change size: `/i --ar 9:16`\n'
-                    '- Acceptable ratio size: 9:16, 3:4, 1:1, 4:3, 16:9\n'
-                    '\n'
-                    '4. **Change config**\n'
-                    '- `/conf`: Get help\n'
-                    )  
+        self.help = self.create_help()
         self.buttons: dict = {
                 'Добавить контекст':'change_context', 
                 'Быстрые команды':'template_prompts',
@@ -1146,9 +1129,37 @@ class UsersMap():
 
 
     def set_kwargs(self, text: str = None, reply_markup = None, parse_mode: ParseMode = None) -> dict:
-        return {'text': text or escape(self.help), 
+        return {'text': text or self.help, 
                 'parse_mode': parse_mode or self.PARSE_MODE, 
                 'reply_markup': reply_markup or self.builder}
+
+
+    def create_help(self) -> str:
+        help_items_simple = [
+            text('1. 🧑‍💼 User Management:',
+                 '🔹 Add new user: /add 123456 UserName',
+                 '🔹 Remove existing user: /remove UserName',
+                  sep='\n'),
+            text('2. 🗂️ Agent Context:',
+                 '🔹 -i: Get context_body info',
+                 '🔹 -a: Add new context',
+                 '🔹 -r: Remove existing context',
+                 'Usage:',
+                 '🔹 /context [-i | -r] [context_name | c OR current]',
+                 '🔹 /context [-a] context_name | context_body', 
+                 sep='\n'),
+            text('3. 🖼️ Generate Image:',
+                 '🔹 Equal commands: /image or /i',
+                 '🔹 Default size with prompt: /image your_prompt with 9:16 default size',
+                 '🔹 Target size with prompt: /image your_prompt --ar 9:16',
+                 '🔹 Only change size: /i --ar 9:16',
+                 '🔹 Acceptable ratio size: 9:16, 3:4, 1:1, 4:3, 16:9', 
+                 sep='\n'),
+            text('4. ⚙️ Change config',
+                 '🔹 /conf: Get conf cases', 
+                 sep='\n'),
+        ]
+        return ExpandableBlockQuote(text(*help_items_simple, sep='\n')).as_markdown()
 
 
     async def check_and_clear(self, message: Message, type_prompt: str, user_name: str = '') -> User:
@@ -1223,11 +1234,6 @@ async def start_handler(message: Message):
     await message.answer(output)
 
 
-@dp.message(Command(commands=["help"]))
-async def help_handler(message: Message):
-    await message.answer(**users.set_kwargs())
-
-    
 @dp.message(Command(commands=["context"]))
 async def context_handler(message: Message, user_name: str):
     if user_name != 'ADMIN':
@@ -1440,6 +1446,7 @@ async def reply_kb_command(message: Message):
     msg = await message.answer(**kwargs)
     user.last_msg['bot'] = msg.message_id
 
+
 @dp.message(F.content_type.in_({'photo'}))
 async def photo_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, 'image', user_name)
@@ -1479,7 +1486,7 @@ async def data_handler(message: Message, user_name: str):
 
 @dp.message(lambda message: message.text.startswith('/'))
 async def unknown_handler(message: Message, user_name: str):
-    return await message.answer(**users.set_kwargs())
+    await message.answer(**users.set_kwargs())
 
 
 @dp.message(F.content_type.in_({'text'}))
@@ -1491,7 +1498,7 @@ async def text_handler(message: Message | KeyboardButtonPollType, user_name: str
     async for part in users.split_text(output):
         try:
             await message.answer(**users.set_kwargs(escape(part)))
-        except TelegramBadRequest:
+        except exceptions.TelegramBadRequest:
             await message.answer(**users.set_kwargs(part, parse_mode=ParseMode.HTML))
 
 
