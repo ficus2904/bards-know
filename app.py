@@ -836,7 +836,7 @@ class User:
         self.current_image_bot = FalAPI()
         self.time_dump = time()
         self.text: str = None
-        self.last_msg = {} # for deleting messages when using change callback
+        self.last_msg: int = None # for deleting messages when using change callback
         
 
     async def change_context(self, context_name: str) -> str | dict:
@@ -1207,7 +1207,7 @@ class UsersMap():
         for value in dict_iter:
             data = CallbackClass(cb_type=cb_type, name=users.make_short_name(value)).pack()
             builder_inline.button(text=users.make_short_name(value), callback_data=data)
-        return builder_inline.adjust(*[1]*len(dict_iter)).as_markup()
+        return builder_inline.adjust(*[2]*(len(dict_iter)//2)).as_markup()
 
 
     def get_current_context(self, user_id: int) -> str:
@@ -1439,7 +1439,7 @@ async def imagen_handler(message: Message, user_name: str):
 @dp.message(lambda message: message.text in users.buttons)
 async def reply_kb_command(message: Message):
     user = await users.check_and_clear(message, 'text')
-    user.last_msg['user'] = message.message_id
+    user.last_msg = message.message_id
     if user.text in {'info','clear'}:
         output = await getattr(user, user.text)()
         kwargs = users.set_kwargs(escape(output))
@@ -1452,8 +1452,7 @@ async def reply_kb_command(message: Message):
         builder_inline = users.create_inline_kb(items[0], user.text)
         kwargs = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
     
-    msg = await message.answer(**kwargs)
-    user.last_msg['bot'] = msg.message_id
+    await message.answer(**kwargs)
 
 
 @dp.message(F.content_type.in_({'photo'}))
@@ -1514,24 +1513,18 @@ async def change_callback_handler(query: CallbackQuery, callback_data: CallbackC
     reply_markup = None if is_final_set else users.create_inline_kb(output, user.text)
     await query.message.edit_reply_markup(reply_markup=reply_markup)
     if is_final_set:
-        await query.message.answer(output)
-        # delete last sys messages
-        for msg in ['user','bot']:
-            if user.last_msg.get(msg):
-                await bot.delete_message(query.message.chat.id, user.last_msg.pop(msg))
-        
-    await query.answer()
+        await query.message.edit_text(output)
+        await bot.delete_message(query.message.chat.id, user.last_msg)
 
 
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
+@flags.chat_action("typing")
 async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
     user = await users.check_and_clear(query, 'callback')
-    await query.message.edit_reply_markup(reply_markup=None)
-    await query.message.reply('Ожидайте ⏳')
-    await query.answer()
+    await query.message.edit_text(f'{callback_data.name} 👇')
     output = await user.template_prompts(callback_data.name)
-    # await query.message.answer(**users.set_kwargs(output))
     await users.send_split_response(query.message, output)
+    await bot.delete_message(query.message.chat.id, user.last_msg)
 
 
 
