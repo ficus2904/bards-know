@@ -264,9 +264,12 @@ class GeminiAPI(BaseAPIInterface):
         
         if new_model:
             if new_model == 'list':
-                return "\n".join(await self.list_models())
-            self.models.append(new_model)
-            return f'В gemini добавлена модель {new_model}'
+                response = await self.client.aio.models.list(config={'query_base': True})
+                return "\n".join([model.name.split('/')[1] for model in response 
+                        if 'generateContent' in model.supported_actions])
+            else:
+                self.models.append(new_model)
+                return f'В gemini добавлена модель {new_model}'
 
         if clear:
             if self.chat._curated_history and self.chat._config.system_instruction:
@@ -306,25 +309,6 @@ class GeminiAPI(BaseAPIInterface):
         )
         output = response.generated_images[0]
         return output.image or output.rai_filtered_reason
-
-
-    async def get_enhanced_prompt(self, init_prompt: str) -> str:
-        '''DEPRECATED'''
-        # self.settings['system_instruction'] = users.context_dict[''].get('SDXL')
-        self.settings['system_instruction'] = users.get_context('SDXL')
-        self.reset_chat()
-        enhanced_prompt = await self.prompt(init_prompt)
-        return enhanced_prompt
-
-
-    async def list_models(self) -> list:
-        async with aiohttp.ClientSession() as session:
-            url = "https://generativelanguage.googleapis.com/v1beta/models"
-            async with session.get(url, params={'key': self.api_key}) as response:
-                response.raise_for_status()
-                response = await response.json()
-                return [model['name'].split('/')[1] for model in response['models'] 
-                        if 'generateContent' in model['supportedGenerationMethods']]
 
 
 
