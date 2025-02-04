@@ -319,6 +319,7 @@ class GroqAPI(BaseAPIInterface):
     def __init__(self):
         self.client = Groq(api_key=self.api_key)
         self.models = [
+            'deepseek-r1-distill-llama-70b',
             'llama-3.3-70b-versatile',
             'llama-3.2-90b-vision-preview',
             ] # https://console.groq.com/docs/models
@@ -485,13 +486,12 @@ class TogetherAPI(BaseAPIInterface):
         self.client = OpenAI(api_key=self.api_key,
                              base_url="https://api.together.xyz/v1")
         self.models = [
-                        'Qwen/Qwen2-72B-Instruct',
-                        'deepseek-ai/deepseek-llm-67b-chat',
-                       ] # https://docs.together.ai/docs/inference-models
+            'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free',
+            'Qwen/Qwen2-72B-Instruct',
+            ] # https://docs.together.ai/docs/inference-models
 
         self.current_model = self.models[0]
-        # self.context = []
-    
+
 
     async def prompt(self, text, image=None) -> str:
         body = {'role':'user', 'content': text}
@@ -505,7 +505,35 @@ class TogetherAPI(BaseAPIInterface):
         )
         output = response.choices[-1].message.content
         self.context.append({'role':'assistant', 'content':output})
-        # print(output)
+        return output
+    
+
+
+class OpenRouterAPI(BaseAPIInterface):
+    """Class for OpenRouter API"""
+    name = 'open_router'
+    
+    def __init__(self):
+        self.client = OpenAI(api_key=self.api_key,
+                             base_url="https://openrouter.ai/api/v1")
+        self.models = [
+            'deepseek/deepseek-r1-distill-llama-70b',
+            'sophosympatheia/rogue-rose-103b-v0.2',
+            'deepseek/deepseek-r1'
+            ] # https://openrouter.ai/models
+
+        self.current_model = self.models[0]
+    
+
+    async def prompt(self, text, image=None) -> str:
+        body = {'role':'user', 'content': text}
+        self.context.append(body)
+        response = self.client.chat.completions.create(
+            model=self.current_model +':free',
+            messages=self.context,
+        )
+        output = response.choices[-1].message.content
+        self.context.append({'role':'assistant', 'content':output})
         return output
 
 
@@ -708,7 +736,7 @@ class FalAPI(BaseAPIInterface):
 
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
-    bots_lst: list = [NvidiaAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI]
+    bots_lst: list = [NvidiaAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI, OpenRouterAPI]
     bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
     image_bots_lst: list = [FalAPI]
     image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
