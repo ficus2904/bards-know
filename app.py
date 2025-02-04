@@ -44,7 +44,7 @@ from aiogram.utils.formatting import ExpandableBlockQuote
 from aiogram.filters import Command, CommandStart
 from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
-from aiogram.utils.chat_action import ChatActionMiddleware
+from aiogram.utils.chat_action import ChatActionSender
 from aiogram import flags
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
@@ -1215,7 +1215,6 @@ users = UsersMap()
 bot = Bot(token=os.getenv('TELEGRAM_API_KEY'))
 dp = Dispatcher()
 dp.message.middleware(UserFilterMiddleware())
-dp.message.middleware(ChatActionMiddleware())
 dp.callback_query.middleware(UserFilterMiddleware())
 
 
@@ -1378,7 +1377,6 @@ async def config_handler(message: Message, user_name: str):
 
 
 @dp.message(Command(commands=["i","I","image"]))
-@flags.chat_action("upload_photo")
 async def image_gen_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, "gen_image", user_name)
     args = message.text.split(maxsplit=1)
@@ -1389,8 +1387,8 @@ async def image_gen_handler(message: Message, user_name: str):
         return
     
     await message.reply('Картинка генерируется ⏳')
-
-    image_url = await user.gen_image(*users.image_arg_parser.get_args(args[1]))
+    async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
+        image_url = await user.gen_image(*users.image_arg_parser.get_args(args[1]))
     if image_url.startswith(('\n📏','❌')):
         await message.reply(image_url)
     else:
@@ -1398,7 +1396,6 @@ async def image_gen_handler(message: Message, user_name: str):
 
 
 @dp.message(Command(commands=["imagen"]))
-@flags.chat_action("upload_photo")
 async def imagen_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, "gen_image", user_name)
     args = message.text.split(maxsplit=1)
@@ -1410,7 +1407,8 @@ async def imagen_handler(message: Message, user_name: str):
     await message.reply('Картинка генерируется ⏳')
     try:
         parse_args = users.image_arg_parser.get_args(args[1])
-        output = await user.current_bot.gen_image(*parse_args)
+        async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
+            output = await user.current_bot.gen_image(*parse_args)
         if isinstance(output, str):
             await message.reply(f"❌ RAI: {output}")
         else:
@@ -1440,7 +1438,6 @@ async def reply_kb_command(message: Message):
 
 
 @dp.message(F.content_type.in_({'photo'}))
-@flags.chat_action("typing")
 async def photo_handler(message: Message, user_name: str):
     user = await users.check_and_clear(message, 'image', user_name)
     if user.current_bot.name not in {'gemini', 'nvidia', 'groq', 'mistral'}:
@@ -1452,9 +1449,9 @@ async def photo_handler(message: Message, user_name: str):
     if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
         text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model} ⏳"
     await message.reply(text_reply)
-
-    tg_photo = await bot.download(message.photo[-1].file_id)
-    output = await user.prompt(user.text, {'data': tg_photo.getvalue(), 'mime_type': 'image/jpeg'})
+    async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
+        tg_photo = await bot.download(message.photo[-1].file_id)
+        output = await user.prompt(user.text, {'data': tg_photo.getvalue(), 'mime_type': 'image/jpeg'})
     await users.send_split_response(message, output)
 
 
@@ -1469,9 +1466,9 @@ async def data_handler(message: Message, user_name: str):
         await user.change_bot('gemini')
 
     await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
-
-    data = await bot.download(data_info.file_id)
-    output = await user.prompt(user.text, {'data': data.getvalue(), 'mime_type': mime_type})
+    async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
+        data = await bot.download(data_info.file_id)
+        output = await user.prompt(user.text, {'data': data.getvalue(), 'mime_type': mime_type})
     await users.send_split_response(message, output)
 
 
@@ -1481,11 +1478,11 @@ async def unknown_handler(message: Message, user_name: str):
 
 
 @dp.message(F.content_type.in_({'text'}))
-@flags.chat_action("typing")
 async def text_handler(message: Message | KeyboardButtonPollType, user_name: str):
     user = await users.check_and_clear(message, 'text', user_name)
     await message.reply('Ожидайте ⏳')
-    output = await user.prompt(user.text)
+    async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
+        output = await user.prompt(user.text)
     await users.send_split_response(message, output)
 
         
@@ -1502,11 +1499,11 @@ async def change_callback_handler(query: CallbackQuery, callback_data: CallbackC
 
 
 @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
-@flags.chat_action("typing")
 async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
     user = await users.check_and_clear(query, 'callback')
     await query.message.edit_text(f'{callback_data.name} 👇')
-    output = await user.template_prompts(callback_data.name)
+    async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot): 
+        output = await user.template_prompts(callback_data.name)
     await users.send_split_response(query.message, output)
     await bot.delete_message(query.message.chat.id, user.last_msg)
 
