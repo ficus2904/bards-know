@@ -1,4 +1,5 @@
 FROM python:3.13.1-slim
+# FROM dockerhub.timeweb.cloud/library/python:3.13.1-slim
 
 WORKDIR /app
 
