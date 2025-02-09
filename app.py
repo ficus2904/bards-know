@@ -2,6 +2,7 @@ import os
 import io
 import re
 import json
+import httpx
 import atexit
 import base64
 import sqlite3
@@ -542,14 +543,14 @@ class GlifAPI(BaseAPIInterface):
     name = 'glif'
 
     def __init__(self):
+        self.url = "https://simple-api.glif.app"
         self.models_with_ids = {
                                 "claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
-                                "GPT4o":"clxx330wj000ipbq9rwh4hmp3",
+                                "GPT o3":"clxx330wj000ipbq9rwh4hmp3",
                                 "Grok 2":"clyzjs4ht0000iwvdlacfm44y",
                                 }
         self.models = list(self.models_with_ids.keys())
         self.current_model = self.models[0]
-        # self.context = []
 
 
     def form_main_prompt(self) -> str:
@@ -568,13 +569,12 @@ class GlifAPI(BaseAPIInterface):
     
 
     async def fetch_data(self, main_prompt: str, system_prompt: str) -> str:
-        url = "https://simple-api.glif.app"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         body = {"id": self.models_with_ids.get(self.current_model), 
                 "inputs": {"main_prompt": main_prompt, 
                            "system_prompt": system_prompt}}
         async with aiohttp.ClientSession() as session:
-            async with session.post(url=url,headers=headers,json=body) as response:
+            async with session.post(url=self.url,headers=headers,json=body) as response:
                 try:
                     response.raise_for_status()
                     answer = await response.json()
@@ -585,7 +585,6 @@ class GlifAPI(BaseAPIInterface):
                 
 
     async def gen_image(self, prompt: str) -> dict:
-        url = "https://simple-api.glif.app"
         headers = {"Authorization": f"Bearer {self.api_key}"}
         body = {"id": {
                         True:'clzmbpo6k000u1pb2ar3udjff',
@@ -593,7 +592,7 @@ class GlifAPI(BaseAPIInterface):
                         }.get(prompt.startswith('-f')), 
                 "inputs": {"initial_prompt": prompt.lstrip('-f ')}}
         async with aiohttp.ClientSession() as session:
-            async with session.post(url=url,headers=headers,json=body, timeout=90) as response:
+            async with session.post(url=self.url,headers=headers,json=body, timeout=90) as response:
                 try:
                     response.raise_for_status()
                     answer = await response.json()
@@ -623,6 +622,20 @@ class GlifAPI(BaseAPIInterface):
         output = await self.fetch_data(main_prompt, system_prompt)
         self.context.append({'role':'assistant', 'content': output})
         return output
+    
+
+    async def tts(self, text: str) -> str | None:
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        body = {"id": 'cm6xrl05a0000s1qx4277g92y', "inputs": [text]}
+        async with httpx.AsyncClient(timeout=httpx.Timeout(240)) as client:
+            response = await client.post(url=self.url, headers=headers, json=body)
+            try:
+                response.raise_for_status()
+                answer: dict = response.json()
+                return answer.get('output')
+            except httpx.HTTPStatusError as e:
+                logging.error(e.response.status_code, e.response.text)
+                return None
 
 
 
@@ -910,7 +923,6 @@ class User:
         return output.strip().strip('None')
 
 
-
     async def change_bot(self, bot_name: str) -> str:
         self.current_bot = self.api_factory.get(bot_name)
         await self.clear()
@@ -967,6 +979,7 @@ class User:
         output = await users.queue_manager.enqueue_request(self.current_bot.name, 
                                             self.current_bot.prompt(*args))
         return output
+
 
     async def gen_image(self, *args, **kwargs) -> str:
         output = await users.queue_manager.enqueue_request(self.current_image_bot.name,
@@ -1201,7 +1214,7 @@ class UsersMap():
             type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt)
         user.text = user.text.lstrip('/')
         if user_name:
-            logging.info(f'{user_name}: "{type_prompt}"')
+            logging.info(f'{user_name}: "{type_prompt if len(type_prompt) < 100 else 'too long prompt'}"')
          
         return user
 
@@ -1245,294 +1258,309 @@ dp.message.middleware(UserFilterMiddleware())
 dp.callback_query.middleware(UserFilterMiddleware())
 
 
-@dp.message(CommandStart())
-async def start_handler(message: Message):
-    output = f'Доступ открыт.\n'\
-            f'Добро пожаловать {message.from_user.first_name}!'\
-            '\nОтправьте /help для дополнительной информации'
-    await message.answer(output)
+class Handlers:
+    @dp.message(CommandStart())
+    async def start_handler(message: Message):
+        output = f'Доступ открыт.\n'\
+                f'Добро пожаловать {message.from_user.first_name}!'\
+                '\nОтправьте /help для дополнительной информации'
+        await message.answer(output)
 
 
-@dp.message(Command(commands=["context"]))
-async def context_handler(message: Message, user_name: str):
-    if user_name != 'ADMIN':
-        await message.reply("You don't have admin privileges")
-        return
-    args = message.text.split(maxsplit=2)
-    if (len(args) == 1) or (len(args) != 3 and not args[1].startswith('-')):
-        await message.reply("Usage: `/context [-i/-r/-a] prompt_name [| prompt]`")
-        return
-    
-    _, arg, prompt_body = args
-    if arg == '-i':
-        if prompt_body in ['c', 'current']:
-            text = users.get_current_context(message.from_user.id)
-        else:
-            text = users.get_context(prompt_body) or 'Context name not found'
-        text = f'```plaintext\n{text}\n```'
-        await message.reply(**users.set_kwargs(escape(text)))
-        return
-    
-    if arg == '-r' and prompt_body in users.context_dict:
-        users.context_dict.pop(prompt_body)
-        with open('./prompts.json', 'w', encoding="utf-8") as f:
-            json.dump(users.context_dict, f, ensure_ascii=False, indent=4)
-        await message.reply(f"Context {prompt_body} removed successfully.")
-        return
-    
-    if arg == '-a' and prompt_body.count('|') == 1:
-        prompt_name, prompt = [el.strip() for el in prompt_body.split("|",maxsplit=1)]
-        if users.context_dict.get(prompt_name):
-            await message.reply(f"Context {prompt_name} already exists")
+    @dp.message(Command(commands=["context"]))
+    async def context_handler(message: Message, user_name: str):
+        if user_name != 'ADMIN':
+            await message.reply("You don't have admin privileges")
             return
-        try:
-            users.context_dict[prompt_name] = prompt
+        args = message.text.split(maxsplit=2)
+        if (len(args) == 1) or (len(args) != 3 and not args[1].startswith('-')):
+            await message.reply("Usage: `/context [-i/-r/-a] prompt_name [| prompt]`")
+            return
+        
+        _, arg, prompt_body = args
+        if arg == '-i':
+            if prompt_body in ['c', 'current']:
+                text = users.get_current_context(message.from_user.id)
+            else:
+                text = users.get_context(prompt_body) or 'Context name not found'
+            text = f'```plaintext\n{text}\n```'
+            await message.reply(**users.set_kwargs(escape(text)))
+            return
+        
+        if arg == '-r' and prompt_body in users.context_dict:
+            users.context_dict.pop(prompt_body)
             with open('./prompts.json', 'w', encoding="utf-8") as f:
                 json.dump(users.context_dict, f, ensure_ascii=False, indent=4)
-            await message.reply(f"Context {prompt_name} added successfully.")
-        except Exception as e:
-            await message.reply(f"An error occurred: {e}.")
-    else:
-        await message.reply("Usage: `/context -a prompt_name | prompt`")
-        return
-    
-
-@dp.message(Command(commands=["add_user","remove_user"]))
-async def add_remove_user_handler(message: Message, user_name: str):
-    """
-    Handles the addition and removal of users based on the command received.
-
-    Parameters
-    ----------
-    message : types.Message
-        The message object containing the command and arguments.
-    
-    user_name : str
-        The user name if user in base
-
-    Returns
-    -------
-    None
-        The function sends a reply message to the user and does not return any value.
-
-    Raises
-    ------
-    Exception
+            await message.reply(f"Context {prompt_body} removed successfully.")
+            return
         
-    sqlite3.IntegrityError
-        If the user ID already exists in the database.
-    Exception
-        If the user does not have admin privileges or if the command usage is incorrect. 
-        OR For any other unexpected errors.
-
-    Notes
-    -----
-    - The function checks if the user has admin privileges by verifying the username.
-    - It splits the message text to extract the command and arguments.
-    - If the command is `/add_user`, it expects a user ID and a username, adds the user to the database, and sends a success message.
-    - If the command is `/remove_user`, it expects a username, checks if the user exists, removes the user from the database, and sends a success message.
-    - If the user does not exist, it sends a warning message.
-    - The function handles various exceptions and provides appropriate feedback to the user.
-
-    Examples
-    --------
-    >>> # Example of adding a user
-    >>> message_text = "/add_user 123456 JohnDoe"
-    >>> await add_remove_user_handler(message)
-    ✅ User JohnDoe with ID 123456 added successfully.
-
-    >>> # Example of removing a user
-    >>> message_text = "/remove_user JohnDoe"
-    >>> await add_remove_user_handler(message)
-    ✅ User `JohnDoe` removed successfully.
-
-    >>> # Example of invalid usage
-    >>> message_text = "/add_user"
-    >>> await add_remove_user_handler(message)
-    ❌ An error occurred: Usage: /add_user 123456 UserName
-    """
-    try:
-        if user_name != 'ADMIN':
-            raise Exception("You don't have admin privileges")
-        
-        is_add_command = message.text.startswith('/add')
-        args = message.text.split(maxsplit=1)
-        if len(args) < 2:
-            raise Exception(f"Usage: `/add {'123456 ' if is_add_command else ''}UserName`")
-    
-        if is_add_command:
-            user_id, name = args[1].split(maxsplit=1)
-            users.db.add_user(int(user_id), name)
-            output = f"✅ User {name} with ID {user_id} added successfully."
+        if arg == '-a' and prompt_body.count('|') == 1:
+            prompt_name, prompt = [el.strip() for el in prompt_body.split("|",maxsplit=1)]
+            if users.context_dict.get(prompt_name):
+                await message.reply(f"Context {prompt_name} already exists")
+                return
+            try:
+                users.context_dict[prompt_name] = prompt
+                with open('./prompts.json', 'w', encoding="utf-8") as f:
+                    json.dump(users.context_dict, f, ensure_ascii=False, indent=4)
+                await message.reply(f"Context {prompt_name} added successfully.")
+            except Exception as e:
+                await message.reply(f"An error occurred: {e}.")
         else:
-            name_to_remove = args[1].strip()
-            if user_name:
-                users.db.remove_user(name_to_remove)
-                output = f"✅ User `{name_to_remove}` removed successfully."
-            else:
-                output = f"⚠️ User `{name_to_remove}` not found."
+            await message.reply("Usage: `/context -a prompt_name | prompt`")
+            return
+        
 
-    except sqlite3.IntegrityError:
-        output = "⚠️ This user ID already exists."
-    except Exception as e:
-        output = f"❌ An error occurred: {e}."
-    finally:
+    @dp.message(Command(commands=["add_user","remove_user"]))
+    async def add_remove_user_handler(message: Message, user_name: str):
+        """
+        Handles the addition and removal of users based on the command received.
+
+        Parameters
+        ----------
+        message : types.Message
+            The message object containing the command and arguments.
+        
+        user_name : str
+            The user name if user in base
+
+        Returns
+        -------
+        None
+            The function sends a reply message to the user and does not return any value.
+
+        Raises
+        ------
+        Exception
+            
+        sqlite3.IntegrityError
+            If the user ID already exists in the database.
+        Exception
+            If the user does not have admin privileges or if the command usage is incorrect. 
+            OR For any other unexpected errors.
+
+        Notes
+        -----
+        - The function checks if the user has admin privileges by verifying the username.
+        - It splits the message text to extract the command and arguments.
+        - If the command is `/add_user`, it expects a user ID and a username, adds the user to the database, and sends a success message.
+        - If the command is `/remove_user`, it expects a username, checks if the user exists, removes the user from the database, and sends a success message.
+        - If the user does not exist, it sends a warning message.
+        - The function handles various exceptions and provides appropriate feedback to the user.
+
+        Examples
+        --------
+        >>> # Example of adding a user
+        >>> message_text = "/add_user 123456 JohnDoe"
+        >>> await add_remove_user_handler(message)
+        ✅ User JohnDoe with ID 123456 added successfully.
+
+        >>> # Example of removing a user
+        >>> message_text = "/remove_user JohnDoe"
+        >>> await add_remove_user_handler(message)
+        ✅ User `JohnDoe` removed successfully.
+
+        >>> # Example of invalid usage
+        >>> message_text = "/add_user"
+        >>> await add_remove_user_handler(message)
+        ❌ An error occurred: Usage: /add_user 123456 UserName
+        """
+        try:
+            if user_name != 'ADMIN':
+                raise Exception("You don't have admin privileges")
+            
+            is_add_command = message.text.startswith('/add')
+            args = message.text.split(maxsplit=1)
+            if len(args) < 2:
+                raise Exception(f"Usage: `/add {'123456 ' if is_add_command else ''}UserName`")
+        
+            if is_add_command:
+                user_id, name = args[1].split(maxsplit=1)
+                users.db.add_user(int(user_id), name)
+                output = f"✅ User {name} with ID {user_id} added successfully."
+            else:
+                name_to_remove = args[1].strip()
+                if user_name:
+                    users.db.remove_user(name_to_remove)
+                    output = f"✅ User `{name_to_remove}` removed successfully."
+                else:
+                    output = f"⚠️ User `{name_to_remove}` not found."
+
+        except sqlite3.IntegrityError:
+            output = "⚠️ This user ID already exists."
+        except Exception as e:
+            output = f"❌ An error occurred: {e}."
+        finally:
+            await message.reply(output)
+
+
+    @dp.message(Command(commands=["info","clear"]))
+    async def short_command_handler(message: Message, user_name: str):
+        await Handlers.reply_kb_command(message)
+
+
+    @dp.message(Command(commands=["conf"]))
+    async def config_handler(message: Message, user_name: str):
+        user: User = users.get(message.from_user.id)
+        if user_name != 'ADMIN':
+            await message.reply("You don't have admin privileges")
+            return
+        
+        args = message.text.split(maxsplit=1)
+
+        if len(args) != 2:
+            await message.reply(escape(
+                users.config_arg_parser.get_usage()), parse_mode=users.PARSE_MODE)
+            return
+        
+        output = await user.change_config(users.config_arg_parser.get_args(args[1]))
         await message.reply(output)
 
 
-@dp.message(Command(commands=["info","clear"]))
-async def short_command_handler(message: Message, user_name: str):
-    await reply_kb_command(message)
-
-
-@dp.message(Command(commands=["conf"]))
-async def config_handler(message: Message, user_name: str):
-    user: User = users.get(message.from_user.id)
-    if user_name != 'ADMIN':
-        await message.reply("You don't have admin privileges")
-        return
-    
-    args = message.text.split(maxsplit=1)
-
-    if len(args) != 2:
-        await message.reply(escape(
-            users.config_arg_parser.get_usage()), parse_mode=users.PARSE_MODE)
-        return
-    
-    output = await user.change_config(users.config_arg_parser.get_args(args[1]))
-    await message.reply(output)
-
-
-@dp.message(Command(commands=["i","I","image"]))
-async def image_gen_handler(message: Message, user_name: str):
-    user = await users.check_and_clear(message, "gen_image", user_name)
-    args = message.text.split(maxsplit=1)
-    if len(args) != 2:
-        await message.reply(escape(
-            users.image_arg_parser.get_usage() + user.current_image_bot.get_info()
-            ), parse_mode=users.PARSE_MODE)
-        return
-    
-    await message.reply('Картинка генерируется ⏳')
-    async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
-        image_url = await user.gen_image(*users.image_arg_parser.get_args(args[1]))
-    if image_url.startswith(('\n📏','❌')):
-        await message.reply(image_url)
-    else:
-        await message.answer_photo(photo=image_url)
-
-
-@dp.message(Command(commands=["imagen"]))
-async def imagen_handler(message: Message, user_name: str):
-    user = await users.check_and_clear(message, "gen_image", user_name)
-    args = message.text.split(maxsplit=1)
-    if len(args) != 2 or (is_gemini := user.current_bot.name != 'gemini'):
-        text = 'Переключите на gemini' if is_gemini else "Usage: `/imagen prompt --ar 9:16 --m 2`"
-        await message.reply(escape(text), parse_mode=users.PARSE_MODE)
-        return
-
-    await message.reply('Картинка генерируется ⏳')
-    try:
-        parse_args = users.image_arg_parser.get_args(args[1])
-        async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
-            output = await user.current_bot.gen_image(*parse_args)
-        if isinstance(output, str):
-            await message.reply(f"❌ RAI: {output}")
-        else:
-            await message.answer_photo(photo=output)
-
-    except Exception as e:
-        await message.reply(f"❌ Ошибка: {e}")
-
-
-@dp.message(lambda message: message.text in users.buttons)
-async def reply_kb_command(message: Message):
-    user = await users.check_and_clear(message, 'text')
-    user.last_msg = message.message_id
-    if user.text in {'info','clear'}:
-        output = await getattr(user, user.text)()
-        kwargs = users.set_kwargs(escape(output))
-    else:
-        command_dict = {'bot': [user.api_factory.bots, 'бота'],
-                        'model': [user.current_bot.models, 'модель'],
-                        'context':[users.context_dict, 'контекст'],
-                        'prompts':[users.template_prompts, 'промпт']}
-        items = command_dict.get(user.text.split('_')[-1])
-        builder_inline = users.create_inline_kb(items[0], user.text)
-        kwargs = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
-    
-    await message.answer(**kwargs)
-
-
-@dp.message(F.content_type.in_({'photo'}))
-async def photo_handler(message: Message, user_name: str):
-    user = await users.check_and_clear(message, 'image', user_name)
-    if user.current_bot.name not in {'gemini', 'nvidia', 'groq', 'mistral'}:
-        await user.change_bot('gemini')
-        await users.get_context('♾️ Универсальный')
-        await message.reply("Выбран gemini и контекст ♾️ Универсальный")
-
-    text_reply = "Изображение получено! Ожидайте ⏳"
-    if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
-        text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model} ⏳"
-    await message.reply(text_reply)
-    async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
-        tg_photo = await bot.download(message.photo[-1].file_id)
-        output = await user.prompt(user.text, {'data': tg_photo.getvalue(), 'mime_type': 'image/jpeg'})
-    await users.send_split_response(message, output)
-
-
-@dp.message(F.content_type.in_({'voice','video_note','video','document'}))
-@flags.chat_action("typing")
-async def data_handler(message: Message, user_name: str):
-    data_info = getattr(message, message.content_type, None)
-    mime_type = getattr(data_info, 'mime_type', None)
-    data_type = mime_type.split('/')[0]
-    user = await users.check_and_clear(message, data_type, user_name)
-    if user.current_bot.name not in {'gemini'}:
-        await user.change_bot('gemini')
-
-    await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
-    async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
-        data = await bot.download(data_info.file_id)
-        output = await user.prompt(user.text, {'data': data.getvalue(), 'mime_type': mime_type})
-    await users.send_split_response(message, output)
-
-
-@dp.message(lambda message: message.text.startswith('/'))
-async def unknown_handler(message: Message, user_name: str):
-    await message.answer(**users.set_kwargs())
-
-
-@dp.message(F.content_type.in_({'text'}))
-async def text_handler(message: Message | KeyboardButtonPollType, user_name: str):
-    user = await users.check_and_clear(message, 'text', user_name)
-    await message.reply('Ожидайте ⏳')
-    async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
-        output = await user.prompt(user.text)
-    await users.send_split_response(message, output)
-
+    @dp.message(Command(commands=["i","I","image"]))
+    async def image_gen_handler(message: Message, user_name: str):
+        user = await users.check_and_clear(message, "gen_image", user_name)
+        args = message.text.split(maxsplit=1)
+        if len(args) != 2:
+            await message.reply(escape(
+                users.image_arg_parser.get_usage() + user.current_image_bot.get_info()
+                ), parse_mode=users.PARSE_MODE)
+            return
         
-@dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')))
-async def change_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
-    user = await users.check_and_clear(query, 'callback')
-    output = await getattr(user, callback_data.cb_type)(callback_data.name)
-    is_final_set = isinstance(output, str) and callback_data.name != '◀️'
-    reply_markup = None if is_final_set else users.create_inline_kb(output, user.text)
-    await query.message.edit_reply_markup(reply_markup=reply_markup)
-    if is_final_set:
-        await query.message.edit_text(output)
+        await message.reply('Картинка генерируется ⏳')
+        async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
+            image_url = await user.gen_image(*users.image_arg_parser.get_args(args[1]))
+        if image_url.startswith(('\n📏','❌')):
+            await message.reply(image_url)
+        else:
+            await message.answer_photo(photo=image_url)
+
+
+    @dp.message(Command(commands=["imagen"]))
+    async def imagen_handler(message: Message, user_name: str):
+        user = await users.check_and_clear(message, "gen_image", user_name)
+        args = message.text.split(maxsplit=1)
+        if len(args) != 2 or (is_gemini := user.current_bot.name != 'gemini'):
+            text = 'Переключите на gemini' if is_gemini else "Usage: `/imagen prompt --ar 9:16 --m 2`"
+            await message.reply(escape(text), parse_mode=users.PARSE_MODE)
+            return
+
+        await message.reply('Картинка генерируется ⏳')
+        try:
+            parse_args = users.image_arg_parser.get_args(args[1])
+            async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
+                output = await user.current_bot.gen_image(*parse_args)
+            if isinstance(output, str):
+                await message.reply(f"❌ RAI: {output}")
+            else:
+                await message.answer_photo(photo=output)
+
+        except Exception as e:
+            await message.reply(f"❌ Ошибка: {e}")
+
+
+    @dp.message(Command(commands=["tts"]))
+    async def generate_audio_story(message: Message):
+        parts = message.text.split(maxsplit=1)
+        text = parts[1] if len(parts) == 2 else None
+        if not text:
+            await message.reply("Отсутствует текст")
+        else:
+            async with ChatActionSender.record_voice(chat_id=message.chat.id, bot=bot):
+                link = await GlifAPI().tts(text)
+                if link:
+                    await message.answer_voice(link)
+
+
+    @dp.message(lambda message: message.text in users.buttons)
+    async def reply_kb_command(message: Message):
+        user = await users.check_and_clear(message, 'text')
+        user.last_msg = message.message_id
+        if user.text in {'info','clear'}:
+            output = await getattr(user, user.text)()
+            kwargs = users.set_kwargs(escape(output))
+        else:
+            command_dict = {'bot': [user.api_factory.bots, 'бота'],
+                            'model': [user.current_bot.models, 'модель'],
+                            'context':[users.context_dict, 'контекст'],
+                            'prompts':[users.template_prompts, 'промпт']}
+            items = command_dict.get(user.text.split('_')[-1])
+            builder_inline = users.create_inline_kb(items[0], user.text)
+            kwargs = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
+        
+        await message.answer(**kwargs)
+
+
+    @dp.message(F.content_type.in_({'photo'}))
+    async def photo_handler(message: Message, user_name: str):
+        user = await users.check_and_clear(message, 'image', user_name)
+        if user.current_bot.name not in {'gemini', 'nvidia', 'groq', 'mistral'}:
+            await user.change_bot('gemini')
+            await users.get_context('♾️ Универсальный')
+            await message.reply("Выбран gemini и контекст ♾️ Универсальный")
+
+        text_reply = "Изображение получено! Ожидайте ⏳"
+        if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
+            text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model} ⏳"
+        await message.reply(text_reply)
+        async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
+            tg_photo = await bot.download(message.photo[-1].file_id)
+            output = await user.prompt(user.text, {'data': tg_photo.getvalue(), 'mime_type': 'image/jpeg'})
+        await users.send_split_response(message, output)
+
+
+    @dp.message(F.content_type.in_({'voice','video_note','video','document'}))
+    @flags.chat_action("typing")
+    async def data_handler(message: Message, user_name: str):
+        data_info = getattr(message, message.content_type, None)
+        mime_type = getattr(data_info, 'mime_type', None)
+        data_type = mime_type.split('/')[0]
+        user = await users.check_and_clear(message, data_type, user_name)
+        if user.current_bot.name not in {'gemini'}:
+            await user.change_bot('gemini')
+
+        await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
+        async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
+            data = await bot.download(data_info.file_id)
+            output = await user.prompt(user.text, {'data': data.getvalue(), 'mime_type': mime_type})
+        await users.send_split_response(message, output)
+
+
+    @dp.message(lambda message: message.text.startswith('/'))
+    async def unknown_handler(message: Message, user_name: str):
+        await message.answer(**users.set_kwargs())
+
+
+    @dp.message(F.content_type.in_({'text'}))
+    async def text_handler(message: Message | KeyboardButtonPollType, user_name: str):
+        user = await users.check_and_clear(message, 'text', user_name)
+        await message.reply('Ожидайте ⏳')
+        async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
+            output = await user.prompt(user.text)
+        await users.send_split_response(message, output)
+
+
+class Callbacks:
+    @dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')))
+    async def change_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
+        user = await users.check_and_clear(query, 'callback')
+        output = await getattr(user, callback_data.cb_type)(callback_data.name)
+        is_final_set = isinstance(output, str) and callback_data.name != '◀️'
+        reply_markup = None if is_final_set else users.create_inline_kb(output, user.text)
+        await query.message.edit_reply_markup(reply_markup=reply_markup)
+        if is_final_set:
+            await query.message.edit_text(output)
+            await bot.delete_message(query.message.chat.id, user.last_msg)
+
+
+    @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
+    async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
+        user = await users.check_and_clear(query, 'callback')
+        await query.message.edit_text(f'{callback_data.name} 👇')
+        async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot): 
+            output = await user.template_prompts(callback_data.name)
+        await users.send_split_response(query.message, output)
         await bot.delete_message(query.message.chat.id, user.last_msg)
-
-
-@dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
-async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
-    user = await users.check_and_clear(query, 'callback')
-    await query.message.edit_text(f'{callback_data.name} 👇')
-    async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot): 
-        output = await user.template_prompts(callback_data.name)
-    await users.send_split_response(query.message, output)
-    await bot.delete_message(query.message.chat.id, user.last_msg)
 
 
 
