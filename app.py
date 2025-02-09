@@ -293,22 +293,22 @@ class GeminiAPI(BaseAPIInterface):
 
 
     async def gen_image(self, prompt, image_size: str = '9:16', model: str = None):
-        response = self.client.models.generate_image(
+        response = self.client.models.generate_images(
             model = f'imagen-3.0-generate-00{model or 2}',
             prompt = prompt,
             config = GenerateImagesConfig(
                 number_of_images=1,
                 include_rai_reason=True,
                 output_mime_type='image/jpeg',
-                safety_filter_level="BLOCK_NONE",
-                person_generation="ALLOW_ALL",
+                safety_filter_level="BLOCK_LOW_AND_ABOVE", # BLOCK_LOW_AND_ABOVE BLOCK_ONLY_HIGH
+                person_generation="ALLOW_ADULT", # ALLOW_ADULT ALLOW_ALL
                 output_compression_quality=95,
                 aspect_ratio=image_size
             )
         )
         output = response.generated_images[0]
         return output.image or output.rai_filtered_reason
-
+    
 
 
 class GroqAPI(BaseAPIInterface):
