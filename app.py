@@ -356,10 +356,13 @@ class GroqAPI(BaseAPIInterface):
         
         kwargs = {'model':self.current_model,
                   'messages': self.context}
-        response = await self.client.chat.completions.create(**kwargs)
-        data = response.choices[-1].message.content
-        self.context.append({'role':'assistant', 'content':data})
-        return data
+        try:
+            response = await self.client.chat.completions.create(**kwargs)
+            data = response.choices[-1].message.content
+            self.context.append({'role':'assistant', 'content': data})
+            return data
+        except Exception as e:
+            return f'{e}'
 
 
 
@@ -968,12 +971,12 @@ class User:
             status = await self.current_bot.change_chat_config(clear=True)
         else:
             ct = self.current_bot.context
-            if not len(ct) or (len(ct) == 1 and ct[0].get('role') == 'system'):
-                self.current_bot.context.clear()
-                status = 'полностью'
-            else:
+            if (len(ct) not in {0,1}) and (ct[0].get('role') == 'system'):
                 self.current_bot.context = ct[:1]
                 status = 'кроме системного'
+            else:
+                self.current_bot.context.clear()
+                status = 'полностью'
 
         return f'🧹 Диалог очищен {status}'
     
