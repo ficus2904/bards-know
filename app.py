@@ -26,7 +26,7 @@ from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
 from functools import lru_cache
 from time import time
-from groq import Groq
+from groq import AsyncGroq
 from openai import OpenAI
 from aiogram import (
     Bot, 
@@ -212,24 +212,27 @@ class GeminiAPI(BaseAPIInterface):
             'gemini-2.0-flash-lite-preview',
             ]
         self.current_model = self.models[0]
-        self.proxy = os.getenv('WORKER')
-        self.proxy_key = os.getenv('AUTH_SECRET')
-        self.client = self.create_client(1)
         self.chat = None
-        self.reset_chat()
+        self.proxy_status: bool = True
+        self.enable_search: bool = False
+        self.client: genai.Client = None
+        self.reset_chat(with_proxy=self.proxy_status)
 
 
-    def create_client(self, with_proxy: int) -> genai.Client:
-        http_options = {'api_version':'v1alpha'}
+    def create_client(self, with_proxy: bool) -> None:
+        self.proxy_status = with_proxy
+        http_options = {'api_version':'v1beta'}
         if with_proxy:
             http_options = http_options | {
-                'base_url': self.proxy,
-                'headers': {'X-Custom-Auth': self.proxy_key}
+                'base_url': os.getenv('WORKER'),
+                'headers': {
+                    'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                    'EXTERNAL-URL': 'https://generativelanguage.googleapis.com',
+                    }
                 }
-        return genai.Client(api_key=self.api_key, 
-                            http_options=http_options)
-        
+        self.client = genai.Client(api_key=self.api_key, http_options=http_options)
 
+        
     async def prompt(self, text: str = None, data: dict = None) -> str:
         try:
             content = [Part.from_bytes(**data), text] if data else text
@@ -246,9 +249,9 @@ class GeminiAPI(BaseAPIInterface):
             return f'Gemini error: {e}'
     
     
-    def reset_chat(self, context: str = None, with_proxy: int = None):
-        if with_proxy:
-            self.client = self.create_client(with_proxy)
+    def reset_chat(self, context: str = None, with_proxy: bool = None):
+        if isinstance(with_proxy, bool):
+            self.create_client(with_proxy)
         self.context = [{'role':'system', 'content': context}]
         config = GenerateContentConfig(system_instruction=context, 
                                        safety_settings=self.safety_settings)
@@ -281,11 +284,12 @@ class GeminiAPI(BaseAPIInterface):
                 return 'полностью'
 
         if enable_search is not None:
+            self.enable_search = enable_search
             self.chat._config.tools = [Tool(google_search=GoogleSearch())] if enable_search else None
             return 'Поиск в gemini включен ✅' if enable_search else 'Поиск в gemini выключен ❌'
         
         if isinstance(proxy, int):
-            self.reset_chat(with_proxy=proxy)
+            self.reset_chat(with_proxy=bool(proxy))
             return f'Прокси {'включен ✅' if proxy else 'выключен ❌'}\n'
         
 
@@ -317,14 +321,30 @@ class GroqAPI(BaseAPIInterface):
     name = 'groq'
 
     def __init__(self):
-        self.client = Groq(api_key=self.api_key)
         self.models = [
             'deepseek-r1-distill-llama-70b',
+            'deepseek-r1-distill-qwen-32b',
+            'qwen-2.5-32b',
             'llama-3.3-70b-versatile',
             'llama-3.2-90b-vision-preview',
             ] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
+        self.proxy_status: bool = False
+        self.client: AsyncGroq = None
+        self.create_client(self.proxy_status)
 
+
+    def create_client(self, with_proxy: bool) -> None:
+        self.proxy_status = with_proxy
+        kwargs = {'api_key': self.api_key}
+        if with_proxy:
+            kwargs = kwargs | {
+                        'base_url': os.getenv('WORKER'),
+                        'default_headers':{
+                            'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                            'EXTERNAL-URL': 'https://api.groq.com',}
+                    }
+        self.client = AsyncGroq(**kwargs)
 
     async def prompt(self, text: str, image = None) -> str:
         if image:
@@ -334,11 +354,12 @@ class GroqAPI(BaseAPIInterface):
             body = {'role':'user', 'content': text}
             self.context.append(body)
         
-        kwargs = {'model':self.current_model, # self.models[-1] if image else , 
+        kwargs = {'model':self.current_model,
                   'messages': self.context}
-        response = self.client.chat.completions.create(**kwargs).choices[-1].message.content
-        self.context.append({'role':'assistant', 'content':response})
-        return response
+        response = await self.client.chat.completions.create(**kwargs)
+        data = response.choices[-1].message.content
+        self.context.append({'role':'assistant', 'content':data})
+        return data
 
 
 
@@ -882,9 +903,6 @@ class User:
         if isinstance(self.current_bot, GeminiAPI):
             self.current_bot.reset_chat(context=context)
             return output_text
-        
-        # if isinstance(self.current_bot, CohereAPI):
-        #     body = {"role": 'SYSTEM', "message": context}
 
         else:
             body = {'role':'system', 'content': context}
@@ -900,15 +918,18 @@ class User:
     
 
     async def info(self) -> str:
-        # check_vlm = hasattr(self.current_bot, 'vlm_params')
         is_gemini = self.current_bot.name == 'gemini'
-        return text(
+        output = text(
             f'🤖 Текущий бот: {self.current_bot.name}',
             f'🧩 Модель: {self.current_bot.current_model}',
-            # f'👓 Модель vlm: {self.current_bot.current_vlm_model}' if check_vlm else '',
-            f'📚 Размер контекста: {len(self.current_bot.context) if not is_gemini else self.current_bot.length()}',
-            sep='\n'
-            )
+            f'📚 Размер контекста: {len(self.current_bot.context) 
+                                    if not is_gemini else self.current_bot.length()}',
+            sep='\n')
+        if hasattr(self.current_bot,'proxy_status'):
+            output += f'\n🔀 Proxy: {self.current_bot.proxy_status}'
+        if hasattr(self.current_bot,'enable_search'):
+            output += f'\n🌐 Search: {self.current_bot.enable_search}'
+        return output
     
 
     async def change_config(self, kwargs: dict) -> str:
@@ -917,6 +938,9 @@ class User:
         #     output += users.turn_proxy(proxy)
         if self.current_bot.name == 'gemini':
             output += f'{await self.current_bot.change_chat_config(**kwargs)}\n'
+        if self.current_bot.name == 'groq':
+            self.current_bot.create_client(kwargs['proxy'])
+            output += f'Прокси {'включен ✅' if kwargs['proxy'] else 'выключен ❌'}\n'
         if error := kwargs.get('SystemExit'):
             return error + '\n' + users.config_arg_parser.get_usage()
 
