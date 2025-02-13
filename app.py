@@ -214,7 +214,7 @@ class GeminiAPI(BaseAPIInterface):
         self.current_model = self.models[0]
         self.chat = None
         self.proxy_status: bool = True
-        self.enable_search: bool = False
+        self.search_status: bool = False
         self.client: genai.Client = None
         self.reset_chat(with_proxy=self.proxy_status)
 
@@ -259,7 +259,7 @@ class GeminiAPI(BaseAPIInterface):
 
 
     async def change_chat_config(self, clear: bool = None, 
-                                 enable_search: int = None, 
+                                 search: int = None, 
                                  new_model: str = None, 
                                  proxy: int = None) -> str | None:
         if self.chat._model != self.current_model:
@@ -283,10 +283,10 @@ class GeminiAPI(BaseAPIInterface):
                 self.chat._config.system_instruction = None
                 return 'полностью'
 
-        if enable_search is not None:
-            self.enable_search = enable_search
-            self.chat._config.tools = [Tool(google_search=GoogleSearch())] if enable_search else None
-            return 'Поиск в gemini включен ✅' if enable_search else 'Поиск в gemini выключен ❌'
+        if search is not None:
+            self.search_status = bool(search)
+            self.chat._config.tools = [Tool(google_search=GoogleSearch())] if search else None
+            return 'Поиск в gemini включен ✅' if search else 'Поиск в gemini выключен ❌'
         
         if isinstance(proxy, int):
             self.reset_chat(with_proxy=bool(proxy))
@@ -853,7 +853,7 @@ class ConfigArgParser:
     """
     def __init__(self):
         self.parser = ArgumentParser(description='Change configuration options')
-        self.parser.add_argument('--es', dest='enable_search', help='Turn search in gemini',type=int, choices=[0, 1])
+        self.parser.add_argument('--es', dest='search', help='Turn search in gemini',type=int, choices=[0, 1])
         self.parser.add_argument('--nm', dest='new_model', help='Add new model in gemini',type=str)
         self.parser.add_argument('--rr', dest='proxy', help='Turn proxy globally',type=int, choices=[0, 1])
         # self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[0, 1]
@@ -920,7 +920,7 @@ class User:
         return output
     
 
-    async def info(self) -> str:
+    async def info(self) -> tuple:
         is_gemini = self.current_bot.name == 'gemini'
         output = text(
             f'🤖 Текущий бот: {self.current_bot.name}',
@@ -928,11 +928,17 @@ class User:
             f'📚 Размер контекста: {len(self.current_bot.context) 
                                     if not is_gemini else self.current_bot.length()}',
             sep='\n')
+        return output, self.make_conf_btns()
+    
+
+    def make_conf_btns(self):
+        emoji_stat = {True:'✅',False:'❌'}
+        output = []
         if hasattr(self.current_bot,'proxy_status'):
-            output += f'\n🔀 Proxy: {self.current_bot.proxy_status}'
-        if hasattr(self.current_bot,'enable_search'):
-            output += f'\n🌐 Search: {self.current_bot.enable_search}'
-        return output
+            output += [f'{emoji_stat[self.current_bot.proxy_status]} proxy']
+        if hasattr(self.current_bot,'search_status'):
+            output += [f'{emoji_stat[self.current_bot.search_status]} search']
+        return users.create_inline_kb(output, 'conf')
     
 
     async def change_config(self, kwargs: dict) -> str:
@@ -966,7 +972,7 @@ class User:
         return f'🔄 Смена модели на {users.make_short_name(model_name)}'
 
 
-    async def clear(self) -> str:
+    async def clear(self) -> tuple:
         if self.current_bot.name == 'gemini':
             status = await self.current_bot.change_chat_config(clear=True)
         else:
@@ -978,7 +984,7 @@ class User:
                 self.current_bot.context.clear()
                 status = 'полностью'
 
-        return f'🧹 Диалог очищен {status}'
+        return f'🧹 Диалог очищен {status}', None
     
 
     async def make_multi_modal_body(text, image, context: list, is_mistral = False) -> None:
@@ -1253,11 +1259,12 @@ class UsersMap():
             (r for v in data.values() if isinstance(v, dict) and (r := self.get_context(key, v))), None)
     
 
-    def create_inline_kb(self, dict_iter: dict, cb_type: str):
+    def create_inline_kb(self, dict_iter: dict | list, cb_type: str):
         builder_inline = InlineKeyboardBuilder()
         for value in dict_iter:
-            data = CallbackClass(cb_type=cb_type, name=users.make_short_name(value)).pack()
-            builder_inline.button(text=users.make_short_name(value), callback_data=data)
+            cb_btn_name = users.make_short_name(value)
+            data = CallbackClass(cb_type=cb_type, name=cb_btn_name).pack()
+            builder_inline.button(text=cb_btn_name, callback_data=data)
         return builder_inline.adjust(*[2]*(len(dict_iter)//2)).as_markup()
 
 
@@ -1503,9 +1510,9 @@ class Handlers:
     async def reply_kb_command(message: Message):
         user = await users.check_and_clear(message, 'text')
         user.last_msg = message.message_id
-        if user.text in {'info','clear'}:
-            output = await getattr(user, user.text)()
-            kwargs = users.set_kwargs(escape(output))
+        if user.text in {'clear', 'info'}:
+            output, builder_inline = await getattr(user, user.text)()
+            kwargs = users.set_kwargs(escape(output), builder_inline)
         else:
             command_dict = {'bot': [user.api_factory.bots, 'бота'],
                             'model': [user.current_bot.models, 'модель'],
@@ -1578,6 +1585,16 @@ class Callbacks:
         if is_final_set:
             await query.message.edit_text(output)
             await bot.delete_message(query.message.chat.id, user.last_msg)
+
+
+    @dp.callback_query(CallbackClass.filter(F.cb_type.contains('conf')))
+    async def conf_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
+        user = await users.check_and_clear(query, 'callback')
+        var_name = f'{callback_data.name.split()[-1]}'
+        kwargs = {var_name: not getattr(user.current_bot, f'{var_name}_status')}
+        await user.change_config(kwargs)
+        await query.message.edit_reply_markup(reply_markup=user.make_conf_btns())
+
 
 
     @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
