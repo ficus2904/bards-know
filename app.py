@@ -207,8 +207,8 @@ class GeminiAPI(BaseAPIInterface):
                                 in HarmCategory._member_names_[1:]]
         self.models = [
             'gemini-2.0-pro-exp',
-            'gemini-2.0-flash-thinking-exp',
             'gemini-2.0-flash',
+            'gemini-2.0-flash-thinking-exp',
             'gemini-2.0-flash-lite-preview',
             ]
         self.current_model = self.models[0]
