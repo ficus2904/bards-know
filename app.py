@@ -1568,7 +1568,7 @@ class Handlers:
     @dp.message(F.content_type.in_({'text'}))
     async def text_handler(message: Message | KeyboardButtonPollType, user_name: str):
         user = await users.check_and_clear(message, 'text', user_name)
-        await message.reply('Ожидайте ⏳')
+        # await message.reply('Ожидайте ⏳')
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
             output = await user.prompt(user.text)
         await users.send_split_response(message, output)
