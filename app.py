@@ -1036,8 +1036,9 @@ class UsersMap():
                             Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов''',
                 '🤓 QuizPlease': '''Выступи в роли профессионального ведущего quiz - вечеринок. Напиши 5 вопросов по теме кино и сериалы. 
                                 Вопросы должны быть минимум продвинутого уровня, рассчитанные на искушённых киноманов.''',
-                '📝 Промпт': ('Write 4 interesting and unusual prompts for Stable Diffusion in different visual styles.'
-                            'It must consist a sarcastic, ironic and brutal plot with black humor, showing the absurdity of the situation.'
+                '📝 Промпт': ('Write 4 interesting and unusual prompts in different visual styles. '
+                            'First, think through the main idea of the picture and then realize the visual storytelling that will be revealed by that one prompt. '
+                            'It must consist a sarcastic, ironic and brutal plot with black humor, showing the situation. '
                             'Wrap each prompt in quotation marks `...`.'),
                 '⚖️ Правда': self.context_dict.get("🤡 Юмор",{}).get("🍻 Братюня",'') + (
                             '\nНапиши непопулярное мнение на твое усмотрение на основе научных данных.'
