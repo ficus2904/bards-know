@@ -569,8 +569,8 @@ class GlifAPI(BaseAPIInterface):
     def __init__(self):
         self.url = "https://simple-api.glif.app"
         self.models_with_ids = {
-                                "claude 3.5 sonnet":"clxwyy4pf0003jo5w0uddefhd",
-                                "GPT o3":"clxx330wj000ipbq9rwh4hmp3",
+                                "claude 3.7 sonnet":"clxwyy4pf0003jo5w0uddefhd",
+                                "OpenAI o3 mini":"clxx330wj000ipbq9rwh4hmp3",
                                 "Grok 2":"clyzjs4ht0000iwvdlacfm44y",
                                 }
         self.models = list(self.models_with_ids.keys())
