@@ -209,7 +209,7 @@ class GeminiAPI(BaseAPIInterface):
             'gemini-2.0-pro-exp',
             'gemini-2.0-flash',
             'gemini-2.0-flash-thinking-exp',
-            'gemini-2.0-flash-lite-preview',
+            'gemini-2.0-flash-lite',
             ]
         self.current_model = self.models[0]
         self.chat = None
