@@ -13,6 +13,7 @@ import warnings
 from argparse import ArgumentParser
 from mistralai import Mistral
 from google import genai
+from google.genai import errors as GeminiError
 from google.genai.types import (
     GenerateContentConfig, 
     SafetySetting, 
@@ -40,6 +41,7 @@ from aiogram.types import (
     CallbackQuery, 
     KeyboardButtonPollType,
     )
+from aiogram.types import BufferedInputFile as BIF
 from aiogram.utils.markdown import text
 from aiogram.utils.formatting import ExpandableBlockQuote
 from aiogram.filters import Command, CommandStart
@@ -206,6 +208,7 @@ class GeminiAPI(BaseAPIInterface):
         self.safety_settings = [SafetySetting(category=category, threshold="BLOCK_NONE") for category 
                                 in HarmCategory._member_names_[1:]]
         self.models = [
+            'gemini-2.0-flash-exp',
             'gemini-2.0-pro-exp',
             'gemini-2.0-flash',
             'gemini-2.0-flash-thinking-exp',
@@ -233,7 +236,10 @@ class GeminiAPI(BaseAPIInterface):
         self.client = genai.Client(api_key=self.api_key, http_options=http_options)
 
         
-    async def prompt(self, text: str = None, data: dict = None) -> str:
+    async def prompt(self, 
+                     text: str = None, 
+                     data: dict = None, 
+                     attempts: int = 0) -> str | dict:
         try:
             content = [Part.from_bytes(**data), text] if data else text
             response = await self.chat.send_message(content)
@@ -242,8 +248,28 @@ class GeminiAPI(BaseAPIInterface):
                     return response.candidates[0].content.parts[1].text
                 except Exception:
                     return response.text
+            elif self.current_model == 'gemini-2.0-flash-exp':
+                try:
+                    for part in response.candidates[0].content.parts:
+                        if part.inline_data is not None:
+                            return {'photo': BIF(part.inline_data.data, "image.png"),
+                                    'caption': part.text if part.text is not None else None,
+                                    'reply_markup': users.builder}
+                        elif part.text is not None:
+                            return part.text
+                except Exception:
+                    return str(response.candidates[0].finish_reason)
+
             else:
                 return response.text
+            
+        except GeminiError.APIError as e:
+            if e.code == 503 and attempts < 3:
+                await asyncio.sleep(5)
+                print('attempt', attempts)
+                return await self.prompt(text, data, attempts+1)
+            return f'Gemini error {e.code}: {e}'
+            
         except Exception as e:
             logging.exception(e)
             return f'Gemini error: {e}'
@@ -253,8 +279,10 @@ class GeminiAPI(BaseAPIInterface):
         if isinstance(with_proxy, bool):
             self.create_client(with_proxy)
         self.context = [{'role':'system', 'content': context}]
+        response_modalities = ['Text', 'Image'] if self.current_model == 'gemini-2.0-flash-exp' else None
         config = GenerateContentConfig(system_instruction=context, 
-                                       safety_settings=self.safety_settings)
+                                       safety_settings=self.safety_settings,
+                                       response_modalities=response_modalities)
         self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
 
 
@@ -1534,14 +1562,18 @@ class Handlers:
             await users.get_context('♾️ Универсальный')
             await message.reply("Выбран gemini и контекст ♾️ Универсальный")
 
-        text_reply = "Изображение получено! Ожидайте ⏳"
-        if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
-            text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model} ⏳"
-        await message.reply(text_reply)
+        # text_reply = "Изображение получено! Ожидайте ⏳"
+        # if user.current_bot.name == 'nvidia' and user.current_bot.current_model not in user.current_bot.vlm_params:
+        #     text_reply = f"Обработка изображения с использованием {user.current_bot.current_vlm_model} ⏳"
+        # await message.reply(text_reply)
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
             tg_photo = await bot.download(message.photo[-1].file_id)
             output = await user.prompt(user.text, {'data': tg_photo.getvalue(), 'mime_type': 'image/jpeg'})
-        await users.send_split_response(message, output)
+            # await users.send_split_response(message, output)
+            if isinstance(output, str):
+                await users.send_split_response(message, output)
+            else:
+                await message.answer_photo(**output)
 
 
     @dp.message(F.content_type.in_({'voice','video_note','video','document'}))
@@ -1569,10 +1601,13 @@ class Handlers:
     @dp.message(F.content_type.in_({'text'}))
     async def text_handler(message: Message | KeyboardButtonPollType, user_name: str):
         user = await users.check_and_clear(message, 'text', user_name)
-        # await message.reply('Ожидайте ⏳')
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
             output = await user.prompt(user.text)
-        await users.send_split_response(message, output)
+            if isinstance(output, str):
+                await users.send_split_response(message, output)
+            else:
+                await message.answer_photo(**output)
+        
 
 
 class Callbacks:
