@@ -8,6 +8,8 @@ import base64
 import sqlite3
 import asyncio
 import aiohttp
+from pytz import timezone as tz
+from datetime import datetime as dt
 from loguru import logger
 import warnings
 from argparse import ArgumentParser
@@ -64,6 +66,8 @@ logger.add(sink='./app.log',
            backtrace=True,
            )
 
+logger = logger.patch(lambda r: r.update({"time": dt.now(tz(os.getenv("TZ")))}))
+                      
 
 class CallbackClass(CallbackData, prefix='callback'):
     cb_type: str
