@@ -8,8 +8,6 @@ import base64
 import sqlite3
 import asyncio
 import aiohttp
-from pytz import timezone as tz
-from datetime import datetime as dt
 from loguru import logger
 import warnings
 from argparse import ArgumentParser
@@ -60,12 +58,8 @@ warnings.simplefilter('ignore')
 
 # python app.py
 
-logger.configure(patcher=lambda r: r["extra"].update({  
-    "time": dt.now(tz(os.getenv('TZ'))).strftime('%Y-%m-%d %H:%M:%S')  
-}))  
-
 logger.add(sink='./app.log', 
-           format='{extra[time]} {level} {message}', 
+           format='{time:YYYY-MM-DD HH:mm:ss} {level} {message}', 
            level='INFO',
            backtrace=True,
            )

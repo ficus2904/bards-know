@@ -1,6 +1,8 @@
 services:
   bard-knows:
     image: bard-knows:latest
+    environment:
+      - TZ
     build:
       context: .
       dockerfile: Dockerfile
