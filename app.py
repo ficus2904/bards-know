@@ -60,13 +60,15 @@ warnings.simplefilter('ignore')
 
 # python app.py
 
+logger.configure(patcher=lambda r: r["extra"].update({  
+    "time": dt.now(tz(os.getenv('TZ'))).strftime('%Y-%m-%d %H:%M:%S')  
+}))  
+
 logger.add(sink='./app.log', 
-           format='{time:YYYY-MM-DD HH:mm:ss} {level} {message}', 
+           format='{extra[time]} {level} {message}', 
            level='INFO',
            backtrace=True,
            )
-
-logger = logger.patch(lambda r: r.update({"time": dt.now(tz(os.getenv("TZ")))}))
                       
 
 class CallbackClass(CallbackData, prefix='callback'):
