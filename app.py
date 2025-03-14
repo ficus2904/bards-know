@@ -8,7 +8,7 @@ import base64
 import sqlite3
 import asyncio
 import aiohttp
-import logging
+from loguru import logger
 import warnings
 from argparse import ArgumentParser
 from mistralai import Mistral
@@ -57,25 +57,12 @@ load_dotenv()
 warnings.simplefilter('ignore')
 
 # python app.py
-logging.basicConfig(filename='./app.log', level=logging.INFO, encoding='utf-8',
-                    format='%(asctime)19s %(levelname)s: %(message)s')
-for name in ['aiogram','httpx']: 
-    logging.getLogger(name).setLevel(logging.WARNING)
 
-
-class CommonFilter(logging.Filter):
-    def __init__(self):
-        super().__init__()
-        self.filter_strings = ["AFC is enabled with max remote calls"]
-
-    def filter(self, record):
-        message = record.getMessage()
-        for filter_string in self.filter_strings:
-            if filter_string in message:
-                return False 
-        return True
-
-logging.getLogger().addFilter(CommonFilter())
+logger.add(sink='./app.log', 
+           format='{time:YYYY-MM-DD HH:mm:ss} {level} {message}', 
+           level='INFO',
+           backtrace=True,
+           )
 
 
 class CallbackClass(CallbackData, prefix='callback'):
@@ -109,12 +96,12 @@ class UserFilterMiddleware(BaseMiddleware):
             try:
                 await handler(event, data)
             except Exception as e:
-                logging.exception(e)
+                logger.exception(e)
                 if isinstance(event, Message):
                     await bot.send_message(event.chat.id, f'❌ Error: {e}')
         else:
             if isinstance(event, Message):
-                logging.warning(f'Unknown user {USER_ID}')
+                logger.warning(f'Unknown user {USER_ID}')
                 await bot.send_message(event.chat.id, 
                 f'Доступ запрещен. Обратитесь к администратору. Ваш id: {USER_ID}')
 
@@ -271,7 +258,7 @@ class GeminiAPI(BaseAPIInterface):
             return f'Gemini error {e.code}: {e}'
             
         except Exception as e:
-            logging.exception(e)
+            logger.exception(e)
             return f'Gemini error: {e}'
     
     
@@ -520,7 +507,7 @@ class NvidiaAPI(BaseAPIInterface):
                         response.raise_for_status()
                         output = await response.json()
                     except aiohttp.ClientResponseError as e:
-                        logging.error(e)
+                        logger.error(e)
                         return 'Error exception'
             # response = requests.post(url=url, headers=headers, json=body)
             # output = response.json()
@@ -632,7 +619,7 @@ class GlifAPI(BaseAPIInterface):
                     answer = await response.json()
                     return answer['output'] or 'Error main'
                 except aiohttp.ClientResponseError as e:
-                    logging.error(e)
+                    logger.error(e)
                     return 'Error exception'
                 
 
@@ -657,13 +644,13 @@ class GlifAPI(BaseAPIInterface):
                 except Exception as e:
                     match e:
                         case asyncio.TimeoutError():
-                            logging.error(error_msg := 'Timeout error')
+                            logger.error(error_msg := 'Timeout error')
                         case aiohttp.ClientResponseError():
-                            logging.error(error_msg := f'HTTP error {e.status}: {e.message}')
+                            logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
                         case KeyError():
-                            logging.error(error_msg := 'No output data')
+                            logger.error(error_msg := 'No output data')
                         case _:
-                            logging.error(error_msg := f'Unexpected error: {str(e)}')
+                            logger.error(error_msg := f'Unexpected error: {str(e)}')
                     return {'error': error_msg}
                 
 
@@ -686,7 +673,7 @@ class GlifAPI(BaseAPIInterface):
                 answer: dict = response.json()
                 return answer.get('output')
             except httpx.HTTPStatusError as e:
-                logging.error(e.response.status_code, e.response.text)
+                logger.error(e.response.status_code, e.response.text)
                 return None
 
 
@@ -787,13 +774,13 @@ class FalAPI(BaseAPIInterface):
                 except Exception as e:
                     match e:
                         case asyncio.TimeoutError():
-                            logging.error(error_msg := 'Timeout error')
+                            logger.error(error_msg := 'Timeout error')
                         case aiohttp.ClientResponseError():
-                            logging.error(error_msg := f'HTTP error {e.status}: {e.message}')
+                            logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
                         case KeyError():
-                            logging.error(error_msg := 'No output data')
+                            logger.error(error_msg := 'No output data')
                         case _:
-                            logging.error(error_msg := f'Unexpected error: {str(e)}')
+                            logger.error(error_msg := f'Unexpected error: {str(e)}')
                     return f'❌: {error_msg}'
 
 
@@ -1262,7 +1249,7 @@ class UsersMap():
         if type_prompt in ['callback']:
             return user
         elif type_prompt in ['gen_image']:
-            logging.info(f'{user_name or message.from_user.id}: "{message.text}"')
+            logger.info(f'{user_name or message.from_user.id}: "{message.text}"')
             return user
         ## clear dialog context after 1 hour
         if (time() - user.time_dump) > 3600:
@@ -1276,7 +1263,7 @@ class UsersMap():
             type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt)
         user.text = user.text.lstrip('/')
         if user_name:
-            logging.info(f'{user_name}: "{type_prompt if len(type_prompt) < 100 else 'too long prompt'}"')
+            logger.info(f'{user_name}: "{type_prompt if len(type_prompt) < 100 else 'too long prompt'}"')
          
         return user
 
@@ -1649,6 +1636,5 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    print('Start polling')
-    logging.warning('Start polling')
+    logger.info('Start polling')
     asyncio.run(main())

@@ -1,8 +1,5 @@
 aiogram
-# httpx[socks]
-# httpx
-# requests[socks]
-# python-socks[asyncio]
+loguru
 google-genai
 python-dotenv
 pillow
