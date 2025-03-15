@@ -1585,7 +1585,7 @@ class Handlers:
             await message.reply("Выбран gemini")
 
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
-            tg_photo = [await bot.download(message.photo[-1].file_id)]
+            tg_photo = await bot.download(message.photo[-1].file_id)
             output = await user.prompt(user.text, [{'data': tg_photo.getvalue(), 
                                                     'mime_type': 'image/jpeg'}])
             if isinstance(output, str):
