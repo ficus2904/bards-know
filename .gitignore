@@ -4,7 +4,7 @@ env/
 /runtime.txt
 .gitignore
 /Procfile
-/app.log
+/*.log
 /db.sqlite3
 /ninjas_api.py
 /__pycache__
