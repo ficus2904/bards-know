@@ -56,7 +56,7 @@ from dotenv import load_dotenv
 load_dotenv()
 warnings.simplefilter('ignore')
 
-# python app.py
+# uv run app.py
 
 logger.add(sink='./app.log', 
            format='{time:YYYY-MM-DD HH:mm:ss} {level} {message}', 
@@ -199,9 +199,10 @@ class GeminiAPI(BaseAPIInterface):
         self.models = [
             'gemini-2.0-flash-exp',
             'gemini-2.0-pro-exp',
-            'gemini-2.0-flash',
+            'gemini-2.0-flash-001',
             'gemini-2.0-flash-thinking-exp',
             'gemini-2.0-flash-lite',
+            'gemma-3-27b-it',
             ]
         self.current_model = self.models[0]
         self.chat = None
@@ -906,7 +907,7 @@ class User:
         self.current_image_bot = FalAPI()
         self.time_dump = time()
         self.text: str = None
-        self.last_msg: int = None # for deleting messages when using change callback
+        self.last_msg: dict = None # for deleting messages
         self.media_group_buffer: dict = None ## for media_group_handler
         
 
@@ -943,7 +944,7 @@ class User:
         return output
     
 
-    async def info(self) -> tuple:
+    async def info(self, delete_prev: bool = False) -> tuple:
         is_gemini = self.current_bot.name == 'gemini'
         output = text(
             f'🤖 Текущий бот: {self.current_bot.name}',
@@ -951,6 +952,8 @@ class User:
             f'📚 Размер контекста: {len(self.current_bot.context) 
                                     if not is_gemini else self.current_bot.length()}',
             sep='\n')
+        if delete_prev:
+            await bot.delete_message(**self.last_msg)
         return output, self.make_conf_btns()
     
 
@@ -995,7 +998,7 @@ class User:
         return f'🔄 Смена модели на {users.make_short_name(model_name)}'
 
 
-    async def clear(self) -> tuple:
+    async def clear(self, delete_prev: bool = False) -> tuple:
         if self.current_bot.name == 'gemini':
             status = await self.current_bot.change_chat_config(clear=True)
         else:
@@ -1006,7 +1009,8 @@ class User:
             else:
                 self.current_bot.context.clear()
                 status = 'полностью'
-
+        if delete_prev:
+            await bot.delete_message(**self.last_msg)
         return f'🧹 Диалог очищен {status}', None
     
 
@@ -1533,9 +1537,11 @@ class Handlers:
     @dp.message(lambda message: message.text in users.buttons)
     async def reply_kb_command(message: Message):
         user = await users.check_and_clear(message, 'text')
-        user.last_msg = message.message_id
+        # user.last_msg = message.message_id
+        user.last_msg = {'chat_id': message.chat.id, 
+                         'message_id': message.message_id,}
         if user.text in {'clear', 'info'}:
-            output, builder_inline = await getattr(user, user.text)()
+            output, builder_inline = await getattr(user, user.text)(True)
             kwargs = users.set_kwargs(escape(output), builder_inline)
         else:
             command_dict = {'bot': [user.api_factory.bots, 'бота'],
@@ -1641,7 +1647,8 @@ class Callbacks:
         await query.message.edit_reply_markup(reply_markup=reply_markup)
         if is_final_set:
             await query.message.edit_text(output)
-            await bot.delete_message(query.message.chat.id, user.last_msg)
+            # await bot.delete_message(query.message.chat.id, user.last_msg['message_id'])
+            await bot.delete_message(**user.last_msg)
 
 
     @dp.callback_query(CallbackClass.filter(F.cb_type.contains('conf')))
@@ -1661,7 +1668,8 @@ class Callbacks:
         async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot): 
             output = await user.template_prompts(callback_data.name)
         await users.send_split_response(query.message, output)
-        await bot.delete_message(query.message.chat.id, user.last_msg)
+        # await bot.delete_message(query.message.chat.id, user.last_msg['message_id'])
+        await bot.delete_message(**user.last_msg)
 
 
 
