@@ -564,15 +564,14 @@ class OpenRouterAPI(BaseAPIInterface):
         self.client = OpenAI(api_key=self.api_key,
                              base_url="https://openrouter.ai/api/v1")
         self.models = [
-            'deepseek/deepseek-r1-distill-llama-70b',
-            'sophosympatheia/rogue-rose-103b-v0.2',
-            'deepseek/deepseek-r1'
+            'deepseek/deepseek-chat-v3-0324',
+            'qwen/qwen2.5-vl-32b-instruct',
             ] # https://openrouter.ai/models
 
         self.current_model = self.models[0]
     
 
-    async def prompt(self, text, image=None) -> str:
+    async def prompt(self, text, image = None) -> str:
         body = {'role':'user', 'content': text}
         self.context.append(body)
         response = self.client.chat.completions.create(
@@ -1162,7 +1161,7 @@ class UsersMap():
             await asyncio.sleep(0)
 
 
-    async def split_text(self, text: str, max_length: int = 4096):
+    async def split_text(self, text: str, max_length: int = 4090):
         """
         Разбивает текст на фрагменты, учитывая markdown-блоки, так чтобы блоки не делились.
         """
@@ -1187,14 +1186,18 @@ class UsersMap():
                 # Если количество вхождений маркера нечётное – блок не закрыт
                 if chunk.count(marker) % 2 != 0:
                     # Пытаемся найти закрывающий маркер в оставшейся части текста
-                    closing_index = text.find(marker, start + len(chunk))
+                    end = min(start + max_length, len(text))
+                    closing_index = text.find(marker, start + len(chunk), end)
                     if closing_index != -1:
                         # Расширяем фрагмент, включая закрывающий маркер
                         chunk = text[start:closing_index + len(marker)]
                     else:
-                        # Если закрывающий маркер не найден, можно добавить его искусственно,
-                        # чтобы не нарушать форматирование (или же оставить так, если это допустимо)
+                        # Если закрывающий маркер не найден, можно добавить его искусственно
                         chunk += marker
+            
+            # Если фрагмент превышает max_length, обрезаем его
+            if len(chunk) > max_length:
+                chunk = chunk[:max_length]
 
             yield chunk
             # Переход к следующему фрагменту – учитываем, что мы могли превысить max_length
