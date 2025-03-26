@@ -194,15 +194,14 @@ class GeminiAPI(BaseAPIInterface):
     name = 'gemini'
 
     def __init__(self):
-        self.safety_settings = [SafetySetting(category=category, threshold="BLOCK_NONE") for category 
+        self.safety_settings = [SafetySetting(category=category, 
+                                              threshold="BLOCK_NONE") for category 
                                 in HarmCategory._member_names_[1:]]
         self.models = [
+            'gemini-2.5-pro-exp-03-25',
             'gemini-2.0-flash-exp',
-            'gemini-2.0-pro-exp',
-            'gemini-2.0-flash-001',
             'gemini-2.0-flash-thinking-exp',
             'gemini-2.0-flash-lite',
-            'gemma-3-27b-it',
             ]
         self.current_model = self.models[0]
         self.chat = None
