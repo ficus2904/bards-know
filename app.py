@@ -1078,6 +1078,7 @@ class UsersMap():
                 'Очистить контекст':'clear',
                 'Изменить модель бота':'change_model'
             }
+        self.simple_cmds: set = {'clear', 'info'}
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
         self.DEFAULT_BOT: str = 'gemini' #'glif' gemini mistral
         self.proxy_settings = os.environ.get('HTTPS_PROXY')
@@ -1536,14 +1537,13 @@ class Handlers:
                     await message.answer_voice(link)
 
 
-    @dp.message(lambda message: message.text in users.buttons)
+    @dp.message(F.text.in_(users.buttons) | F.text.casefold().in_(users.simple_cmds))
     async def reply_kb_command(message: Message):
         user = await users.check_and_clear(message, 'text')
-        # user.last_msg = message.message_id
         user.last_msg = {'chat_id': message.chat.id, 
                          'message_id': message.message_id,}
-        if user.text in {'clear', 'info'}:
-            output, builder_inline = await getattr(user, user.text)(True)
+        if (simple_cmd := user.text.casefold()) in users.simple_cmds:
+            output, builder_inline = await getattr(user, simple_cmd)(True)
             kwargs = users.set_kwargs(escape(output), builder_inline)
         else:
             command_dict = {'bot': [user.api_factory.bots, 'бота'],
@@ -1622,8 +1622,9 @@ class Handlers:
 
 
 
-    @dp.message(lambda message: message.text.startswith('/'))
+    @dp.message(F.text.startswith('/') | F.text.casefold().startswith('help'))
     async def unknown_handler(message: Message, user_name: str):
+        await bot.delete_message(message.chat.id, message.message_id)
         await message.answer(**users.set_kwargs())
 
 
