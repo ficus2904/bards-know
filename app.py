@@ -346,6 +346,7 @@ class GroqAPI(BaseAPIInterface):
         self.models = [
             'llama-4-scout-17b-16e-instruct',
             'llama-4-maverick-17b-128e-instruct',
+            'deepseek-r1-distill-llama-70b',
             'llama-3.2-90b-vision-preview',
             ] # https://console.groq.com/docs/models
         self.current_model = self.models[0]
@@ -374,7 +375,7 @@ class GroqAPI(BaseAPIInterface):
             body = {'role':'user', 'content': text}
             self.context.append(body)
         
-        kwargs = {'model':'meta-llama/' + self.current_model,
+        kwargs = {'model':('meta-llama/' if '4' in self.current_model else '') + self.current_model,
                   'messages': self.context}
         try:
             response = await self.client.chat.completions.create(**kwargs)
@@ -563,6 +564,8 @@ class OpenRouterAPI(BaseAPIInterface):
         self.models = [
             'deepseek/deepseek-chat-v3-0324',
             'qwen/qwen2.5-vl-32b-instruct',
+            'meta-llama/llama-4-maverick',
+            'meta-llama/llama-4-scout'
             ] # https://openrouter.ai/models
 
         self.current_model = self.models[0]
