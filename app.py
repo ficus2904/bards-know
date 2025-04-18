@@ -198,7 +198,7 @@ class GeminiAPI(BaseAPIInterface):
                                               threshold="BLOCK_NONE") for category 
                                 in HarmCategory._member_names_[1:]]
         self.models = [
-            'gemini-2.5.pro-exp-03-25',
+            'gemini-2.5-pro-exp-03-25',
             'gemini-2.5-flash-preview-04-17',
             'gemini-2.0-flash-exp',
             'gemini-2.0-flash-lite',
