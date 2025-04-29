@@ -72,7 +72,6 @@ class CallbackClass(CallbackData, prefix='callback'):
     name: str
 
 
-
 class UserFilterMiddleware(BaseMiddleware):
     """
     UserFilterMiddleware is a middleware class that checks if a user is registered in the database before allowing them to proceed with the handler.
@@ -106,7 +105,6 @@ class UserFilterMiddleware(BaseMiddleware):
                 logger.warning(f'Unknown user {USER_ID}')
                 await bot.send_message(event.chat.id, 
                 f'Доступ запрещен. Обратитесь к администратору. Ваш id: {USER_ID}')
-
 
 
 class DBConnection:
@@ -170,7 +168,6 @@ class DBConnection:
         self.conn.close()
 
 
-
 class BaseAPIInterface(ABC):
     @classmethod  
     def __init_subclass__(cls, **kwargs):  
@@ -188,501 +185,477 @@ class BaseAPIInterface(ABC):
         pass
 
 
+class BOTS:
+    """LLM bot interfaces"""
+    class GeminiAPI(BaseAPIInterface):
+        """Class for Gemini API"""
+        name = 'gemini'
 
-class GeminiAPI(BaseAPIInterface):
-    """Class for Gemini API"""
-    name = 'gemini'
-
-    def __init__(self):
-        self.safety_settings = [SafetySetting(category=category, 
-                                              threshold="BLOCK_NONE") for category 
-                                in HarmCategory._member_names_[1:]]
-        self.models = [
-            'gemini-2.5-pro-exp-03-25',
-            'gemini-2.5-flash-preview-04-17',
-            'gemini-2.0-flash-exp',
-            'gemini-2.0-flash-lite',
-            ]
-        self.current_model = self.models[0]
-        self.chat = None
-        self.proxy_status: bool = True
-        self.search_status: bool = False
-        self.client: genai.Client = None
-        self.reset_chat(with_proxy=self.proxy_status)
-
-
-    def create_client(self, with_proxy: bool) -> None:
-        self.proxy_status = with_proxy
-        http_options = {'api_version':'v1beta'}
-        if with_proxy:
-            http_options = http_options | {
-                'base_url': os.getenv('WORKER'),
-                'headers': {
-                    'X-Custom-Auth': os.getenv('AUTH_SECRET'),
-                    'EXTERNAL-URL': 'https://generativelanguage.googleapis.com',
-                    }
-                }
-        self.client = genai.Client(api_key=self.api_key, http_options=http_options)
-
-        
-    async def prompt(self, 
-                     text: str = None, 
-                     data: list = None, 
-                     attempts: int = 0) -> str | dict:
-        try:
-            # content = [Part.from_bytes(**data), text] if data else text
-            content = [*[Part.from_bytes(**subdata) for subdata in data], text] if data else text
-            response = await self.chat.send_message(content)
-            if 'thinking' in self.current_model:
-                try:
-                    return response.candidates[0].content.parts[1].text
-                except Exception:
-                    return response.text
-            elif self.current_model == 'gemini-2.0-flash-exp':
-                try:
-                    for part in response.candidates[0].content.parts:
-                        if part.inline_data is not None:
-                            return {'photo': BIF(part.inline_data.data, "image.png"),
-                                    'caption': part.text if part.text is not None else None,
-                                    'reply_markup': users.builder}
-                        elif part.text is not None:
-                            return part.text
-                except Exception:
-                    return str(response.candidates[0].finish_reason)
-
-            else:
-                return response.text
-            
-        except GeminiError.APIError as e:
-            match e.code:
-                case code if 500 <= code < 600:
-                    if attempts < 3:
-                        await asyncio.sleep(5)
-                        logger.warning(f'Gemini attempt: {attempts}')
-                        return await self.prompt(text, data, attempts+1)
-
-            return f'Gemini error {e.code}: {e}'
-                
-            
-        except Exception as e:
-            logger.exception(e)
-            return f'Exception in Gemini: {e}'
-    
-    
-    def reset_chat(self, context: str = None, with_proxy: bool = None):
-        if isinstance(with_proxy, bool):
-            self.create_client(with_proxy)
-        self.context = [{'role':'system', 'content': context}]
-        response_modalities = ['Text', 'Image'] if self.current_model == 'gemini-2.0-flash-exp' else None
-        config = GenerateContentConfig(system_instruction=context, 
-                                       safety_settings=self.safety_settings,
-                                       response_modalities=response_modalities)
-        self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
+        def __init__(self):
+            self.safety_settings = [SafetySetting(category=category, 
+                                                threshold="BLOCK_NONE") for category 
+                                    in HarmCategory._member_names_[1:]]
+            self.models = [
+                'gemini-2.5-pro-exp-03-25',
+                'gemini-2.5-flash-preview-04-17',
+                'gemini-2.0-flash-exp',
+                'gemini-2.0-flash-lite',
+                ]
+            self.current_model = self.models[0]
+            self.chat = None
+            self.proxy_status: bool = True
+            self.search_status: bool = False
+            self.client: genai.Client = None
+            self.reset_chat(with_proxy=self.proxy_status)
 
 
-    async def change_chat_config(self, clear: bool = None, 
-                                 search: int = None, 
-                                 new_model: str = None, 
-                                 proxy: int = None) -> str | None:
-        if self.chat._model != self.current_model:
-            return self.reset_chat()
-        
-        if new_model:
-            if new_model == 'list':
-                response = await self.client.aio.models.list(config={'query_base': True})
-                return "\n".join([model.name.split('/')[1] for model in response 
-                        if 'generateContent' in model.supported_actions])
-            else:
-                self.models.append(new_model)
-                return f'В gemini добавлена модель {new_model}'
-
-        if clear:
-            if self.chat._curated_history and self.chat._config.system_instruction:
-                self.chat._curated_history.clear()
-                return 'кроме системного'
-            else:
-                self.chat._curated_history.clear()
-                self.chat._config.system_instruction = None
-                return 'полностью'
-
-        if search is not None:
-            self.search_status = bool(search)
-            self.chat._config.tools = [Tool(google_search=GoogleSearch())] if search else None
-            return 'Поиск в gemini включен ✅' if search else 'Поиск в gemini выключен ❌'
-        
-        if isinstance(proxy, int):
-            self.reset_chat(with_proxy=bool(proxy))
-            return f'Прокси {'включен ✅' if proxy else 'выключен ❌'}\n'
-        
-
-    def length(self) -> int: 
-        return int(self.chat._config.system_instruction is not None) + len(self.chat._curated_history)
-
-
-    async def gen_image(self, prompt, image_size: str = '9:16', model: str = None):
-        response = self.client.models.generate_images(
-            model = f'imagen-3.0-generate-00{model or 2}',
-            prompt = prompt,
-            config = GenerateImagesConfig(
-                number_of_images=1,
-                include_rai_reason=True,
-                output_mime_type='image/jpeg',
-                safety_filter_level="BLOCK_LOW_AND_ABOVE", # BLOCK_LOW_AND_ABOVE BLOCK_ONLY_HIGH
-                person_generation="ALLOW_ADULT", # ALLOW_ADULT ALLOW_ALL
-                output_compression_quality=95,
-                aspect_ratio=image_size
-            )
-        )
-        output = response.generated_images[0]
-        return output.image or output.rai_filtered_reason
-    
-
-
-class GroqAPI(BaseAPIInterface):
-    """Class for Groq API"""
-    name = 'groq'
-
-    def __init__(self):
-        self.models = [
-            'llama-4-scout-17b-16e-instruct',
-            'llama-4-maverick-17b-128e-instruct',
-            'deepseek-r1-distill-llama-70b',
-            'llama-3.2-90b-vision-preview',
-            ] # https://console.groq.com/docs/models
-        self.current_model = self.models[0]
-        self.proxy_status: bool = False
-        self.client: AsyncGroq = None
-        self.create_client(self.proxy_status)
-
-
-    def create_client(self, with_proxy: bool) -> None:
-        self.proxy_status = with_proxy
-        kwargs = {'api_key': self.api_key}
-        if with_proxy:
-            kwargs = kwargs | {
-                        'base_url': os.getenv('WORKER'),
-                        'default_headers':{
-                            'X-Custom-Auth': os.getenv('AUTH_SECRET'),
-                            'EXTERNAL-URL': 'https://api.groq.com',}
-                    }
-        self.client = AsyncGroq(**kwargs)
-
-    async def prompt(self, text: str, image = None) -> str:
-        if image:
-            self.context.clear()
-            await User.make_multi_modal_body(text or "What's in this image?", image, self.context)
-        else:
-            body = {'role':'user', 'content': text}
-            self.context.append(body)
-        
-        kwargs = {'model':('meta-llama/' if '4' in self.current_model else '') + self.current_model,
-                  'messages': self.context}
-        try:
-            response = await self.client.chat.completions.create(**kwargs)
-            data = response.choices[-1].message.content
-            self.context.append({'role':'assistant', 'content': data})
-            return data
-        except Exception as e:
-            return f'{e}'
-
-
-
-class MistralAPI(BaseAPIInterface):
-    """Class for Mistral API"""
-    name = 'mistral'
-
-    def __init__(self):
-        self.client = Mistral(api_key=self.api_key)
-        self.models = [
-            'mistral-large-latest',
-            'pixtral-large-latest',
-            'mistral-small-latest',
-            'codestral-latest',
-            'pixtral-12b-2409',
-            ] # https://docs.mistral.ai/getting-started/models/
-        self.current_model = self.models[0]
-
-
-    async def prompt(self, text: str, image = None) -> str:
-        if image:
-            await User.make_multi_modal_body(text or "What's in this image?", 
-                                        image, self.context, is_mistral=True)
-        else:
-            body = {'role':'user', 'content': text}
-            self.context.append(body)
-        
-        kwargs = {'model':self.models[-1] if image else self.current_model, 
-                  'messages': self.context}
-        response = await self.client.chat.complete_async(**kwargs)
-        response = response.choices[-1].message.content
-        self.context.append({'role':'assistant', 'content':response})
-        return response
-
-
-
-class NvidiaAPI(BaseAPIInterface):
-    """Class for Nvidia API"""
-    name = 'nvidia'
-    
-    def __init__(self):
-        self.client = OpenAI(api_key=self.api_key,
-                             base_url = "https://integrate.api.nvidia.com/v1")
-        self.models = [
-                        'meta/llama-3.1-405b-instruct',
-                        'meta/llama-3.1-8b-instruct',
-                        'nvidia/nemotron-4-340b-instruct',
-                        'nvidia/llama3-chatqa-1.5-70b',
-                        'nvidia/neva-22b',
-                        'microsoft/kosmos-2',
-                        'adept/fuyu-8b',
-                        'microsoft/phi-3-vision-128k-instruct',
-                        'nvidia/vila',
-                       ] # https://build.nvidia.com/explore/discover
-        self.vlm_params = {
-                        'microsoft/phi-3-vision-128k-instruct': {
-                            "max_tokens": 512,
-                            "temperature": 1,
-                            "top_p": 0.70,
-                            "stream": False
-                        },
-                        'nvidia/neva-22b': {
-                            "max_tokens": 1024,
-                            "temperature": 0.20,
-                            "top_p": 0.70,
-                            "seed": 0,
-                            "stream": False
-                        },
-                        'microsoft/kosmos-2': {
-                            "max_tokens": 1024,
-                            "temperature": 0.20,
-                            "top_p": 0.2
-                        },
-                        'adept/fuyu-8b': {
-                            "max_tokens": 1024,
-                            "temperature": 0.20,
-                            "top_p": 0.7,
-                            "seed":0,
-                            "stream": False
-                        },
-                        'nvidia/vila': {
-                            "max_tokens": 1024,
-                            "temperature": 0.20,
-                            "top_p": 0.7,
-                            "stream": False
+        def create_client(self, with_proxy: bool) -> None:
+            self.proxy_status = with_proxy
+            http_options = {'api_version':'v1beta'}
+            if with_proxy:
+                http_options = http_options | {
+                    'base_url': os.getenv('WORKER'),
+                    'headers': {
+                        'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                        'EXTERNAL-URL': 'https://generativelanguage.googleapis.com',
                         }
                     }
-        self.current_model = self.models[0]
-        self.current_vlm_model = self.models[-1]
-        # self.context = []
-    
+            self.client = genai.Client(api_key=self.api_key, http_options=http_options)
 
-    async def prompt(self, text, image = None) -> str:
-        if image is None and self.current_model not in self.vlm_params:
+            
+        async def prompt(self, 
+                        text: str = None, 
+                        data: list = None, 
+                        attempts: int = 0) -> str | dict:
+            try:
+                # content = [Part.from_bytes(**data), text] if data else text
+                content = [*[Part.from_bytes(**subdata) for subdata in data], text] if data else text
+                response = await self.chat.send_message(content)
+                if 'thinking' in self.current_model:
+                    try:
+                        return response.candidates[0].content.parts[1].text
+                    except Exception:
+                        return response.text
+                elif self.current_model == 'gemini-2.0-flash-exp':
+                    try:
+                        for part in response.candidates[0].content.parts:
+                            if part.inline_data is not None:
+                                return {'photo': BIF(part.inline_data.data, "image.png"),
+                                        'caption': part.text if part.text is not None else None,
+                                        'reply_markup': users.builder}
+                            elif part.text is not None:
+                                return part.text
+                    except Exception:
+                        return str(response.candidates[0].finish_reason)
+
+                else:
+                    return response.text
+                
+            except GeminiError.APIError as e:
+                match e.code:
+                    case code if 500 <= code < 600:
+                        if attempts < 3:
+                            await asyncio.sleep(5)
+                            logger.warning(f'Gemini attempt: {attempts}')
+                            return await self.prompt(text, data, attempts+1)
+
+                return f'Gemini error {e.code}: {e}'
+                    
+                
+            except Exception as e:
+                logger.exception(e)
+                return f'Exception in Gemini: {e}'
+        
+        
+        def reset_chat(self, context: str = None, with_proxy: bool = None):
+            if isinstance(with_proxy, bool):
+                self.create_client(with_proxy)
+            self.context = [{'role':'system', 'content': context}]
+            response_modalities = ['Text', 'Image'] if self.current_model == 'gemini-2.0-flash-exp' else None
+            config = GenerateContentConfig(system_instruction=context, 
+                                        safety_settings=self.safety_settings,
+                                        response_modalities=response_modalities)
+            self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
+
+
+        async def change_chat_config(self, clear: bool = None, 
+                                    search: int = None, 
+                                    new_model: str = None, 
+                                    proxy: int = None) -> str | None:
+            if self.chat._model != self.current_model:
+                return self.reset_chat()
+            
+            if new_model:
+                if new_model == 'list':
+                    response = await self.client.aio.models.list(config={'query_base': True})
+                    return "\n".join([model.name.split('/')[1] for model in response 
+                            if 'generateContent' in model.supported_actions])
+                else:
+                    self.models.append(new_model)
+                    return f'В gemini добавлена модель {new_model}'
+
+            if clear:
+                if self.chat._curated_history and self.chat._config.system_instruction:
+                    self.chat._curated_history.clear()
+                    return 'кроме системного'
+                else:
+                    self.chat._curated_history.clear()
+                    self.chat._config.system_instruction = None
+                    return 'полностью'
+
+            if search is not None:
+                self.search_status = bool(search)
+                self.chat._config.tools = [Tool(google_search=GoogleSearch())] if search else None
+                return 'Поиск в gemini включен ✅' if search else 'Поиск в gemini выключен ❌'
+            
+            if isinstance(proxy, int):
+                self.reset_chat(with_proxy=bool(proxy))
+                return f'Прокси {'включен ✅' if proxy else 'выключен ❌'}\n'
+            
+
+        def length(self) -> int: 
+            return int(self.chat._config.system_instruction is not None) + len(self.chat._curated_history)
+
+
+        async def gen_image(self, prompt, image_size: str = '9:16', model: str = None):
+            response = self.client.models.generate_images(
+                model = f'imagen-3.0-generate-00{model or 2}',
+                prompt = prompt,
+                config = GenerateImagesConfig(
+                    number_of_images=1,
+                    include_rai_reason=True,
+                    output_mime_type='image/jpeg',
+                    safety_filter_level="BLOCK_LOW_AND_ABOVE", # BLOCK_LOW_AND_ABOVE BLOCK_ONLY_HIGH
+                    person_generation="ALLOW_ADULT", # ALLOW_ADULT ALLOW_ALL
+                    output_compression_quality=95,
+                    aspect_ratio=image_size
+                )
+            )
+            output = response.generated_images[0]
+            return output.image or output.rai_filtered_reason
+        
+
+
+    class GroqAPI(BaseAPIInterface):
+        """Class for Groq API"""
+        name = 'groq'
+
+        def __init__(self):
+            self.models = [
+                'llama-4-scout-17b-16e-instruct',
+                'llama-4-maverick-17b-128e-instruct',
+                'deepseek-r1-distill-llama-70b',
+                'llama-3.2-90b-vision-preview',
+                ] # https://console.groq.com/docs/models
+            self.current_model = self.models[0]
+            self.proxy_status: bool = False
+            self.client: AsyncGroq = None
+            self.create_client(self.proxy_status)
+
+
+        def create_client(self, with_proxy: bool) -> None:
+            self.proxy_status = with_proxy
+            kwargs = {'api_key': self.api_key}
+            if with_proxy:
+                kwargs = kwargs | {
+                            'base_url': os.getenv('WORKER'),
+                            'default_headers':{
+                                'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                                'EXTERNAL-URL': 'https://api.groq.com',}
+                        }
+            self.client = AsyncGroq(**kwargs)
+
+        async def prompt(self, text: str, image = None) -> str:
+            if image:
+                self.context.clear()
+                await User.make_multi_modal_body(text or "What's in this image?", image, self.context)
+            else:
+                body = {'role':'user', 'content': text}
+                self.context.append(body)
+            
+            kwargs = {'model':('meta-llama/' if '4' in self.current_model else '') + self.current_model,
+                    'messages': self.context}
+            try:
+                response = await self.client.chat.completions.create(**kwargs)
+                data = response.choices[-1].message.content
+                self.context.append({'role':'assistant', 'content': data})
+                return data
+            except Exception as e:
+                return f'{e}'
+
+
+
+    class MistralAPI(BaseAPIInterface):
+        """Class for Mistral API"""
+        name = 'mistral'
+
+        def __init__(self):
+            self.client = Mistral(api_key=self.api_key)
+            self.models = [
+                'mistral-large-latest',
+                'pixtral-large-latest',
+                'mistral-small-latest',
+                'codestral-latest',
+                'pixtral-12b-2409',
+                ] # https://docs.mistral.ai/getting-started/models/
+            self.current_model = self.models[0]
+
+
+        async def prompt(self, text: str, image = None) -> str:
+            if image:
+                await User.make_multi_modal_body(text or "What's in this image?", 
+                                            image, self.context, is_mistral=True)
+            else:
+                body = {'role':'user', 'content': text}
+                self.context.append(body)
+            
+            kwargs = {'model':self.models[-1] if image else self.current_model, 
+                    'messages': self.context}
+            response = await self.client.chat.complete_async(**kwargs)
+            response = response.choices[-1].message.content
+            self.context.append({'role':'assistant', 'content':response})
+            return response
+
+
+
+    class NvidiaAPI(BaseAPIInterface):
+        """Class for Nvidia API"""
+        name = 'nvidia'
+        
+        def __init__(self):
+            self.client = OpenAI(api_key=self.api_key,
+                                base_url = "https://integrate.api.nvidia.com/v1")
+            self.models = [
+                            'meta/llama-3.1-405b-instruct',
+                            'meta/llama-3.1-8b-instruct',
+                            'microsoft/phi-3-vision-128k-instruct',
+                            'nvidia/vila',
+                        ] # https://build.nvidia.com/explore/discover
+            self.vlm_params = {
+                            'microsoft/phi-3-vision-128k-instruct': {
+                                "max_tokens": 512,
+                                "temperature": 1,
+                                "top_p": 0.70,
+                                "stream": False
+                            },
+                            'nvidia/vila': {
+                                "max_tokens": 1024,
+                                "temperature": 0.20,
+                                "top_p": 0.7,
+                                "stream": False
+                            }
+                        }
+            self.current_model = self.models[0]
+            self.current_vlm_model = self.models[-1]
+            # self.context = []
+        
+
+        async def prompt(self, text, image = None) -> str:
+            if image is None and self.current_model not in self.vlm_params:
+                body = {'role':'user', 'content': text}
+                self.context.append(body)
+                response = self.client.chat.completions.create(
+                    model=self.current_model,
+                    messages=self.context,
+                    temperature=0.2,
+                    top_p=0.7,
+                    max_tokens=1024
+                )
+                output = response.choices[-1].message.content
+                self.context.append({'role':'assistant', 'content':output})
+                # print(output)
+                return output
+            else:
+                self.context.append({"role": "user","content": text})
+                model = self.current_model if self.current_model in self.vlm_params else self.current_vlm_model
+                if image:
+                    image_b64 = base64.b64encode(image.getvalue()).decode()
+                    if len(image_b64) > 180_000:
+                        print("Слишком большое изображение, сжимаем...")
+                        image_b64 = users.resize_image(image)
+                    image_b64 = f'Hi! What is in this image? <img src="data:image/jpeg;base64,{image_b64}" />'
+                else:
+                    image_b64 = ''
+
+                body = {"messages": [{"role": "user","content": text + image_b64}]} | self.vlm_params.get(model)
+                headers = {"Authorization": f"Bearer {self.api_key}",
+                            "Accept": "application/json"}
+                url = "https://ai.api.nvidia.com/v1/vlm/" + model
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url=url,headers=headers,json=body) as response:
+                        try:
+                            response.raise_for_status()
+                            output = await response.json()
+                        except aiohttp.ClientResponseError as e:
+                            logger.error(e)
+                            return 'Error exception'
+                # response = requests.post(url=url, headers=headers, json=body)
+                # output = response.json()
+                output = output.get('choices',[{}])[-1].get('message',{}).get('content','')
+                self.context.append({'role':'assistant', 'content':output})
+                return output
+            
+
+
+    class TogetherAPI(BaseAPIInterface):
+        """Class for Together API"""
+        name = 'together'
+        
+        def __init__(self):
+            self.client = OpenAI(api_key=self.api_key,
+                                base_url="https://api.together.xyz/v1")
+            self.models = [
+                'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free',
+                'Qwen/Qwen2-72B-Instruct',
+                ] # https://docs.together.ai/docs/inference-models
+
+            self.current_model = self.models[0]
+
+
+        async def prompt(self, text, image=None) -> str:
             body = {'role':'user', 'content': text}
             self.context.append(body)
             response = self.client.chat.completions.create(
                 model=self.current_model,
                 messages=self.context,
-                temperature=0.2,
+                temperature=0.7,
                 top_p=0.7,
                 max_tokens=1024
             )
             output = response.choices[-1].message.content
             self.context.append({'role':'assistant', 'content':output})
-            # print(output)
-            return output
-        else:
-            self.context.append({"role": "user","content": text})
-            model = self.current_model if self.current_model in self.vlm_params else self.current_vlm_model
-            if image:
-                image_b64 = base64.b64encode(image.getvalue()).decode()
-                if len(image_b64) > 180_000:
-                    print("Слишком большое изображение, сжимаем...")
-                    image_b64 = users.resize_image(image)
-                image_b64 = f'Hi! What is in this image? <img src="data:image/jpeg;base64,{image_b64}" />'
-            else:
-                image_b64 = ''
-
-            body = {"messages": [{"role": "user","content": text + image_b64}]} | self.vlm_params.get(model)
-            headers = {"Authorization": f"Bearer {self.api_key}",
-                        "Accept": "application/json"}
-            url = "https://ai.api.nvidia.com/v1/vlm/" + model
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url=url,headers=headers,json=body) as response:
-                    try:
-                        response.raise_for_status()
-                        output = await response.json()
-                    except aiohttp.ClientResponseError as e:
-                        logger.error(e)
-                        return 'Error exception'
-            # response = requests.post(url=url, headers=headers, json=body)
-            # output = response.json()
-            output = output.get('choices',[{}])[-1].get('message',{}).get('content','')
-            self.context.append({'role':'assistant', 'content':output})
             return output
         
 
 
-class TogetherAPI(BaseAPIInterface):
-    """Class for Together API"""
-    name = 'together'
-    
-    def __init__(self):
-        self.client = OpenAI(api_key=self.api_key,
-                             base_url="https://api.together.xyz/v1")
-        self.models = [
-            'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free',
-            'Qwen/Qwen2-72B-Instruct',
-            ] # https://docs.together.ai/docs/inference-models
+    class OpenRouterAPI(BaseAPIInterface):
+        """Class for OpenRouter API"""
+        name = 'open_router'
+        
+        def __init__(self):
+            self.client = OpenAI(api_key=self.api_key,
+                                base_url="https://openrouter.ai/api/v1")
+            self.models = [
+                'deepseek/deepseek-chat-v3-0324',
+                'qwen/qwen2.5-vl-32b-instruct',
+                'meta-llama/llama-4-maverick',
+                'meta-llama/llama-4-scout'
+                ] # https://openrouter.ai/models
 
-        self.current_model = self.models[0]
+            self.current_model = self.models[0]
+        
 
-
-    async def prompt(self, text, image=None) -> str:
-        body = {'role':'user', 'content': text}
-        self.context.append(body)
-        response = self.client.chat.completions.create(
-            model=self.current_model,
-            messages=self.context,
-            temperature=0.7,
-            top_p=0.7,
-            max_tokens=1024
-        )
-        output = response.choices[-1].message.content
-        self.context.append({'role':'assistant', 'content':output})
-        return output
-    
-
-
-class OpenRouterAPI(BaseAPIInterface):
-    """Class for OpenRouter API"""
-    name = 'open_router'
-    
-    def __init__(self):
-        self.client = OpenAI(api_key=self.api_key,
-                             base_url="https://openrouter.ai/api/v1")
-        self.models = [
-            'deepseek/deepseek-chat-v3-0324',
-            'qwen/qwen2.5-vl-32b-instruct',
-            'meta-llama/llama-4-maverick',
-            'meta-llama/llama-4-scout'
-            ] # https://openrouter.ai/models
-
-        self.current_model = self.models[0]
-    
-
-    async def prompt(self, text, image = None) -> str:
-        body = {'role':'user', 'content': text}
-        self.context.append(body)
-        response = self.client.chat.completions.create(
-            model=self.current_model +':free',
-            messages=self.context,
-        )
-        output = response.choices[-1].message.content
-        self.context.append({'role':'assistant', 'content':output})
-        return output
+        async def prompt(self, text, image = None) -> str:
+            body = {'role':'user', 'content': text}
+            self.context.append(body)
+            response = self.client.chat.completions.create(
+                model=self.current_model +':free',
+                messages=self.context,
+            )
+            output = response.choices[-1].message.content
+            self.context.append({'role':'assistant', 'content':output})
+            return output
 
 
 
-class GlifAPI(BaseAPIInterface):
-    """Class for Glif API"""
-    name = 'glif'
+    class GlifAPI(BaseAPIInterface):
+        """Class for Glif API"""
+        name = 'glif'
 
-    def __init__(self):
-        self.url = "https://simple-api.glif.app"
-        self.models_with_ids = {
-                                "claude 3.7 sonnet":"clxwyy4pf0003jo5w0uddefhd",
-                                "OpenAI o3 mini":"clxx330wj000ipbq9rwh4hmp3",
-                                "Grok 2":"clyzjs4ht0000iwvdlacfm44y",
-                                }
-        self.models = list(self.models_with_ids.keys())
-        self.current_model = self.models[0]
+        def __init__(self):
+            self.url = "https://simple-api.glif.app"
+            self.models_with_ids = {
+                                    "claude 3.7 sonnet":"clxwyy4pf0003jo5w0uddefhd",
+                                    "OpenAI o3 mini":"clxx330wj000ipbq9rwh4hmp3",
+                                    "Grok 2":"clyzjs4ht0000iwvdlacfm44y",
+                                    }
+            self.models = list(self.models_with_ids.keys())
+            self.current_model = self.models[0]
 
 
-    def form_main_prompt(self) -> str:
-        if len(self.context) > 2:
-            initial_text = 'Use next json schema as context of our previous dialog: '
-            return initial_text + str(self.context[1:])
-        else:
-            return self.context[-1].get('content')
-    
+        def form_main_prompt(self) -> str:
+            if len(self.context) > 2:
+                initial_text = 'Use next json schema as context of our previous dialog: '
+                return initial_text + str(self.context[1:])
+            else:
+                return self.context[-1].get('content')
+        
 
-    def form_system_prompt(self) -> str:
-        if not self.context:
-            default_prompt = users.get_context('♾️ Универсальный')
-            self.context.append({'role':'system', 'content': default_prompt})
-        return self.context[0].get('content')
-    
+        def form_system_prompt(self) -> str:
+            if not self.context:
+                default_prompt = users.get_context('♾️ Универсальный')
+                self.context.append({'role':'system', 'content': default_prompt})
+            return self.context[0].get('content')
+        
 
-    async def fetch_data(self, main_prompt: str, system_prompt: str) -> str:
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        body = {"id": self.models_with_ids.get(self.current_model), 
-                "inputs": {"main_prompt": main_prompt, 
-                           "system_prompt": system_prompt}}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url=self.url,headers=headers,json=body) as response:
-                try:
-                    response.raise_for_status()
-                    answer = await response.json()
-                    return answer['output'] or 'Error main'
-                except aiohttp.ClientResponseError as e:
-                    logger.error(e)
-                    return 'Error exception'
-                
-
-    async def gen_image(self, prompt: str) -> dict:
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        body = {"id": {
-                        True:'clzmbpo6k000u1pb2ar3udjff',
-                        False:'clzj1yoqc000i13n0li4mwa2b'
-                        }.get(prompt.startswith('-f')), 
-                "inputs": {"initial_prompt": prompt.lstrip('-f ')}}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url=self.url,headers=headers,json=body, timeout=90) as response:
-                try:
-                    response.raise_for_status()
-                    answer = await response.json()
+        async def fetch_data(self, main_prompt: str, system_prompt: str) -> str:
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+            body = {"id": self.models_with_ids.get(self.current_model), 
+                    "inputs": {"main_prompt": main_prompt, 
+                            "system_prompt": system_prompt}}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url=self.url,headers=headers,json=body) as response:
                     try:
-                        return json.loads(answer['output'])
-                    except Exception:
-                        match = re.search(r'https://[^"]+\.jpg', answer['output'])
-                        return {"photo":match.group(0) if match else None,
-                                "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
-                except Exception as e:
-                    match e:
-                        case asyncio.TimeoutError():
-                            logger.error(error_msg := 'Timeout error')
-                        case aiohttp.ClientResponseError():
-                            logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
-                        case KeyError():
-                            logger.error(error_msg := 'No output data')
-                        case _:
-                            logger.error(error_msg := f'Unexpected error: {str(e)}')
-                    return {'error': error_msg}
-                
+                        response.raise_for_status()
+                        answer = await response.json()
+                        return answer['output'] or 'Error main'
+                    except aiohttp.ClientResponseError as e:
+                        logger.error(e)
+                        return 'Error exception'
+                    
 
-    async def prompt(self, text, image = None) -> str:
-        system_prompt = self.form_system_prompt()
-        self.context.append({"role": "user","content": text})
-        main_prompt = self.form_main_prompt()
-        output = await self.fetch_data(main_prompt, system_prompt)
-        self.context.append({'role':'assistant', 'content': output})
-        return output
-    
+        async def gen_image(self, prompt: str) -> dict:
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+            body = {"id": {
+                            True:'clzmbpo6k000u1pb2ar3udjff',
+                            False:'clzj1yoqc000i13n0li4mwa2b'
+                            }.get(prompt.startswith('-f')), 
+                    "inputs": {"initial_prompt": prompt.lstrip('-f ')}}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url=self.url,headers=headers,json=body, timeout=90) as response:
+                    try:
+                        response.raise_for_status()
+                        answer = await response.json()
+                        try:
+                            return json.loads(answer['output'])
+                        except Exception:
+                            match = re.search(r'https://[^"]+\.jpg', answer['output'])
+                            return {"photo":match.group(0) if match else None,
+                                    "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
+                    except Exception as e:
+                        match e:
+                            case asyncio.TimeoutError():
+                                logger.error(error_msg := 'Timeout error')
+                            case aiohttp.ClientResponseError():
+                                logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
+                            case KeyError():
+                                logger.error(error_msg := 'No output data')
+                            case _:
+                                logger.error(error_msg := f'Unexpected error: {str(e)}')
+                        return {'error': error_msg}
+                    
 
-    async def tts(self, text: str) -> str | None:
-        headers = {"Authorization": f"Bearer {self.api_key}"}
-        body = {"id": 'cm6xrl05a0000s1qx4277g92y', "inputs": [text]}
-        async with httpx.AsyncClient(timeout=httpx.Timeout(240)) as client:
-            response = await client.post(url=self.url, headers=headers, json=body)
-            try:
-                response.raise_for_status()
-                answer: dict = response.json()
-                return answer.get('output')
-            except httpx.HTTPStatusError as e:
-                logger.error(e.response.status_code, e.response.text)
-                return None
+        async def prompt(self, text, image = None) -> str:
+            system_prompt = self.form_system_prompt()
+            self.context.append({"role": "user","content": text})
+            main_prompt = self.form_main_prompt()
+            output = await self.fetch_data(main_prompt, system_prompt)
+            self.context.append({'role':'assistant', 'content': output})
+            return output
+        
 
+        async def tts(self, text: str) -> str | None:
+            headers = {"Authorization": f"Bearer {self.api_key}"}
+            body = {"id": 'cm6xrl05a0000s1qx4277g92y', "inputs": [text]}
+            async with httpx.AsyncClient(timeout=httpx.Timeout(240)) as client:
+                response = await client.post(url=self.url, headers=headers, json=body)
+                try:
+                    response.raise_for_status()
+                    answer: dict = response.json()
+                    return answer.get('output')
+                except httpx.HTTPStatusError as e:
+                    logger.error(e.response.status_code, e.response.text)
+                    return None
 
 
 class FalAPI(BaseAPIInterface):
@@ -794,8 +767,9 @@ class FalAPI(BaseAPIInterface):
 
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
-    bots_lst: list = [NvidiaAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI, OpenRouterAPI]
-    bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
+    # bots_lst: list = [NvidiaAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI, OpenRouterAPI]
+    bots: dict = {v.name:v for k,v in BOTS.__dict__.items() if not k.startswith('__')}
+    # bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
     image_bots_lst: list = [FalAPI]
     image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
     
@@ -805,7 +779,6 @@ class APIFactory:
 
     def get(self, bot_name: str) -> BaseAPIInterface:
         return self._instances.setdefault(bot_name, self.bots[bot_name]())
-
 
 
 class RateLimitedQueueManager:
@@ -826,7 +799,6 @@ class RateLimitedQueueManager:
         limiter = self.limiters[api_name]
         async with limiter:
             return await task
-
 
 
 class ImageGenArgParser:
@@ -854,7 +826,6 @@ class ImageGenArgParser:
                 "🚫 Unable Raw mode in ultra: `/i --m no_raw OR wo_raw`",
                 sep='\n')
     
-
 
 class ConfigArgParser:
     """
@@ -926,7 +897,7 @@ class User:
         if context_name in users.context_dict['🖼️ Image_desc']:
             output_text += self.current_image_bot.get_info()
 
-        if isinstance(self.current_bot, GeminiAPI):
+        if isinstance(self.current_bot, BOTS.GeminiAPI):
             self.current_bot.reset_chat(context=context)
             return output_text
 
@@ -1044,7 +1015,6 @@ class User:
         output = await users.queue_manager.enqueue_request(self.current_image_bot.name,
                                     self.current_image_bot.gen_image(*args, **kwargs))
         return output
-
 
 
 class UsersMap():
@@ -1533,7 +1503,7 @@ class Handlers:
             await message.reply("Отсутствует текст")
         else:
             async with ChatActionSender.record_voice(chat_id=message.chat.id, bot=bot):
-                link = await GlifAPI().tts(text)
+                link = await BOTS.GlifAPI().tts(text)
                 if link:
                     await message.answer_voice(link)
 
