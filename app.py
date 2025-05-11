@@ -198,7 +198,7 @@ class BOTS:
             self.models = [
                 'gemini-2.5-pro-exp-03-25',
                 'gemini-2.5-flash-preview-04-17',
-                'gemini-2.0-flash-exp',
+                'gemini-2.0-flash-preview-image-generation',
                 'gemini-2.0-flash-lite',
                 ]
             self.current_model = self.models[0]
@@ -236,7 +236,7 @@ class BOTS:
                         return response.candidates[0].content.parts[1].text
                     except Exception:
                         return response.text
-                elif self.current_model == 'gemini-2.0-flash-exp':
+                elif 'image' in self.current_model:
                     try:
                         for part in response.candidates[0].content.parts:
                             if part.inline_data is not None:
