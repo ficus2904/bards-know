@@ -393,10 +393,9 @@ class BOTS:
             self.client = Mistral(api_key=self.api_key)
             self.models = [
                 'mistral-large-latest',
-                'pixtral-large-latest',
+                'mistral-medium-latest',
                 'mistral-small-latest',
-                'codestral-latest',
-                'pixtral-12b-2409',
+                'pixtral-large-latest',
                 ] # https://docs.mistral.ai/getting-started/models/
             self.current_model = self.models[0]
 
