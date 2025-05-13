@@ -1,3 +1,5 @@
+name: bots
+
 services:
   bard-knows:
     image: bard-knows:latest
@@ -7,6 +9,12 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: bard-knows
+    networks:
+      - network # Логическое имя сети внутри этого файла
     restart: unless-stopped
     volumes:
       - .:/app
+
+networks:
+  network: # Логическое имя сети внутри этого файла
+    driver: bridge

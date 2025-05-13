@@ -22,6 +22,7 @@ from google.genai.types import (
     GoogleSearch, 
     Part,
     GenerateImagesConfig,
+    HttpOptions
     )
 from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
@@ -211,15 +212,17 @@ class BOTS:
 
         def create_client(self, with_proxy: bool) -> None:
             self.proxy_status = with_proxy
-            http_options = {'api_version':'v1beta'}
+            # http_options = {'api_version':'v1beta'}
             if with_proxy:
-                http_options = http_options | {
-                    'base_url': os.getenv('WORKER'),
-                    'headers': {
-                        'X-Custom-Auth': os.getenv('AUTH_SECRET'),
-                        'EXTERNAL-URL': 'https://generativelanguage.googleapis.com',
-                        }
-                    }
+                http_options = HttpOptions(api_version='v1beta',
+                                        async_client_args={'proxy': os.getenv('SOCKS')})
+            else:
+                http_options = HttpOptions(api_version='v1beta',
+                                        base_url=os.getenv('WORKER'),
+                                        headers={
+                                            'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                                            'EXTERNAL-URL': 'https://generativelanguage.googleapis.com',
+                                            })
             self.client = genai.Client(api_key=self.api_key, http_options=http_options)
 
             
