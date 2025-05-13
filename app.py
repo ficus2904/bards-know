@@ -274,7 +274,7 @@ class BOTS:
             if isinstance(with_proxy, bool):
                 self.create_client(with_proxy)
             self.context = [{'role':'system', 'content': context}]
-            response_modalities = ['Text', 'Image'] if self.current_model == 'gemini-2.0-flash-exp' else None
+            response_modalities = ['Text', 'Image'] if 'image-generation' in self.current_model else None
             config = GenerateContentConfig(system_instruction=context, 
                                         safety_settings=self.safety_settings,
                                         response_modalities=response_modalities)
