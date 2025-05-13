@@ -53,7 +53,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
 from PIL import Image, ImageOps
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)
 warnings.simplefilter('ignore')
 
 # uv run app.py
