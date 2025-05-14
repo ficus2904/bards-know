@@ -194,7 +194,7 @@ class BOTS:
 
         def __init__(self):
             self.safety_settings = [SafetySetting(category=category, 
-                                                threshold="BLOCK_NONE") for category 
+                                    threshold="BLOCK_NONE") for category 
                                     in HarmCategory._member_names_[1:]]
             self.models = [
                 'gemini-2.5-pro-exp-03-25',
@@ -211,18 +211,21 @@ class BOTS:
 
 
         def create_client(self, with_proxy: bool) -> None:
-            self.proxy_status = with_proxy
             # http_options = {'api_version':'v1beta'}
-            if with_proxy:
-                http_options = HttpOptions(api_version='v1beta',
-                                        async_client_args={'proxy': os.getenv('SOCKS')})
+            if with_proxy and (socks := os.getenv('SOCKS')):
+                http_options = HttpOptions(
+                    api_version='v1beta',
+                    async_client_args={'proxy': socks}
+                    )
             else:
-                http_options = HttpOptions(api_version='v1beta',
-                                        base_url=os.getenv('WORKER'),
-                                        headers={
-                                            'X-Custom-Auth': os.getenv('AUTH_SECRET'),
-                                            'EXTERNAL-URL': 'https://generativelanguage.googleapis.com',
-                                            })
+                with_proxy = False
+                http_options = HttpOptions(
+                    api_version='v1beta',
+                    base_url=os.getenv('WORKER'),
+                    headers={'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                            'EXTERNAL-URL': 'https://generativelanguage.googleapis.com',}
+                            )
+            self.proxy_status = with_proxy
             self.client = genai.Client(api_key=self.api_key, http_options=http_options)
 
             
@@ -274,7 +277,7 @@ class BOTS:
             if isinstance(with_proxy, bool):
                 self.create_client(with_proxy)
             self.context = [{'role':'system', 'content': context}]
-            response_modalities = ['Text', 'Image'] if 'image-generation' in self.current_model else None
+            response_modalities = ['Text', 'Image'] if 'image' in self.current_model else None
             config = GenerateContentConfig(system_instruction=context, 
                                         safety_settings=self.safety_settings,
                                         response_modalities=response_modalities)
