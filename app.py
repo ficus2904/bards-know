@@ -211,20 +211,18 @@ class BOTS:
 
 
         def create_client(self, with_proxy: bool) -> None:
-            # http_options = {'api_version':'v1beta'}
-            if with_proxy and (socks := os.getenv('SOCKS')):
-                http_options = HttpOptions(
-                    api_version='v1beta',
-                    async_client_args={'proxy': socks}
-                    )
-            else:
-                with_proxy = False
-                http_options = HttpOptions(
-                    api_version='v1beta',
-                    base_url=os.getenv('WORKER'),
-                    headers={'X-Custom-Auth': os.getenv('AUTH_SECRET'),
-                            'EXTERNAL-URL': 'https://generativelanguage.googleapis.com',}
-                            )
+            http_options = {'api_version':'v1beta'}
+            if with_proxy:
+                if socks := os.getenv('SOCKS'):
+                    http_options = HttpOptions(
+                        async_client_args={'proxy': socks},
+                        **http_options)
+                else:
+                    http_options = HttpOptions(
+                        base_url=os.getenv('WORKER'),
+                        headers={'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                                'EXTERNAL-URL': 'https://generativelanguage.googleapis.com'},
+                        **http_options)
             self.proxy_status = with_proxy
             self.client = genai.Client(api_key=self.api_key, http_options=http_options)
 
@@ -360,16 +358,21 @@ class BOTS:
 
 
         def create_client(self, with_proxy: bool) -> None:
-            self.proxy_status = with_proxy
-            kwargs = {'api_key': self.api_key}
+            '''Create a Groq client with or without proxy'''
             if with_proxy:
-                kwargs = kwargs | {
+                if socks := os.getenv('SOCKS'):
+                    kwargs = {'http_client': httpx.AsyncClient(proxy=socks)}
+                else:
+                    kwargs = {
                             'base_url': os.getenv('WORKER'),
                             'default_headers':{
                                 'X-Custom-Auth': os.getenv('AUTH_SECRET'),
                                 'EXTERNAL-URL': 'https://api.groq.com',}
-                        }
-            self.client = AsyncGroq(**kwargs)
+                            }
+            else:
+                kwargs = {}
+            self.proxy_status = with_proxy
+            self.client = AsyncGroq(api_key=self.api_key,**kwargs)
 
         async def prompt(self, text: str, image = None) -> str:
             if image:
