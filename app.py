@@ -197,15 +197,15 @@ class BOTS:
                                     threshold="BLOCK_NONE") for category 
                                     in HarmCategory._member_names_[1:]]
             self.models = [
-                'gemini-2.5-pro-exp-03-25',
                 'gemini-2.5-flash-preview-04-17',
+                'gemini-2.5-pro-exp-03-25',
                 'gemini-2.0-flash-preview-image-generation',
                 'gemini-2.0-flash-lite',
                 ]
             self.current_model = self.models[0]
             self.chat = None
             self.proxy_status: bool = True
-            self.search_status: bool = False
+            self.search_status: bool = True
             self.client: genai.Client = None
             self.reset_chat(with_proxy=self.proxy_status)
 
