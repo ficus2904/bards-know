@@ -12,7 +12,7 @@ from loguru import logger
 import warnings
 from argparse import ArgumentParser
 from mistralai import Mistral
-from google import genai
+from google.genai import Client as GeminiClient
 from google.genai import errors as GeminiError
 from google.genai.types import (
     GenerateContentConfig, 
@@ -39,8 +39,9 @@ from aiogram import (
 from aiogram.types import (
     TelegramObject, 
     Message, 
-    CallbackQuery, 
-    KeyboardButtonPollType,
+    CallbackQuery,
+    ReplyKeyboardMarkup,
+    InlineKeyboardMarkup
     )
 from aiogram.types import BufferedInputFile as BIF
 from aiogram.utils.markdown import text
@@ -49,7 +50,6 @@ from aiogram.filters import Command, CommandStart
 from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
 from aiogram.utils.chat_action import ChatActionSender
-# from aiogram import flags
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from md2tgmd import escape
 from PIL import Image, ImageOps
@@ -91,7 +91,10 @@ class UserFilterMiddleware(BaseMiddleware):
     Raises:
         Exception: If an error occurs while calling the handler, it logs the exception and sends an error message to the user.
     """
-    async def __call__(self, handler: callable, event: TelegramObject | CallbackQuery, data: dict):
+    async def __call__(self, 
+                        handler: callable, # # type: ignore
+                        event: TelegramObject | CallbackQuery, 
+                        data: dict):
         USER_ID = data['event_from_user'].id
         if user_name:= users.db.check_user(USER_ID):
             data.setdefault('user_name', user_name)
@@ -194,7 +197,7 @@ class BOTS:
 
         def __init__(self):
             self.safety_settings = [SafetySetting(category=category, 
-                                    threshold="BLOCK_NONE") for category 
+                                    threshold="BLOCK_NONE") for category # type: ignore
                                     in HarmCategory._member_names_[1:]]
             self.models = [
                 'gemini-2.5-flash-preview-04-17',
@@ -206,7 +209,7 @@ class BOTS:
             self.chat = None
             self.proxy_status: bool = True
             self.search_status: bool = True
-            self.client: genai.Client = None
+            self.client: GeminiClient = None
             self.reset_chat(with_proxy=self.proxy_status)
 
 
@@ -214,26 +217,28 @@ class BOTS:
             http_options = {'api_version':'v1beta'}
             if with_proxy:
                 if socks := os.getenv('SOCKS'):
-                    http_options = HttpOptions(
+                    http_options: HttpOptions = HttpOptions(
                         async_client_args={'proxy': socks},
                         **http_options)
                 else:
-                    http_options = HttpOptions(
+                    http_options: HttpOptions = HttpOptions(
                         base_url=os.getenv('WORKER'),
                         headers={'X-Custom-Auth': os.getenv('AUTH_SECRET'),
                                 'EXTERNAL-URL': 'https://generativelanguage.googleapis.com'},
                         **http_options)
             self.proxy_status = with_proxy
-            self.client = genai.Client(api_key=self.api_key, http_options=http_options)
+            self.client = GeminiClient(api_key=self.api_key, http_options=http_options) # type: ignore
 
             
         async def prompt(self, 
-                        text: str = None, 
-                        data: list = None, 
-                        attempts: int = 0) -> str | dict:
+                        text: str | None = None, 
+                        data: list | None = None, 
+                        attempts: int = 0) -> str | dict | None:
             try:
                 # content = [Part.from_bytes(**data), text] if data else text
-                content = [*[Part.from_bytes(**subdata) for subdata in data], text] if data else text
+                content = [
+                    *[Part.from_bytes(**subdata) # type: ignore
+                    for subdata in data], text] if data else text
                 response = await self.chat.send_message(content)
                 if 'thinking' in self.current_model:
                     try:
@@ -271,7 +276,9 @@ class BOTS:
                 return f'Exception in Gemini: {e}'
         
         
-        def reset_chat(self, context: str = None, with_proxy: bool = None):
+        def reset_chat(self, 
+                       context: str | None = None, 
+                       with_proxy: bool | None = None):
             if isinstance(with_proxy, bool):
                 self.create_client(with_proxy)
             self.context = [{'role':'system', 'content': context}]
@@ -282,10 +289,10 @@ class BOTS:
             self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
 
 
-        async def change_chat_config(self, clear: bool = None, 
-                                    search: int = None, 
-                                    new_model: str = None, 
-                                    proxy: int = None) -> str | None:
+        async def change_chat_config(self, clear: bool | None = None, 
+                                    search: int | None = None, 
+                                    new_model: str | None = None, 
+                                    proxy: int | None = None) -> str | None:
             if self.chat._model != self.current_model:
                 return self.reset_chat()
             
@@ -321,7 +328,7 @@ class BOTS:
             return int(self.chat._config.system_instruction is not None) + len(self.chat._curated_history)
 
 
-        async def gen_image(self, prompt, image_size: str = '9:16', model: str = None):
+        async def gen_image(self, prompt, image_size: str = '9:16', model: str | None = None):
             response = self.client.models.generate_images(
                 model = f'imagen-3.0-generate-00{model or 2}',
                 prompt = prompt,
@@ -329,8 +336,10 @@ class BOTS:
                     number_of_images=1,
                     include_rai_reason=True,
                     output_mime_type='image/jpeg',
-                    safety_filter_level="BLOCK_LOW_AND_ABOVE", # BLOCK_LOW_AND_ABOVE BLOCK_ONLY_HIGH
-                    person_generation="ALLOW_ADULT", # ALLOW_ADULT ALLOW_ALL
+                    safety_filter_level="BLOCK_LOW_AND_ABOVE", # type: ignore
+                    # BLOCK_LOW_AND_ABOVE BLOCK_ONLY_HIGH
+                    person_generation="ALLOW_ADULT", # type: ignore
+                    # ALLOW_ADULT ALLOW_ALL
                     output_compression_quality=95,
                     aspect_ratio=image_size
                 )
@@ -662,7 +671,7 @@ class BOTS:
                     answer: dict = response.json()
                     return answer.get('output')
                 except httpx.HTTPStatusError as e:
-                    logger.error(e.response.status_code, e.response.text)
+                    logger.error(f"{e.response.status_code} {e.response.text}")
                     return None
 
 
@@ -732,7 +741,7 @@ class FalAPI(BaseAPIInterface):
         return kwargs
 
 
-    async def gen_image(self, prompt: str = None, 
+    async def gen_image(self, prompt: str | None = None, 
                         image_size: str | None = None, 
                         model: str | None = None) -> str:
 
@@ -816,7 +825,7 @@ class ImageGenArgParser:
         self.parser.add_argument('--ar', dest='aspect_ratio', help='Aspect ratio (e.g., 9:16)')
         self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[1, 2]
 
-    def get_args(self, args_str: str) -> tuple[str,str,str]:
+    def get_args(self, args_str: str) -> tuple[str,str,str] | tuple[str,None,None]:
         try:
             prompt, flags = args_str.split('--', 1) if '--' in args_str else (args_str, '')
             args = self.parser.parse_args((f"--{flags}" if flags else '').split())
@@ -931,7 +940,7 @@ class User:
                                     if not is_gemini else self.current_bot.length()}',
             sep='\n')
         if delete_prev:
-            await bot.delete_message(**self.last_msg)
+            await bot.delete_message(**self.last_msg) # type: ignore
         return output, self.make_conf_btns()
     
 
@@ -988,7 +997,7 @@ class User:
                 self.current_bot.context.clear()
                 status = 'полностью'
         if delete_prev:
-            await bot.delete_message(**self.last_msg)
+            await bot.delete_message(**self.last_msg) # type: ignore
         return f'🧹 Диалог очищен {status}', None
     
 
@@ -1066,7 +1075,7 @@ class UsersMap():
         self.config_arg_parser = ConfigArgParser()
 
 
-    def create_builder(self) -> ReplyKeyboardBuilder:
+    def create_builder(self) -> ReplyKeyboardMarkup | InlineKeyboardMarkup:
         builder = ReplyKeyboardBuilder()
         for display_text in self.buttons:
             builder.button(text=display_text)
@@ -1096,7 +1105,7 @@ class UsersMap():
                 return img_b64
             # Уменьшить размер изображения
             img = ImageOps.exif_transpose(img)
-            img.thumbnail((img.size[0] * 0.9, img.size[1] * 0.9), Image.ADAPTIVE)
+            img.thumbnail((img.size[0] * 0.9, img.size[1] * 0.9), Image.ADAPTIVE) # type: ignore
             # Уменьшить качество, если размер все еще превышает лимит
             quality = max(10, quality - 5)
             # Рекурсивный вызов для сжатия изображения с новыми параметрами
@@ -1196,18 +1205,21 @@ class UsersMap():
         return split_index
 
 
-    def set_kwargs(self, text: str = None, reply_markup = None, parse_mode: ParseMode = None) -> dict:
+    def set_kwargs(self, 
+                   text: str | None = None, 
+                   reply_markup: ReplyKeyboardBuilder | None = None, 
+                   parse_mode: ParseMode | None = None) -> dict:
         return {'text': text or self.help, 
                 'parse_mode': parse_mode or self.PARSE_MODE, 
                 'reply_markup': reply_markup or self.builder}
 
 
-    async def send_split_response(self, message: Message | CallbackQuery, output: str):
+    async def send_split_response(self, message: Message, output: str):
         async for part in users.split_text(output):
             try:
-                await message.answer(**users.set_kwargs(escape(part)))
+                await message.answer(**users.set_kwargs(escape(part))) # type: ignore
             except exceptions.TelegramBadRequest:
-                await message.answer(**users.set_kwargs(part, parse_mode=ParseMode.HTML))
+                await message.answer(**users.set_kwargs(part, parse_mode=ParseMode.HTML)) # type: ignore
 
 
     def create_help(self) -> str:
@@ -1238,23 +1250,26 @@ class UsersMap():
         return ExpandableBlockQuote(text(*help_items_simple, sep='\n')).as_markdown()
 
 
-    async def check_and_clear(self, message: Message, type_prompt: str, user_name: str = '') -> User:
-        user: User = self.get(message.from_user.id)
+    async def check_and_clear(self, 
+                              message: Message | CallbackQuery, 
+                              type_prompt: str, 
+                              user_name: str = '') -> User:
+        user: User = self.get(message.from_user.id)  # type: ignore
         if type_prompt in ['callback']:
             return user
         elif type_prompt in ['gen_image']:
-            logger.info(f'{user_name or message.from_user.id}: "{message.text}"')
+            logger.info(f'{user_name or message.from_user.id}: "{message.text}"') # type: ignore
             return user
         ## clear dialog context after 1 hour
         if (time() - user.time_dump) > 3600:
             user.clear()
         user.time_dump = time()
         if type_prompt == 'text':
-            user.text = self.buttons.get(message.text, message.text)
-            type_prompt = message.text
+            user.text = self.buttons.get(message.text, message.text) # type: ignore
+            type_prompt = message.text # type: ignore
         else:
-            user.text = message.caption or f"the provided {type_prompt}."
-            type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt)
+            user.text = message.caption or f"the provided {type_prompt}." # type: ignore
+            type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt) # type: ignore
         user.text = user.text.lstrip('/')
         if user_name:
             logger.info(f'{user_name}: "{type_prompt if len(type_prompt) < 100 else 'too long prompt'}"')
@@ -1262,7 +1277,7 @@ class UsersMap():
         return user
 
 
-    def get_context(self, key: str, data: dict = None) -> str | dict | None:
+    def get_context(self, key: str, data: dict | None = None) -> str | dict | None:
         '''Get target context in multilevel dict structure'''
         data = data or self.context_dict
         return data.get(key) or next(
@@ -1296,7 +1311,7 @@ class UsersMap():
 
 
 users = UsersMap()
-bot = Bot(token=os.getenv('TELEGRAM_API_KEY'))
+bot = Bot(token=os.getenv('TELEGRAM_API_KEY') or '')
 dp = Dispatcher()
 dp.message.middleware(UserFilterMiddleware())
 dp.callback_query.middleware(UserFilterMiddleware())
@@ -1305,9 +1320,9 @@ dp.callback_query.middleware(UserFilterMiddleware())
 class Handlers:
     @dp.message(CommandStart())
     async def start_handler(message: Message):
-        output = f'Доступ открыт.\n'\
-                f'Добро пожаловать {message.from_user.first_name}!'\
-                '\nОтправьте /help для дополнительной информации'
+        output = ('Доступ открыт.\nДобро пожаловать '
+            f'{message.from_user.first_name}!\n' # type: ignore
+            'Отправьте /help для дополнительной информации')
         await message.answer(output)
 
 
@@ -1316,7 +1331,7 @@ class Handlers:
         if user_name != 'ADMIN':
             await message.reply("You don't have admin privileges")
             return
-        args = message.text.split(maxsplit=2)
+        args = message.text.split(maxsplit=2) # type: ignore
         if (len(args) == 1) or (len(args) != 3 and not args[1].startswith('-')):
             await message.reply("Usage: `/context [-i/-r/-a] prompt_name [| prompt]`")
             return
@@ -1324,11 +1339,11 @@ class Handlers:
         _, arg, prompt_body = args
         if arg == '-i':
             if prompt_body in ['c', 'current']:
-                text = users.get_current_context(message.from_user.id)
+                text = users.get_current_context(message.from_user.id) # type: ignore
             else:
                 text = users.get_context(prompt_body) or 'Context name not found'
             text = f'```plaintext\n{text}\n```'
-            await message.reply(**users.set_kwargs(escape(text)))
+            await message.reply(**users.set_kwargs(escape(text))) # type: ignore
             return
         
         if arg == '-r' and prompt_body in users.context_dict:
@@ -1413,8 +1428,8 @@ class Handlers:
             if user_name != 'ADMIN':
                 raise Exception("You don't have admin privileges")
             
-            is_add_command = message.text.startswith('/add')
-            args = message.text.split(maxsplit=1)
+            is_add_command = message.text.startswith('/add') # type: ignore
+            args = message.text.split(maxsplit=1) # type: ignore
             if len(args) < 2:
                 raise Exception(f"Usage: `/add {'123456 ' if is_add_command else ''}UserName`")
         
@@ -1445,12 +1460,12 @@ class Handlers:
 
     @dp.message(Command(commands=["conf"]))
     async def config_handler(message: Message, user_name: str):
-        user: User = users.get(message.from_user.id)
+        user: User = users.get(message.from_user.id) # type: ignore
         if user_name != 'ADMIN':
             await message.reply("You don't have admin privileges")
             return
         
-        args = message.text.split(maxsplit=1)
+        args = message.text.split(maxsplit=1) # type: ignore
 
         if len(args) != 2:
             await message.reply(escape(
@@ -1464,7 +1479,7 @@ class Handlers:
     @dp.message(Command(commands=["i","I","image"]))
     async def image_gen_handler(message: Message, user_name: str):
         user = await users.check_and_clear(message, "gen_image", user_name)
-        args = message.text.split(maxsplit=1)
+        args = message.text.split(maxsplit=1) # type: ignore
         if len(args) != 2:
             await message.reply(escape(
                 users.image_arg_parser.get_usage() + user.current_image_bot.get_info()
@@ -1483,7 +1498,7 @@ class Handlers:
     @dp.message(Command(commands=["imagen"]))
     async def imagen_handler(message: Message, user_name: str):
         user = await users.check_and_clear(message, "gen_image", user_name)
-        args = message.text.split(maxsplit=1)
+        args = message.text.split(maxsplit=1) # type: ignore
         if len(args) != 2 or (is_gemini := user.current_bot.name != 'gemini'):
             text = 'Переключите на gemini' if is_gemini else "Usage: `/imagen prompt --ar 9:16 --m 2`"
             await message.reply(escape(text), parse_mode=users.PARSE_MODE)
@@ -1505,7 +1520,7 @@ class Handlers:
 
     @dp.message(Command(commands=["tts"]))
     async def generate_audio_story(message: Message):
-        parts = message.text.split(maxsplit=1)
+        parts = message.text.split(maxsplit=1) # type: ignore
         text = parts[1] if len(parts) == 2 else None
         if not text:
             await message.reply("Отсутствует текст")
@@ -1523,17 +1538,17 @@ class Handlers:
                          'message_id': message.message_id,}
         if (simple_cmd := user.text.casefold()) in users.simple_cmds:
             output, builder_inline = await getattr(user, simple_cmd)(True)
-            kwargs = users.set_kwargs(escape(output), builder_inline)
+            kwargs: dict = users.set_kwargs(escape(output), builder_inline)
         else:
-            command_dict = {'bot': [user.api_factory.bots, 'бота'],
-                            'model': [user.current_bot.models, 'модель'],
-                            'context':[users.context_dict, 'контекст'],
-                            'prompts':[users.template_prompts, 'промпт']}
-            items = command_dict.get(user.text.split('_')[-1])
+            command_dict: dict[str, list] = {'bot': (user.api_factory.bots, 'бота'),
+                            'model': (user.current_bot.models, 'модель'),
+                            'context':(users.context_dict, 'контекст'),
+                            'prompts':(users.template_prompts, 'промпт')}
+            items: list[tuple[dict, str]] = command_dict[user.text.split('_')[-1]]
             builder_inline = users.create_inline_kb(items[0], user.text)
-            kwargs = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
+            kwargs: dict = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
         
-        await message.answer(**kwargs)
+        await message.answer(**kwargs) # type: ignore
 
 
     @dp.message(F.media_group_id)
@@ -1543,8 +1558,8 @@ class Handlers:
         data_type = mime_type.split('/')[0]
         user = await users.check_and_clear(message, data_type, user_name)
         if data_type == 'image':
-            data_info = data_info[-1]
-        data = await bot.download(data_info.file_id)
+            data_info = data_info[-1] # type: ignore
+        data = await bot.download(data_info.file_id) # type: ignore
         current_dict = {'data': data.getvalue(), 'mime_type': mime_type}
 
         if user.media_group_buffer is None:
@@ -1560,7 +1575,7 @@ class Handlers:
             if isinstance(output, str):
                 await users.send_split_response(message, output)
             else:
-                await message.answer_photo(**output)
+                await message.answer_photo(**output) # type: ignore
 
 
     @dp.message(F.content_type.in_({'photo'}))
@@ -1572,50 +1587,50 @@ class Handlers:
             await message.reply("Выбран gemini")
 
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
-            tg_photo = await bot.download(message.photo[-1].file_id)
+            tg_photo = await bot.download(message.photo[-1].file_id)  # type: ignore
             output = await user.prompt(user.text, [{'data': tg_photo.getvalue(), 
                                                     'mime_type': 'image/jpeg'}])
             if isinstance(output, str):
                 await users.send_split_response(message, output)
             else:
-                await message.answer_photo(**output)
+                await message.answer_photo(**output) # type: ignore
 
 
     @dp.message(F.content_type.in_({'voice','video_note','video','document'}))
     async def data_handler(message: Message, user_name: str):
         data_info = getattr(message, message.content_type, None)
         mime_type = getattr(data_info, 'mime_type', None)
-        data_type = mime_type.split('/')[0]
+        data_type = mime_type.split('/')[0] # type: ignore
         user = await users.check_and_clear(message, data_type, user_name)
         if user.current_bot.name not in {'gemini'}:
             await user.change_bot('gemini')
 
         await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
-            data = await bot.download(data_info.file_id)
+            data = await bot.download(data_info.file_id) # type: ignore
             output = await user.prompt(user.text, [{'data': data.getvalue(), 'mime_type': mime_type}])
             if isinstance(output, str):
                 await users.send_split_response(message, output)
             else:
-                await message.answer_photo(**output)
+                await message.answer_photo(**output) # type: ignore
 
 
 
     @dp.message(F.text.startswith('/') | F.text.casefold().startswith('help'))
     async def unknown_handler(message: Message, user_name: str):
         await bot.delete_message(message.chat.id, message.message_id)
-        await message.answer(**users.set_kwargs())
+        await message.answer(**users.set_kwargs()) # type: ignore
 
 
     @dp.message(F.content_type.in_({'text'}))
-    async def text_handler(message: Message | KeyboardButtonPollType, user_name: str):
+    async def text_handler(message: Message, user_name: str):
         user = await users.check_and_clear(message, 'text', user_name)
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
             output = await user.prompt(user.text)
             if isinstance(output, str):
                 await users.send_split_response(message, output)
             else:
-                await message.answer_photo(**output)
+                await message.answer_photo(**output) # type: ignore
         
 
 
@@ -1626,32 +1641,32 @@ class Callbacks:
         output = await getattr(user, callback_data.cb_type)(callback_data.name)
         is_final_set = isinstance(output, str) and callback_data.name != '◀️'
         reply_markup = None if is_final_set else users.create_inline_kb(output, user.text)
-        await query.message.edit_reply_markup(reply_markup=reply_markup)
+        await query.message.edit_reply_markup(reply_markup=reply_markup) # type: ignore
         if is_final_set:
-            await query.message.edit_text(output)
+            await query.message.edit_text(output) # type: ignore
             # await bot.delete_message(query.message.chat.id, user.last_msg['message_id'])
-            await bot.delete_message(**user.last_msg)
+            await bot.delete_message(**user.last_msg) # type: ignore
 
 
     @dp.callback_query(CallbackClass.filter(F.cb_type.contains('conf')))
     async def conf_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
         user = await users.check_and_clear(query, 'callback')
         var_name = f'{callback_data.name.split()[-1]}'
-        kwargs = {var_name: not getattr(user.current_bot, f'{var_name}_status')}
+        kwargs: dict = {var_name: not getattr(user.current_bot, f'{var_name}_status')}
         await user.change_config(kwargs)
-        await query.message.edit_reply_markup(reply_markup=user.make_conf_btns())
+        await query.message.edit_reply_markup(reply_markup=user.make_conf_btns()) # type: ignore
 
 
 
     @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
     async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
         user = await users.check_and_clear(query, 'callback')
-        await query.message.edit_text(f'{callback_data.name} 👇')
-        async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot): 
+        await query.message.edit_text(f'{callback_data.name} 👇') # type: ignore
+        async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot):  # type: ignore
             output = await user.template_prompts(callback_data.name)
-        await users.send_split_response(query.message, output)
+        await users.send_split_response(query.message, output) # type: ignore
         # await bot.delete_message(query.message.chat.id, user.last_msg['message_id'])
-        await bot.delete_message(**user.last_msg)
+        await bot.delete_message(**user.last_msg) # type: ignore
 
 
 
