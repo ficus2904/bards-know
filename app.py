@@ -103,7 +103,9 @@ class UserFilterMiddleware(BaseMiddleware):
             except Exception as e:
                 logger.exception(e)
                 if isinstance(event, Message):
-                    await bot.send_message(event.chat.id, f'❌ Error: {e}')
+                    await bot.send_message(
+                        event.chat.id, **users.set_kwargs(f'❌ Error: {e}'[:200])
+                        ) # type: ignore
         else:
             if isinstance(event, Message):
                 logger.warning(f'Unknown user {USER_ID}')
