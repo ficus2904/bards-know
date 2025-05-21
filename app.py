@@ -1,6 +1,7 @@
 import os
 import io
 import re
+import wave
 import json
 import httpx
 import atexit
@@ -14,16 +15,7 @@ from argparse import ArgumentParser
 from mistralai import Mistral
 from google.genai import Client as GeminiClient
 from google.genai import errors as GeminiError
-from google.genai.types import (
-    GenerateContentConfig, 
-    SafetySetting, 
-    HarmCategory, 
-    Tool, 
-    GoogleSearch, 
-    Part,
-    GenerateImagesConfig,
-    HttpOptions
-    )
+from google.genai import types
 from abc import ABC, abstractmethod
 from aiolimiter import AsyncLimiter
 from functools import lru_cache
@@ -198,19 +190,18 @@ class BOTS:
         name = 'gemini'
 
         def __init__(self):
-            self.safety_settings = [SafetySetting(category=category, 
+            self.safety_settings = [types.SafetySetting(category=category, 
                                     threshold="BLOCK_NONE") for category # type: ignore
-                                    in HarmCategory._member_names_[1:]]
+                                    in types.HarmCategory._member_names_[1:]]
             self.models = [
-                'gemini-2.5-flash-preview-04-17',
-                'gemini-2.5-pro-exp-03-25',
+                'gemini-2.5-flash-preview-05-20',
                 'gemini-2.0-flash-preview-image-generation',
                 'gemini-2.0-flash-lite',
                 ]
             self.current_model = self.models[0]
             self.chat = None
             self.proxy_status: bool = True
-            self.search_status: bool = True
+            self.search_status: bool = False
             self.client: GeminiClient = None
             self.reset_chat(with_proxy=self.proxy_status)
 
@@ -219,11 +210,11 @@ class BOTS:
             http_options = {'api_version':'v1beta'}
             if with_proxy:
                 if socks := os.getenv('SOCKS'):
-                    http_options: HttpOptions = HttpOptions(
+                    http_options = types.HttpOptions(
                         async_client_args={'proxy': socks},
                         **http_options)
                 else:
-                    http_options: HttpOptions = HttpOptions(
+                    http_options = types.HttpOptions(
                         base_url=os.getenv('WORKER'),
                         headers={'X-Custom-Auth': os.getenv('AUTH_SECRET'),
                                 'EXTERNAL-URL': 'https://generativelanguage.googleapis.com'},
@@ -237,9 +228,8 @@ class BOTS:
                         data: list | None = None, 
                         attempts: int = 0) -> str | dict | None:
             try:
-                # content = [Part.from_bytes(**data), text] if data else text
                 content = [
-                    *[Part.from_bytes(**subdata) # type: ignore
+                    *[types.Part.from_bytes(**subdata) # type: ignore
                     for subdata in data], text] if data else text
                 response = await self.chat.send_message(content)
                 if 'thinking' in self.current_model:
@@ -285,7 +275,7 @@ class BOTS:
                 self.create_client(with_proxy)
             self.context = [{'role':'system', 'content': context}]
             response_modalities = ['Text', 'Image'] if 'image' in self.current_model else None
-            config = GenerateContentConfig(system_instruction=context, 
+            config = types.GenerateContentConfig(system_instruction=context, 
                                         safety_settings=self.safety_settings,
                                         response_modalities=response_modalities)
             self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
@@ -318,7 +308,8 @@ class BOTS:
 
             if search is not None:
                 self.search_status = bool(search)
-                self.chat._config.tools = [Tool(google_search=GoogleSearch())] if search else None
+                self.chat._config.tools = [types.Tool(google_search=types.GoogleSearch(),
+                                                url_context = types.UrlContext())] if search else None
                 return 'Поиск в gemini включен ✅' if search else 'Поиск в gemini выключен ❌'
             
             if isinstance(proxy, int):
@@ -334,7 +325,7 @@ class BOTS:
             response = self.client.models.generate_images(
                 model = f'imagen-3.0-generate-00{model or 2}',
                 prompt = prompt,
-                config = GenerateImagesConfig(
+                config = types.GenerateImagesConfig(
                     number_of_images=1,
                     include_rai_reason=True,
                     output_mime_type='image/jpeg',
@@ -349,6 +340,41 @@ class BOTS:
             output = response.generated_images[0]
             return output.image or output.rai_filtered_reason
         
+
+        async def tts(self, text: str, attempts: int = 0) -> BIF | None:
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model="gemini-2.5-flash-preview-tts",
+                    contents=text,
+                    config=types.GenerateContentConfig(
+                        safety_settings=self.safety_settings,
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name='Kore'
+                                    )
+                                )
+                        ),
+                    )
+                )
+                output_bytes: bytes = response.candidates[0].content.parts[0].inline_data.data
+                wav_buffer = io.BytesIO()
+                with wave.open(wav_buffer, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(24000)
+                    wf.writeframes(output_bytes)
+                    return BIF(wav_buffer.getvalue(), filename='tts.wav')
+            except GeminiError.APIError as e:
+                match e.code:
+                    case code if 500 <= code < 600:
+                        if attempts < 3:
+                            await asyncio.sleep(5)
+                            logger.warning(f'Gemini attempt: {attempts}')
+                            return await self.tts(text, attempts+1)
+
+                raise Exception(f'Gemini error {e.code}: {e}')
 
 
     class GroqAPI(BaseAPIInterface):
@@ -1257,7 +1283,7 @@ class UsersMap():
                               type_prompt: str, 
                               user_name: str = '') -> User:
         user: User = self.get(message.from_user.id)  # type: ignore
-        if type_prompt in ['callback']:
+        if type_prompt in {'callback','tts'}:
             return user
         elif type_prompt in ['gen_image']:
             logger.info(f'{user_name or message.from_user.id}: "{message.text}"') # type: ignore
@@ -1313,7 +1339,7 @@ class UsersMap():
 
 
 users = UsersMap()
-bot = Bot(token=os.getenv('TELEGRAM_API_KEY') or '')
+bot = Bot(token=os.environ['TELEGRAM_API_KEY'])
 dp = Dispatcher()
 dp.message.middleware(UserFilterMiddleware())
 dp.callback_query.middleware(UserFilterMiddleware())
@@ -1521,16 +1547,19 @@ class Handlers:
 
 
     @dp.message(Command(commands=["tts"]))
-    async def generate_audio_story(message: Message):
+    async def generate_audio_story(message: Message, user_name: str):
+        user = await users.check_and_clear(message, 'tts', user_name)
         parts = message.text.split(maxsplit=1) # type: ignore
         text = parts[1] if len(parts) == 2 else None
-        if not text:
-            await message.reply("Отсутствует текст")
+        if (not text) or (user.current_bot.name == 'gemini'):
+            await message.reply("Отсутствует текст/переключите модель на gemini")
         else:
             async with ChatActionSender.record_voice(chat_id=message.chat.id, bot=bot):
-                link = await BOTS.GlifAPI().tts(text)
+                link = await user.current_bot.tts(text)
                 if link:
                     await message.answer_voice(link)
+
+
 
 
     @dp.message(F.text.in_(users.buttons) | F.text.casefold().in_(users.simple_cmds))
