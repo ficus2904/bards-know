@@ -1303,7 +1303,8 @@ class UsersMap():
             type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt) # type: ignore
         user.text = user.text.lstrip('/')
         if user_name:
-            logger.info(f'{user_name}: "{type_prompt if len(type_prompt) < 100 else 'too long prompt'}"')
+            # logger.info(f'{user_name}: "{type_prompt if len(type_prompt) < 100 else 'too long prompt'}"')
+            logger.info(f'{user_name}: {type_prompt[:100]}...')
          
         return user
 
