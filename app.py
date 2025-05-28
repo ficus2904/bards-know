@@ -609,19 +609,19 @@ class BOTS:
 
         def __init__(self):
             self.url = "https://simple-api.glif.app"
+            self.headers: dict[str,str] = {"Authorization": f"Bearer {self.api_key}"}
             self.models_with_ids = {
-                                    "claude 3.7 sonnet":"clxwyy4pf0003jo5w0uddefhd",
-                                    "OpenAI o3 mini":"clxx330wj000ipbq9rwh4hmp3",
-                                    "Grok 2":"clyzjs4ht0000iwvdlacfm44y",
-                                    }
+                "Claude 4 sonnet":"clxwyy4pf0003jo5w0uddefhd",
+                "Claude 4 opus":"clyzjs4ht0000iwvdlacfm44y",
+                "OpenAI o3 mini":"clxx330wj000ipbq9rwh4hmp3",
+                }
             self.models = list(self.models_with_ids.keys())
             self.current_model = self.models[0]
 
 
         def form_main_prompt(self) -> str:
             if len(self.context) > 2:
-                initial_text = 'Use next json schema as context of our previous dialog: '
-                return initial_text + str(self.context[1:])
+                return f'Use next json schema as context of our previous dialog: {self.context[1:]}'
             else:
                 return self.context[-1].get('content')
         
@@ -634,12 +634,12 @@ class BOTS:
         
 
         async def fetch_data(self, main_prompt: str, system_prompt: str) -> str:
-            headers = {"Authorization": f"Bearer {self.api_key}"}
-            body = {"id": self.models_with_ids.get(self.current_model), 
-                    "inputs": {"main_prompt": main_prompt, 
-                            "system_prompt": system_prompt}}
+            body: dict[str,str] = {
+                "id": self.models_with_ids.get(self.current_model), 
+                "inputs": {"main_prompt": main_prompt, "system_prompt": system_prompt}
+                }
             async with aiohttp.ClientSession() as session:
-                async with session.post(url=self.url,headers=headers,json=body) as response:
+                async with session.post(url=self.url, headers=self.headers, json=body) as response:
                     try:
                         response.raise_for_status()
                         answer = await response.json()
@@ -650,14 +650,14 @@ class BOTS:
                     
 
         async def gen_image(self, prompt: str) -> dict:
-            headers = {"Authorization": f"Bearer {self.api_key}"}
-            body = {"id": {
-                            True:'clzmbpo6k000u1pb2ar3udjff',
-                            False:'clzj1yoqc000i13n0li4mwa2b'
-                            }.get(prompt.startswith('-f')), 
-                    "inputs": {"initial_prompt": prompt.lstrip('-f ')}}
+            '''DEPRECATED'''
+            body: dict[str,str] = {
+                "id": {True:'clzmbpo6k000u1pb2ar3udjff',
+                    False:'clzj1yoqc000i13n0li4mwa2b'}.get(prompt.startswith('-f')), 
+                "inputs": {"initial_prompt": prompt.lstrip('-f ')}
+                }
             async with aiohttp.ClientSession() as session:
-                async with session.post(url=self.url,headers=headers,json=body, timeout=90) as response:
+                async with session.post(url=self.url,headers=self.headers,json=body, timeout=90) as response:
                     try:
                         response.raise_for_status()
                         answer = await response.json()
@@ -1029,7 +1029,10 @@ class User:
         return f'🧹 Диалог очищен {status}', None
     
 
-    async def make_multi_modal_body(text, image, context: list, is_mistral = False) -> None:
+    async def make_multi_modal_body(text, 
+                                    image, 
+                                    context: list, 
+                                    is_mistral = False) -> None:
         image_b64 = base64.b64encode(image.get('data')).decode()
         if len(image_b64) > 180_000:
             print("Слишком большое изображение, сжимаем...")
@@ -1327,14 +1330,6 @@ class UsersMap():
         if len(ct) and ct[0].get('role') == 'system':
             return ct[0].get('content')
         return 'No current context'
-
-
-    # def turn_proxy(self, proxy: int) -> str:
-    #     if proxy:
-    #         os.environ['HTTPS_PROXY'] = self.proxy_settings
-    #     else:
-    #         os.environ.pop('HTTPS_PROXY', None)
-    #     return f'Прокси {'включен ✅' if proxy else 'выключен ❌'}\n'
 
 
 
