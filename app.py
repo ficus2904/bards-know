@@ -194,9 +194,9 @@ class BOTS:
                                     threshold="BLOCK_NONE") for category # type: ignore
                                     in types.HarmCategory._member_names_[1:]]
             self.models = [
-                'gemini-2.5-flash-preview-05-20',
+                'gemini-2.5-flash',
                 'gemini-2.0-flash-preview-image-generation',
-                'gemini-2.0-flash-lite',
+                'gemini-2.5-flash-lite-preview-06-17',
                 ]
             self.current_model = self.models[0]
             self.chat = None
@@ -232,12 +232,7 @@ class BOTS:
                     *[types.Part.from_bytes(**subdata) # type: ignore
                     for subdata in data], text] if data else text
                 response = await self.chat.send_message(content)
-                if 'thinking' in self.current_model:
-                    try:
-                        return response.candidates[0].content.parts[1].text
-                    except Exception:
-                        return response.text
-                elif 'image' in self.current_model:
+                if 'image' in self.current_model:
                     try:
                         for part in response.candidates[0].content.parts:
                             if part.inline_data is not None:
@@ -275,9 +270,12 @@ class BOTS:
                 self.create_client(with_proxy)
             self.context = [{'role':'system', 'content': context}]
             response_modalities = ['Text', 'Image'] if 'image' in self.current_model else None
-            config = types.GenerateContentConfig(system_instruction=context, 
-                                        safety_settings=self.safety_settings,
-                                        response_modalities=response_modalities)
+            config = types.GenerateContentConfig(
+                system_instruction=context, 
+                safety_settings=self.safety_settings,
+                response_modalities=response_modalities,
+                thinking_config=types.ThinkingConfig(thinking_budget=-1),
+                )
             self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
 
 
@@ -838,7 +836,7 @@ class RateLimitedQueueManager:
     """
     def __init__(self):
         self.all_bots = APIFactory.bots | APIFactory.image_bots
-        self.limiters = {name:AsyncLimiter(1, 30) for name in self.all_bots}
+        self.limiters = {name:AsyncLimiter(5, 30) for name in self.all_bots}
     
     async def enqueue_request(self, api_name: str, task):
         limiter = self.limiters[api_name]
