@@ -274,7 +274,7 @@ class BOTS:
                 system_instruction=context, 
                 safety_settings=self.safety_settings,
                 response_modalities=response_modalities,
-                thinking_config=types.ThinkingConfig(thinking_budget=-1),
+                thinking_config=types.ThinkingConfig(thinking_budget=-1) if 'image' in self.current_model else None,
                 )
             self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
 
