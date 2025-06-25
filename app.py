@@ -236,9 +236,11 @@ class BOTS:
                     try:
                         for part in response.candidates[0].content.parts:
                             if part.inline_data is not None:
-                                return {'photo': BIF(part.inline_data.data, "image.png"),
-                                        'caption': part.text if part.text is not None else None,
-                                        'reply_markup': users.builder}
+                                return {
+                                    'photo': BIF(part.inline_data.data, "image.png"),
+                                    'caption': part.text if part.text is not None else None,
+                                    'reply_markup': users.builder,
+                                    }
                             elif part.text is not None:
                                 return part.text
                     except Exception:
@@ -269,17 +271,15 @@ class BOTS:
             if isinstance(with_proxy, bool):
                 self.create_client(with_proxy)
             self.context = [{'role':'system', 'content': context}]
-            # response_modalities = ['Text', 'Image'] if 'image' in self.current_model else None
             config = types.GenerateContentConfig(
                 system_instruction=context, 
                 safety_settings=self.safety_settings,
-                # response_modalities=response_modalities,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 )
             self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
             if 'image' in self.current_model:
                 self.chat._config.thinking_config = None
-                self.chat._config.response_modalities = ['Text', 'Image'] 
+                self.chat._config.response_modalities = ['Text', 'Image']
 
 
         async def change_chat_config(self, clear: bool | None = None, 
