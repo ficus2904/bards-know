@@ -1,0 +1,288 @@
+{
+    "user_config": {},
+    "main": {
+        "text": "🏠 Main menu",
+        "buttons": [
+            {
+                "text": "🤖 Изменить бота",
+                "target": "bot"
+            },
+            {
+                "text": "🎨 Изменить pic",
+                "target": "pic"
+            },
+            {
+                "text": "✍️ Контекст",
+                "target": "change_context"
+            },
+            {
+                "text": "⚡ Команды",
+                "target": "template_prompts"
+            },
+            {
+                "text": "💬 Диалог",
+                "target": "dialogue"
+            },
+            {
+                "text": "🔄 Настройки",
+                "target": "switch"
+            },
+            {
+                "text": "🚪 Exit",
+                "target": "exit"
+            }
+        ]
+    },
+    "template_prompts": {
+        "text": "⚡ Команды",
+        "buttons": [
+            {
+                "text": "💬 Цитата",
+                "target": "cmd_1"
+            },
+            {
+                "text": "🤣 Шутка",
+                "target": "cmd_2"
+            },
+            {
+                "text": "💡 Факт",
+                "target": "cmd_3"
+            },
+            {
+                "text": "🤓 QuizPlease",
+                "target": "cmd_4"
+            },
+            {
+                "text": "📝 Промпт",
+                "target": "cmd_5"
+            },
+            {
+                "text": "⚖️ Правда",
+                "target": "cmd_6"
+            },
+            {
+                "text": "⬅️",
+                "target": "main"
+            }
+        ]
+    },
+    "switch": {
+        "text": "🔄 Настройки переключения",
+        "buttons": [
+            {
+                "text": "🤖 Bot",
+                "target": "switch_bot"
+            },
+            {
+                "text": "🎨 Pic",
+                "target": "switch_pic"
+            },
+            {
+                "text": "⬅️",
+                "target": "main"
+            }
+        ]
+    },
+    "switch_bot": {
+        "text": "🔄 Switch state of Bot",
+        "buttons": [
+            {
+                "text": "Прокси",
+                "state": "proxy_status"
+            },
+            {
+                "text": "Поиск",
+                "state": "search_status"
+            },
+            {
+                "text": "⬅️",
+                "target": "switch"
+            }
+        ]
+    },
+    "switch_pic": {
+        "text": "🔄 Switch state of Pic",
+        "buttons": [
+            {
+                "text": "Прокси",
+                "state": "proxy_status"
+            },
+            {
+                "text": "Поиск",
+                "state": "search_status"
+            },
+            {
+                "text": "⬅️",
+                "target": "switch"
+            }
+        ]
+    },
+    "dialogue": {
+        "text": "💬 Диалоговый контекст",
+        "buttons": [
+            {
+                "text": "🪥 Отмена",
+                "target": "dlg_last"
+            },
+            {
+                "text": "🧹 Очистить",
+                "target": "dlg_clear"
+            },
+            {
+                "text": "💥 Сброс",
+                "target": "dlg_wipe"
+            },
+            {
+                "text": "⬅️",
+                "target": "main"
+            }
+        ]
+    },
+    "bot": {
+        "text": "🤖",
+        "buttons": [
+            {
+                "text": "Gemini",
+                "target": "gemini"
+            },
+            {
+                "text": "Groq",
+                "target": "groq"
+            },
+            {
+                "text": "Mistral",
+                "target": "mistral"
+            },
+            {
+                "text": "Glif",
+                "target": "glif"
+            },
+            {
+                "text": "⬅️",
+                "target": "main"
+            }
+        ]
+    },
+    "gemini": {
+        "text": "🧩 Gemini",
+        "buttons": [
+            {
+                "text": "Flash",
+                "select": "gemini-2.5-flash"
+            },
+            {
+                "text": "Flash Lite",
+                "select": "gemini-2.5-flash-lite-preview-06-17"
+            },
+            {
+                "text": "⬅️",
+                "target": "bot"
+            }
+        ]
+    },
+    "groq": {
+        "text": "🧩 Groq",
+        "buttons": [
+            {
+                "text": "Llama 4 scout",
+                "select": "llama-4-scout-17b-16e-instruct"
+            },
+            {
+                "text": "Llama 4 maverick",
+                "select": "llama-4-maverick-17b-128e-instruct"
+            },
+            {
+                "text": "Deepseek Llama",
+                "select": "deepseek-r1-distill-llama-70b"
+            },
+            {
+                "text": "Deepseek QWEN",
+                "select": "deepseek-r1-distill-qwen-32b"
+            },
+            {
+                "text": "⬅️",
+                "target": "bot"
+            }
+        ]
+    },
+    "mistral": {
+        "text": "🧩 Mistral",
+        "buttons": [
+            {
+                "text": "Small",
+                "select": "mistral-small-latest"
+            },
+            {
+                "text": "Medium",
+                "select": "mistral-medium-latest"
+            },
+            {
+                "text": "Large",
+                "select": "mistral-large-latest"
+            },
+            {
+                "text": "Pixtral",
+                "select": "pixtral-large-latest"
+            },
+            {
+                "text": "⬅️",
+                "target": "bot"
+            }
+        ]
+    },
+    "glif": {
+        "text": "🧩 Glif",
+        "buttons": [
+            {
+                "text": "Claude 3.7 Sonnet",
+                "select": "claude"
+            },
+            {
+                "text": "OpenAI GPTo3",
+                "select": "GPTo3"
+            },
+            {
+                "text": "xAI Groq2",
+                "select": "groq2"
+            },
+            {
+                "text": "⬅️",
+                "target": "bot"
+            }
+        ]
+    },
+    "pic": {
+        "text": "🗣️",
+        "buttons": [
+            {
+                "text": "FalAI",
+                "target": "FalAI"
+            },
+            {
+                "text": "⬅️",
+                "target": "main"
+            }
+        ]
+    },
+    "FalAI": {
+        "text": "🎨 FalAI",
+        "buttons": [
+            {
+                "text": "Flux Ultra",
+                "select": "flux-pro/v1.1-ultra"
+            },
+            {
+                "text": "Flux Pro",
+                "select": "flux-pro/v1.1"
+            },
+            {
+                "text": "Imagen4 Ultra",
+                "select": "imagen4/preview/ultra"
+            },
+            {
+                "text": "⬅️",
+                "target": "pic"
+            }
+        ]
+    }
+}

@@ -9,8 +9,9 @@ import base64
 import sqlite3
 import asyncio
 import aiohttp
-from loguru import logger
 import warnings
+from loguru import logger
+from contextlib import suppress
 from argparse import ArgumentParser
 from mistralai import Mistral
 from google.genai import Client as GeminiClient
@@ -32,8 +33,9 @@ from aiogram.types import (
     TelegramObject, 
     Message, 
     CallbackQuery,
-    ReplyKeyboardMarkup,
-    InlineKeyboardMarkup
+    BotCommand
+    # ReplyKeyboardMarkup,
+    # InlineKeyboardMarkup,
     )
 from aiogram.types import BufferedInputFile as BIF
 from aiogram.utils.markdown import text
@@ -64,6 +66,10 @@ class CallbackClass(CallbackData, prefix='callback'):
     cb_type: str
     name: str
 
+class MenuCallbacks(CallbackData, prefix='menu'):
+    btn_text: str
+    btn_target: str
+    btn_act: str
 
 class UserFilterMiddleware(BaseMiddleware):
     """
@@ -182,23 +188,28 @@ class BaseAPIInterface(ABC):
     async def prompt(self, *args, **kwargs):
         pass
 
+    @staticmethod  
+    def get_models(bot_menu: dict) -> list[str]:
+        return [m["select"] for m in bot_menu["buttons"] if "select" in m]
+
 
 class BOTS:
     """LLM bot interfaces"""
     class GeminiAPI(BaseAPIInterface):
         """Class for Gemini API"""
         name = 'gemini'
+        safety_settings = [types.SafetySetting(category=category, 
+                                threshold="BLOCK_NONE") for category # type: ignore
+                                in types.HarmCategory._member_names_[1:]]
 
-        def __init__(self):
-            self.safety_settings = [types.SafetySetting(category=category, 
-                                    threshold="BLOCK_NONE") for category # type: ignore
-                                    in types.HarmCategory._member_names_[1:]]
-            self.models = [
-                'gemini-2.5-flash',
-                'gemini-2.0-flash-preview-image-generation',
-                'gemini-2.5-flash-lite-preview-06-17',
-                ]
-            self.current_model = self.models[0]
+        def __init__(self, menu: dict):
+            # self.models = [
+            #     'gemini-2.5-flash',
+            #     'gemini-2.0-flash-preview-image-generation',
+            #     'gemini-2.5-flash-lite-preview-06-17',
+            #     ]
+            self.models = self.get_models(menu[self.name])
+            self.current = self.models[0]
             self.chat = None
             self.proxy_status: bool = True
             self.search_status: bool = False
@@ -209,7 +220,7 @@ class BOTS:
         def create_client(self, with_proxy: bool) -> None:
             http_options = {'api_version':'v1beta'}
             if with_proxy:
-                if socks := os.getenv('SOCKS'):
+                if socks := os.getenv('SOCKS') or os.getenv('LOCAL_SOCKS'):
                     http_options = types.HttpOptions(
                         async_client_args={'proxy': socks},
                         **http_options)
@@ -232,14 +243,14 @@ class BOTS:
                     *[types.Part.from_bytes(**subdata) # type: ignore
                     for subdata in data], text] if data else text
                 response = await self.chat.send_message(content)
-                if 'image' in self.current_model:
+                if 'image' in self.current:
                     try:
                         for part in response.candidates[0].content.parts:
                             if part.inline_data is not None:
                                 return {
                                     'photo': BIF(part.inline_data.data, "image.png"),
                                     'caption': part.text if part.text is not None else None,
-                                    'reply_markup': users.builder,
+                                    # 'reply_markup': users.builder,
                                     }
                             elif part.text is not None:
                                 return part.text
@@ -276,8 +287,8 @@ class BOTS:
                 safety_settings=self.safety_settings,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 )
-            self.chat = self.client.aio.chats.create(model=self.current_model, config=config)
-            if 'image' in self.current_model:
+            self.chat = self.client.aio.chats.create(model=self.current, config=config)
+            if 'image' in self.current:
                 self.chat._config.thinking_config = None
                 self.chat._config.response_modalities = ['Text', 'Image']
 
@@ -286,7 +297,7 @@ class BOTS:
                                     search: int | None = None, 
                                     new_model: str | None = None, 
                                     proxy: int | None = None) -> str | None:
-            if self.chat._model != self.current_model:
+            if self.chat._model != self.current:
                 return self.reset_chat()
             
             if new_model:
@@ -378,18 +389,44 @@ class BOTS:
                 raise Exception(f'Gemini error {e.code}: {e}')
 
 
+        def dialogue_api_router(self, cmd: str) -> None:
+            '''Remove last question and answer from the chat history'''
+            system_content: str | None = self.context[0].get('content') if self.context else None
+            system_instruction: str | None = {
+                'dlg_last': system_content,
+                'dlg_clear': system_content,
+                'dlg_wipe': None,
+            }.get(cmd)
+            self.context = [{'role':'system', 'content': system_instruction}]
+            config = types.GenerateContentConfig(
+                system_instruction=system_instruction, 
+                safety_settings=self.safety_settings,
+                thinking_config=types.ThinkingConfig(thinking_budget=-1),
+                )
+            self.chat = self.client.aio.chats.create(
+                model=self.current, 
+                config=config, 
+                history=self.chat.get_history()[:-2] if cmd == 'dlg_last' else None
+                )
+            if 'image' in self.current:
+                self.chat._config.thinking_config = None
+                self.chat._config.response_modalities = ['Text', 'Image']
+            # return {'Удален последний ответ и вопрос из контекста Gemini'}
+
+
     class GroqAPI(BaseAPIInterface):
         """Class for Groq API"""
         name = 'groq'
 
-        def __init__(self):
-            self.models = [
-                'llama-4-scout-17b-16e-instruct',
-                'llama-4-maverick-17b-128e-instruct',
-                'deepseek-r1-distill-llama-70b',
-                'llama-3.2-90b-vision-preview',
-                ] # https://console.groq.com/docs/models
-            self.current_model = self.models[0]
+        def __init__(self, menu: dict):
+            # self.models = [
+            #     'llama-4-scout-17b-16e-instruct',
+            #     'llama-4-maverick-17b-128e-instruct',
+            #     'deepseek-r1-distill-llama-70b',
+            #     'llama-3.2-90b-vision-preview',
+            #     ] # https://console.groq.com/docs/models
+            self.models = self.get_models(menu[self.name])
+            self.current = self.models[0]
             self.proxy_status: bool = False
             self.client: AsyncGroq = None
             self.create_client(self.proxy_status)
@@ -420,7 +457,7 @@ class BOTS:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
             
-            kwargs = {'model':('meta-llama/' if '4' in self.current_model else '') + self.current_model,
+            kwargs = {'model':('meta-llama/' if '4' in self.current else '') + self.current,
                     'messages': self.context}
             try:
                 response = await self.client.chat.completions.create(**kwargs)
@@ -436,15 +473,16 @@ class BOTS:
         """Class for Mistral API"""
         name = 'mistral'
 
-        def __init__(self):
+        def __init__(self, menu: dict):
             self.client = Mistral(api_key=self.api_key)
-            self.models = [
-                'mistral-large-latest',
-                'mistral-medium-latest',
-                'mistral-small-latest',
-                'pixtral-large-latest',
-                ] # https://docs.mistral.ai/getting-started/models/
-            self.current_model = self.models[0]
+            # self.models = [
+            #     'mistral-large-latest',
+            #     'mistral-medium-latest',
+            #     'mistral-small-latest',
+            #     'pixtral-large-latest',
+            #     ] # https://docs.mistral.ai/getting-started/models/
+            self.models = self.get_models(menu[self.name])
+            self.current = self.models[0]
 
 
         async def prompt(self, text: str, image = None) -> str:
@@ -455,7 +493,7 @@ class BOTS:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
             
-            kwargs = {'model':self.models[-1] if image else self.current_model, 
+            kwargs = {'model':self.models[-1] if image else self.current, 
                     'messages': self.context}
             response = await self.client.chat.complete_async(**kwargs)
             response = response.choices[-1].message.content
@@ -491,17 +529,17 @@ class BOTS:
                                 "stream": False
                             }
                         }
-            self.current_model = self.models[0]
+            self.current = self.models[0]
             self.current_vlm_model = self.models[-1]
             # self.context = []
         
 
         async def prompt(self, text, image = None) -> str:
-            if image is None and self.current_model not in self.vlm_params:
+            if image is None and self.current not in self.vlm_params:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
                 response = self.client.chat.completions.create(
-                    model=self.current_model,
+                    model=self.current,
                     messages=self.context,
                     temperature=0.2,
                     top_p=0.7,
@@ -513,7 +551,7 @@ class BOTS:
                 return output
             else:
                 self.context.append({"role": "user","content": text})
-                model = self.current_model if self.current_model in self.vlm_params else self.current_vlm_model
+                model = self.current if self.current in self.vlm_params else self.current_vlm_model
                 if image:
                     image_b64 = base64.b64encode(image.getvalue()).decode()
                     if len(image_b64) > 180_000:
@@ -555,14 +593,14 @@ class BOTS:
                 'Qwen/Qwen2-72B-Instruct',
                 ] # https://docs.together.ai/docs/inference-models
 
-            self.current_model = self.models[0]
+            self.current = self.models[0]
 
 
         async def prompt(self, text, image=None) -> str:
             body = {'role':'user', 'content': text}
             self.context.append(body)
             response = self.client.chat.completions.create(
-                model=self.current_model,
+                model=self.current,
                 messages=self.context,
                 temperature=0.7,
                 top_p=0.7,
@@ -588,14 +626,14 @@ class BOTS:
                 'meta-llama/llama-4-scout'
                 ] # https://openrouter.ai/models
 
-            self.current_model = self.models[0]
+            self.current = self.models[0]
         
 
         async def prompt(self, text, image = None) -> str:
             body = {'role':'user', 'content': text}
             self.context.append(body)
             response = self.client.chat.completions.create(
-                model=self.current_model +':free',
+                model=self.current +':free',
                 messages=self.context,
             )
             output = response.choices[-1].message.content
@@ -608,7 +646,7 @@ class BOTS:
         """Class for Glif API"""
         name = 'glif'
 
-        def __init__(self):
+        def __init__(self, menu: dict):
             self.url = "https://simple-api.glif.app"
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.api_key}"}
             self.models_with_ids = {
@@ -617,7 +655,7 @@ class BOTS:
                 "OpenAI o3 mini":"clxx330wj000ipbq9rwh4hmp3",
                 }
             self.models = list(self.models_with_ids.keys())
-            self.current_model = self.models[0]
+            self.current = self.models[0]
 
 
         def form_main_prompt(self) -> str:
@@ -636,7 +674,7 @@ class BOTS:
 
         async def fetch_data(self, main_prompt: str, system_prompt: str) -> str:
             body: dict[str,str] = {
-                "id": self.models_with_ids.get(self.current_model), 
+                "id": self.models_with_ids.get(self.current), 
                 "inputs": {"main_prompt": main_prompt, "system_prompt": system_prompt}
                 }
             async with aiohttp.ClientSession() as session:
@@ -706,17 +744,18 @@ class BOTS:
 
 class FalAPI(BaseAPIInterface):
     """Class for Fal API"""
-    name = 'fal'
+    name = 'FalAI'
     
-    def __init__(self):
-        self.models = ["v1.1-ultra","v1.1",]
-        self.current_model = self.models[0]
+    def __init__(self, menu: dict):
+        # self.models = ["v1.1-ultra","v1.1",]
+        self.models = self.get_models(menu[self.name])
+        self.current = self.models[0]
         self.image_size = '9:16'
         self.raw = False
 
 
     def change_model(self, model):
-        self.current_model = {
+        self.current = {
             "ultra": "v1.1-ultra",
             "1.1": "v1.1",
         }.get(model, "v1.1-ultra")
@@ -732,7 +771,7 @@ class FalAPI(BaseAPIInterface):
 
     def get_info(self) -> str:
         return (f'\n📏 Ratio: {self.image_size}\n'
-                f'🤖 Model: {self.current_model} {int(self.raw)}')
+                f'🤖 Model: {self.current} {int(self.raw)}')
 
 
     def change_image_size_old(self, image_size: str) -> str:
@@ -758,11 +797,11 @@ class FalAPI(BaseAPIInterface):
         if model:
             self.change_model(model)
 
-        if self.current_model == 'v1.1':
+        if self.current == 'v1.1':
             kwargs = {
                 "image_size": self.change_image_size_old(image_size),
             }
-        elif self.current_model == 'v1.1-ultra':
+        elif self.current == 'v1.1-ultra':
             kwargs = {
                 "aspect_ratio": self.change_image_size(image_size),
                 "raw": self.raw,
@@ -779,7 +818,7 @@ class FalAPI(BaseAPIInterface):
         if not prompt:
             return self.get_info()
         
-        url = "https://fal.run/fal-ai/flux-pro/" + self.current_model
+        url = "https://fal.run/fal-ai/" + self.current
         headers = {"Authorization": f"Key {self.api_key}",
                    'Content-Type': 'application/json'}
         body = {
@@ -823,8 +862,8 @@ class APIFactory:
         self._instances: dict[str,BaseAPIInterface] = {}
 
 
-    def get(self, bot_name: str) -> BaseAPIInterface:
-        return self._instances.setdefault(bot_name, self.bots[bot_name]())
+    def get(self, menu: dict, bot_name: str) -> BaseAPIInterface:
+        return self._instances.setdefault(bot_name, self.bots[bot_name](menu))
 
 
 class RateLimitedQueueManager:
@@ -919,12 +958,13 @@ class User:
     '''Specific user interface in chat'''
     def __init__(self):
         self.api_factory = APIFactory()
-        self.current_bot: BaseAPIInterface = self.api_factory.get(users.DEFAULT_BOT)
-        self.current_image_bot = FalAPI()
+        self.current_bot: BaseAPIInterface = self.api_factory.get(users.menu, users.DEFAULT_BOT)
+        self.current_pic = FalAPI(users.menu)
         self.time_dump = time()
         self.text: str = None
         self.last_msg: dict = None # for deleting messages
         self.media_group_buffer: dict = None ## for media_group_handler
+        self.nav_type: str = 'bot'
         
 
     async def change_context(self, context_name: str) -> str | dict:
@@ -941,7 +981,7 @@ class User:
         output_text = f'Контекст {context_name} добавлен'
         
         if context_name in users.context_dict['🖼️ Image_desc']:
-            output_text += self.current_image_bot.get_info()
+            output_text += self.current_pic.get_info()
 
         if isinstance(self.current_bot, BOTS.GeminiAPI):
             self.current_bot.reset_chat(context=context)
@@ -955,7 +995,12 @@ class User:
 
 
     async def template_prompts(self, template: str) -> str:
-        prompt_text = users.template_prompts.get(template)
+        if template.isdigit():
+            for num, prompt_text in enumerate(users.template_prompts.values(), start=1):
+                if num == int(template):
+                    break
+        else:
+            prompt_text = users.template_prompts.get(template)
         output = await self.prompt(prompt_text)
         return output
     
@@ -964,7 +1009,7 @@ class User:
         is_gemini = self.current_bot.name == 'gemini'
         output = text(
             f'🤖 Текущий бот: {self.current_bot.name}',
-            f'🧩 Модель: {self.current_bot.current_model}',
+            f'🧩 Модель: {self.current_bot.current}',
             f'📚 Размер контекста: {len(self.current_bot.context) 
                                     if not is_gemini else self.current_bot.length()}',
             sep='\n')
@@ -1006,12 +1051,43 @@ class User:
 
     async def change_model(self, model_name: str) -> str:
         cur_bot = self.current_bot
-        model = next((el for el in cur_bot.models if model_name in el), cur_bot.current_model)
-        self.current_bot.current_model = model
+        model = next((el for el in cur_bot.models if model_name in el), cur_bot.current)
+        self.current_bot.current = model
         if hasattr(cur_bot, 'vlm_params') and model_name in cur_bot.vlm_params:
             self.current_bot.current_vlm_model = model_name
         await self.clear()
         return f'🔄 Смена модели на {users.make_short_name(model_name)}'
+
+
+    def change_model_new(self, btn_type: str, bot: str, model: str) -> None:
+        cbt = f'current_{btn_type}'
+        if getattr(self, cbt).name != bot:
+            setattr(self, cbt, getattr(self,  f'{btn_type}_dct')[bot](self.menu))
+        if model:
+            getattr(self, cbt).current = model
+
+
+    def change_state(self, state: str) -> None:
+        cbt = getattr(self, f'current_{self.nav_type}')
+        if hasattr(cbt, state):
+            attr: bool = getattr(cbt, state)
+            if 'proxy' in state:
+                cbt.create_client(not attr)
+            else:
+                setattr(cbt, state, not attr)
+
+
+    def dialogue_router(self, cmd: str) -> str:
+        """Router for command actions."""
+        cbt = getattr(self, f'current_{self.nav_type}')
+        if hasattr(cbt, 'dialogue_api_router'):
+            getattr(cbt, 'dialogue_api_router')(cmd)
+            return {'dlg_last': 'Удален последний ответ и вопрос из контекста',
+                    'dlg_clear': 'Очистка контекста',
+                    'dlg_wipe': 'Очистка контекста и системной инструкции'}[cmd]
+        else:
+            return f'❌ Команда {cmd} отсутствует в {cbt.name}'
+            
 
 
     async def clear(self, delete_prev: bool = False) -> tuple:
@@ -1061,21 +1137,34 @@ class User:
 
 
     async def gen_image(self, *args, **kwargs) -> str:
-        output = await users.queue_manager.enqueue_request(self.current_image_bot.name,
-                                    self.current_image_bot.gen_image(*args, **kwargs))
+        output = await users.queue_manager.enqueue_request(self.current_pic.name,
+                                    self.current_pic.gen_image(*args, **kwargs))
         return output
+
+
+    async def delete_menu_cmd(self) -> None:
+        """Deletes the /menu message in the chat"""
+        if self.last_msg:
+            await bot.delete_message(**self.last_msg) # type: ignore
+            self.last_msg = {}
+
 
 
 class UsersMap():
     '''Main storage of user's sessions, common variables and functions'''
     def __init__(self):
+        self.load_json = lambda file: json.loads(open(f'./{file}.json', 'r', encoding="utf-8").read())
+        self.menu: dict[str, dict] = self.load_json('settings')
+        self.state_btns: set = set(filter(None, map(lambda btn: btn.get('state'), 
+                        self.menu['switch_bot']['buttons'] + self.menu['switch_pic']['buttons'])))
         self.db = DBConnection()
         self.queue_manager = RateLimitedQueueManager()
         self._user_instances: dict[int, User] = {}
-        self.context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
+        self.context_dict: dict = self.load_json('prompts')
+        # self.context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
         self.template_prompts: dict = {
                 '💬 Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
-                '🤣 Шутка': 'Выступи в роли профессионального стендап комика и напиши остроумную шутку. Ответом должен быть только текст шутки',
+                '🤣 Шутка': self.context_dict.get("🤡 Юмор",{}).get("🍻 Братюня",'') + '\nВыступи в роли профессионального стендап комика и напиши остроумную шутку. Ответом должен быть только текст шутки',
                 '💡 Факт': 'Выступи в роли профессионального энциклопедиста и напиши один занимательный факт. Ответом должен быть только текст с фактом',
                 '🤔 Квиз': '''Выступи в роли профессионального энциклопедиста и напиши три вопроса для занимательного квиза. 
                             Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов''',
@@ -1091,27 +1180,29 @@ class UsersMap():
             }
         self.help = self.create_help()
         self.buttons: dict = {
+                'Меню':'menu', 
                 'Добавить контекст':'change_context', 
                 'Быстрые команды':'template_prompts',
-                'Вывести инфо':'info',
-                'Сменить бота':'change_bot', 
-                'Очистить контекст':'clear',
-                'Изменить модель бота':'change_model'
+                # 'Вывести инфо':'info',
+                # 'Сменить бота':'change_bot', 
+                # 'Очистить контекст':'clear',
+                # 'Изменить модель бота':'change_model'
             }
         self.simple_cmds: set = {'clear', 'info'}
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
         self.DEFAULT_BOT: str = 'gemini' #'glif' gemini mistral
         self.proxy_settings = os.environ.get('HTTPS_PROXY')
-        self.builder: ReplyKeyboardBuilder = self.create_builder()
+        # self.builder: ReplyKeyboardBuilder = self.create_builder()
         self.image_arg_parser = ImageGenArgParser()
         self.config_arg_parser = ConfigArgParser()
 
 
-    def create_builder(self) -> ReplyKeyboardMarkup | InlineKeyboardMarkup:
-        builder = ReplyKeyboardBuilder()
-        for display_text in self.buttons:
-            builder.button(text=display_text)
-        return builder.adjust(3,3).as_markup()
+    # def create_builder(self) -> ReplyKeyboardMarkup | InlineKeyboardMarkup:
+    #     builder = ReplyKeyboardBuilder()
+    #     for display_text in self.buttons:
+    #         builder.button(text=display_text)
+    #     return builder.adjust(1).as_markup()
+
 
     @lru_cache(maxsize=None)
     def get(self, user_id: int) -> User:
@@ -1243,7 +1334,8 @@ class UsersMap():
                    parse_mode: ParseMode | None = None) -> dict:
         return {'text': text or self.help, 
                 'parse_mode': parse_mode or self.PARSE_MODE, 
-                'reply_markup': reply_markup or self.builder}
+                'reply_markup': reply_markup,# or self.builder,
+                }
 
 
     async def send_split_response(self, message: Message, output: str):
@@ -1332,6 +1424,67 @@ class UsersMap():
         if len(ct) and ct[0].get('role') == 'system':
             return ct[0].get('content')
         return 'No current context'
+    
+
+    def create_menu_kb(self, user: User, target: str, btn_act: str | None = None) -> dict:
+        """Creates keyboard markup with buttons for menu navigation
+        
+        Args:
+            target: Target menu section
+            btn_act: Current button action
+            
+        Returns:
+            tuple: Headline text and keyboard markup
+        """
+        builder = InlineKeyboardBuilder()
+        
+        if target in {'bot', 'pic','switch_bot', 'switch_pic'}:
+            user.nav_type = target.replace('switch_','')
+        target_menu: dict = self.menu[target]
+        cb = getattr(user, f'current_{user.nav_type}')
+        if user.nav_type in {'bot', 'pic'} and target not in {'main', 'switch', 'utils', 'cmd'}:
+            headline: str = f'Текущая модель:\n🤖 {cb.name}\n'\
+                            f'{'🧩' if user.nav_type == 'bot' else '🎨'} {cb.current}'
+        else:
+            headline: str = target_menu['text']
+
+        btns_list: list[dict] = target_menu["buttons"]
+        for btn in btns_list:
+            state, select = btn.get('state'), btn.get('select')
+            if state in self.state_btns and not hasattr(cb, state):
+                continue
+            builder.button(
+                text=self._add_emoji_prefix(cb, btn_act, state, select) + btn['text'], 
+                callback_data=MenuCallbacks(
+                    btn_text=btn['text'], 
+                    btn_target=btn.get('target', target),
+                    btn_act=state or select or 'go',
+                    ).pack())
+        columns = 2 if len(target_menu["buttons"]) > 5 else 1
+        return {'text': headline,'reply_markup': builder.adjust(columns).as_markup()}
+    
+
+    def _add_emoji_prefix(self, cb,
+            btn_act: str | None, 
+            state: str | None, 
+            select: str | None ) -> str:
+        """Adds appropriate emoji prefix to button text
+        
+        Args:
+            btn_act: Current button action
+            state: Button state for toggle buttons
+            select: Button selection for model selection
+            
+        Returns:
+            str: Emoji prefix or empty string
+        """
+        # Handle state toggle buttons
+        if state and hasattr(cb, state):
+            return '✅ ' if getattr(cb, state) else '❌ '
+        # Handle model selection buttons
+        if select:
+            return '✅ ' if select in {cb.current, btn_act} else ''
+        return ''
 
 
 
@@ -1349,6 +1502,16 @@ class Handlers:
             f'{message.from_user.first_name}!\n' # type: ignore
             'Отправьте /help для дополнительной информации')
         await message.answer(output)
+
+
+    @dp.message(Command(commands=["menu"]))
+    async def cmd_settings(message: Message):
+        """Entry point for settings via /menu command."""
+        user: User = users.get(message.from_user.id) # type: ignore
+        user.last_msg = {'chat_id': message.chat.id, 
+                         'message_id': message.message_id}
+        await message.answer(**users.create_menu_kb(user, "main")) # type: ignore
+        await user.delete_menu_cmd()
 
 
     @dp.message(Command(commands=["context"]))
@@ -1483,6 +1646,11 @@ class Handlers:
         await Handlers.reply_kb_command(message)
 
 
+    @dp.message(Command(commands=["change_context"]))
+    async def change_context_command_handler(message: Message, user_name: str):
+        await Handlers.reply_kb_command(message)
+
+
     @dp.message(Command(commands=["conf"]))
     async def config_handler(message: Message, user_name: str):
         user: User = users.get(message.from_user.id) # type: ignore
@@ -1507,7 +1675,7 @@ class Handlers:
         args = message.text.split(maxsplit=1) # type: ignore
         if len(args) != 2:
             await message.reply(escape(
-                users.image_arg_parser.get_usage() + user.current_image_bot.get_info()
+                users.image_arg_parser.get_usage() + user.current_pic.get_info()
                 ), parse_mode=users.PARSE_MODE)
             return
         
@@ -1564,18 +1732,21 @@ class Handlers:
         user = await users.check_and_clear(message, 'text')
         user.last_msg = {'chat_id': message.chat.id, 
                          'message_id': message.message_id,}
-        if (simple_cmd := user.text.casefold()) in users.simple_cmds:
+        if (user.text.casefold() in ('menu', 'меню')):
+            kwargs: dict = users.create_menu_kb(user, "main")
+        elif (simple_cmd := user.text.casefold()) in users.simple_cmds:
             output, builder_inline = await getattr(user, simple_cmd)(True)
             kwargs: dict = users.set_kwargs(escape(output), builder_inline)
         else:
-            command_dict: dict[str, list] = {'bot': (user.api_factory.bots, 'бота'),
-                            'model': (user.current_bot.models, 'модель'),
-                            'context':(users.context_dict, 'контекст'),
-                            'prompts':(users.template_prompts, 'промпт')}
-            items: list[tuple[dict, str]] = command_dict[user.text.split('_')[-1]]
+            command_dict: dict[str, list] = {
+                'bot': (user.api_factory.bots, 'бота'),
+                'model': (user.current_bot.models, 'модель'),
+                'context':(users.context_dict, 'контекст'),
+                'prompts':(users.template_prompts, 'промпт')
+                }
+            items: tuple[dict, str] = command_dict[user.text.split('_')[-1]]
             builder_inline = users.create_inline_kb(items[0], user.text)
             kwargs: dict = users.set_kwargs(f'🤔 Выберите {items[-1]}:',  builder_inline)
-        
         await message.answer(**kwargs) # type: ignore
 
 
@@ -1673,7 +1844,8 @@ class Callbacks:
         if is_final_set:
             await query.message.edit_text(output) # type: ignore
             # await bot.delete_message(query.message.chat.id, user.last_msg['message_id'])
-            await bot.delete_message(**user.last_msg) # type: ignore
+            # await bot.delete_message(**user.last_msg) # type: ignore
+            await user.delete_menu_cmd()
 
 
     @dp.callback_query(CallbackClass.filter(F.cb_type.contains('conf')))
@@ -1698,7 +1870,55 @@ class Callbacks:
 
 
 
+    @dp.callback_query(MenuCallbacks.filter(F.btn_act == "go"))
+    async def menu_callback_go(query: CallbackQuery, callback_data: MenuCallbacks):
+        user = await users.check_and_clear(query, 'callback')
+        cb = callback_data
+        if cb.btn_target == 'exit':
+            await query.message.delete() # type: ignore
+            return
+        elif cb.btn_target == 'change_context':
+            cur_bot = user.current_bot
+            kwargs: dict = {
+                'text': f'Текущая модель:\n🤖 {cur_bot.name}\n🧩 {cur_bot.current}',
+                'reply_markup':users.create_inline_kb(users.context_dict, 'change_context')
+            }
+        elif cb.btn_target.startswith('cmd_'):
+            kwargs: dict = {'text': await user.template_prompts(cb.btn_target.split('_')[-1])}
+        elif cb.btn_target.startswith('dlg_'):
+            kwargs: dict = {'text': user.dialogue_router(cb.btn_target)}
+        else:
+            kwargs: dict = users.create_menu_kb(user, cb.btn_target)
+        await query.message.edit_text(**kwargs) # type: ignore
+        await query.answer()
+        
+
+    @dp.callback_query(MenuCallbacks.filter(F.btn_act != "go"))
+    async def menu_callback_state_select(query: CallbackQuery, callback_data: MenuCallbacks):
+        user = await users.check_and_clear(query, 'callback')
+        cb = callback_data
+        if cb.btn_act in users.state_btns:
+            user.change_state(cb.btn_act)
+        else:
+            user.change_model_new(
+                user.nav_type, 
+                cb.btn_target.replace('_pic',''), 
+                cb.btn_act
+                )
+        with suppress(Exception):
+            await query.message.edit_text(  # type: ignore
+                **users.create_menu_kb(user, cb.btn_target, cb.btn_act)
+                )
+        await query.answer()
+
+
 async def main() -> None:
+    await bot.set_my_commands([
+        BotCommand(command="/menu", description="🍽️ Меню"),
+        BotCommand(command="/change_context", description="✍️ Добавить контекст"),
+        BotCommand(command="/clear", description="🧹 Очистить диалог"),
+        BotCommand(command="/info", description="📚 Вывести инфо"),
+    ])
     await dp.start_polling(bot)
 
 
