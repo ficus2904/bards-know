@@ -40,7 +40,7 @@ from aiogram.types import (
 from aiogram.types import BufferedInputFile as BIF
 from aiogram.utils.markdown import text
 from aiogram.utils.formatting import ExpandableBlockQuote
-from aiogram.filters import Command, CommandStart
+from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
 from aiogram.utils.chat_action import ChatActionSender
@@ -239,21 +239,21 @@ class BOTS:
                         data: list | None = None, 
                         attempts: int = 0) -> str | dict | None:
             try:
-                content = [
+                content= [
                     *[types.Part.from_bytes(**subdata) # type: ignore
                     for subdata in data], text] if data else text
                 response = await self.chat.send_message(content)
                 if 'image' in self.current:
                     try:
+                        output: dict = {}
                         for part in response.candidates[0].content.parts:
                             if part.inline_data is not None:
-                                return {
-                                    'photo': BIF(part.inline_data.data, "image.png"),
-                                    'caption': part.text if part.text is not None else None,
-                                    # 'reply_markup': users.builder,
-                                    }
+                                output['photo'] = BIF(part.inline_data.data, "image.png")
                             elif part.text is not None:
-                                return part.text
+                                output['caption'] = part.text
+
+                        return output or response.candidates[0].finish_reason
+                    
                     except Exception:
                         return str(response.candidates[0].finish_reason)
 
@@ -290,7 +290,14 @@ class BOTS:
             self.chat = self.client.aio.chats.create(model=self.current, config=config)
             if 'image' in self.current:
                 self.chat._config.thinking_config = None
-                self.chat._config.response_modalities = ['Text', 'Image']
+                self.chat._config.response_modalities = ['Text','Image']
+
+
+        async def get_list(self) -> str:
+            response = await self.client.aio.models.list(config={'query_base': True})
+            lst = [model.name.split('/')[1] for model in response 
+                    if 'generateContent' in model.supported_actions]
+            return "\n".join(lst)
 
 
         async def change_chat_config(self, clear: bool | None = None, 
@@ -302,20 +309,23 @@ class BOTS:
             
             if new_model:
                 if new_model == 'list':
-                    response = await self.client.aio.models.list(config={'query_base': True})
-                    return "\n".join([model.name.split('/')[1] for model in response 
-                            if 'generateContent' in model.supported_actions])
+                    return self.get_list()
+                    # response = await self.client.aio.models.list(config={'query_base': True})
+                    # return "\n".join([model.name.split('/')[1] for model in response 
+                    #         if 'generateContent' in model.supported_actions])
                 else:
                     self.models.append(new_model)
                     return f'В gemini добавлена модель {new_model}'
 
             if clear:
                 if self.chat._curated_history and self.chat._config.system_instruction:
-                    self.chat._curated_history.clear()
+                    # self.chat._curated_history.clear()
+                    self.dialogue_api_router('dlg_clear')
                     return 'кроме системного'
                 else:
-                    self.chat._curated_history.clear()
-                    self.chat._config.system_instruction = None
+                    # self.chat._curated_history.clear()
+                    # self.chat._config.system_instruction = None
+                    self.dialogue_api_router('dlg_wipe')
                     return 'полностью'
 
             if search is not None:
@@ -411,7 +421,7 @@ class BOTS:
             if 'image' in self.current:
                 self.chat._config.thinking_config = None
                 self.chat._config.response_modalities = ['Text', 'Image']
-            # return {'Удален последний ответ и вопрос из контекста Gemini'}
+
 
 
     class GroqAPI(BaseAPIInterface):
@@ -754,15 +764,15 @@ class FalAPI(BaseAPIInterface):
         self.raw = False
 
 
-    def change_model(self, model):
-        self.current = {
-            "ultra": "v1.1-ultra",
-            "1.1": "v1.1",
-        }.get(model, "v1.1-ultra")
-        if model == 'raw':
-            self.raw = True
-        elif model in {'no_raw','wo_raw'}:
-            self.raw = False
+    # def change_model(self, model):
+    #     self.current = {
+    #         "ultra": "v1.1-ultra",
+    #         "1.1": "v1.1",
+    #     }.get(model, "v1.1-ultra")
+    #     if model == 'raw':
+    #         self.raw = True
+    #     elif model in {'no_raw','wo_raw'}:
+    #         self.raw = False
 
 
     async def prompt(self, *args, **kwargs):
@@ -794,14 +804,14 @@ class FalAPI(BaseAPIInterface):
     
 
     def get_kwargs(self, image_size: str, model: str) -> dict:
-        if model:
-            self.change_model(model)
+        # if model:
+        #     self.change_model(model)
 
-        if self.current == 'v1.1':
+        if self.current == 'flux-pro/v1.1':
             kwargs = {
                 "image_size": self.change_image_size_old(image_size),
             }
-        elif self.current == 'v1.1-ultra':
+        elif self.current == 'flux-pro/v1.1-ultra':
             kwargs = {
                 "aspect_ratio": self.change_image_size(image_size),
                 "raw": self.raw,
@@ -862,8 +872,8 @@ class APIFactory:
         self._instances: dict[str,BaseAPIInterface] = {}
 
 
-    def get(self, menu: dict, bot_name: str) -> BaseAPIInterface:
-        return self._instances.setdefault(bot_name, self.bots[bot_name](menu))
+    def get(self, bot_name: str) -> BaseAPIInterface:
+        return self._instances.setdefault(bot_name, self.bots[bot_name](users.menu))
 
 
 class RateLimitedQueueManager:
@@ -912,45 +922,38 @@ class ImageGenArgParser:
                 sep='\n')
     
 
-class ConfigArgParser:
-    """
-    A class to parse and handle configuration arguments for the application.
-    ----
-    get_args(args_str: str) -> dict:
-        Parses the provided argument string and returns a dictionary of arguments and their values.
-        Parameters:
-            args_str (str): A string of arguments to be parsed.
-        Returns:
-            dict: A dictionary containing the parsed arguments and their values.
-        Raises:
-            ValueError: If the arguments are invalid.
-    get_usage() -> str:
-        Provides usage examples for the argument parser.
-        Returns:
-            str: A string containing usage examples.
-    """
-    def __init__(self):
-        self.parser = ArgumentParser(description='Change configuration options')
-        self.parser.add_argument('--es', dest='search', help='Turn search in gemini',type=int, choices=[0, 1])
-        self.parser.add_argument('--nm', dest='new_model', help='Add new model in gemini',type=str)
-        self.parser.add_argument('--rr', dest='proxy', help='Turn proxy globally',type=int, choices=[0, 1])
-        # self.parser.add_argument('--m', dest='model' ,help='Model selection') # type=int, choices=[0, 1]
+# class ConfigArgParser:
+#     """
+#     A class to parse and handle configuration arguments for the application.
+#     ----
+#     get_args(args_str: str) -> dict:
+#         Parses the provided argument string and returns a dictionary of arguments and their values.
+#         Parameters:
+#             args_str (str): A string of arguments to be parsed.
+#         Returns:
+#             dict: A dictionary containing the parsed arguments and their values.
+#         Raises:
+#             ValueError: If the arguments are invalid.
+#     get_usage() -> str:
+#         Provides usage examples for the argument parser.
+#         Returns:
+#             str: A string containing usage examples.
+#     """
+#     def __init__(self):
+#         self.parser = ArgumentParser(description='Gemini configuration arguments')
+#         self.parser.add_argument('--nm', dest='new_model', help='Add new model in gemini',type=str)
 
-    def get_args(self, args_str: str) -> dict:
-        try:
-            args = self.parser.parse_args(args_str.split())
-            return {k:v for k,v in (vars(args).items()) if v is not None}
-        except SystemExit:
-            return {'SystemExit': "❌ Invalid arguments"}
 
-    def get_usage(self) -> str:
-        return text(
-                "🔎 Search on in gemini: `/conf --es 1`",  
-                "🚫 Search off in gemini: `/conf --es 0`",  
-                "🤖 Gemini's models: `/conf --nm list`",  
-                "➕ Add model to gemini: `/conf --nm str`",  
-                "🔄 Turn proxy: `/conf --rr 1`", sep='\n'
-                )
+#     def get_args(self, args_str: str) -> dict:
+#         try:
+#             args = self.parser.parse_args(args_str.split())
+#             return {k:v for k,v in (vars(args).items()) if v is not None}
+#         except SystemExit:
+#             return {'SystemExit': "❌ Invalid arguments"}
+
+#     def get_usage(self) -> str:
+#         return text("🤖 Gemini's models: `/conf --nm list`",  
+#                     "➕ Add model to gemini: `/conf --nm str`")
 
 
 
@@ -958,7 +961,7 @@ class User:
     '''Specific user interface in chat'''
     def __init__(self):
         self.api_factory = APIFactory()
-        self.current_bot: BaseAPIInterface = self.api_factory.get(users.menu, users.DEFAULT_BOT)
+        self.current_bot: BaseAPIInterface = self.api_factory.get(users.DEFAULT_BOT)
         self.current_pic = FalAPI(users.menu)
         self.time_dump = time()
         self.text: str = None
@@ -972,7 +975,7 @@ class User:
         if context_name == '◀️':
             return users.context_dict
         
-        context = users.get_context(context_name)
+        context= users.get_context(context_name)
 
         if isinstance(context, dict): # subgroup
             context.setdefault('◀️','◀️')
@@ -1015,7 +1018,7 @@ class User:
             sep='\n')
         if delete_prev:
             await bot.delete_message(**self.last_msg) # type: ignore
-        return output, self.make_conf_btns()
+        return output, None #self.make_conf_btns()
     
 
     def make_conf_btns(self):
@@ -1028,43 +1031,35 @@ class User:
         return users.create_inline_kb(output, 'conf')
     
 
-    async def change_config(self, kwargs: dict) -> str:
-        output = ''
-        # if (proxy := kwargs.get('turn_proxy')) is not None:
-        #     output += users.turn_proxy(proxy)
-        if self.current_bot.name == 'gemini':
-            output += f'{await self.current_bot.change_chat_config(**kwargs)}\n'
-        if self.current_bot.name == 'groq':
-            self.current_bot.create_client(kwargs['proxy'])
-            output += f'Прокси {'включен ✅' if kwargs['proxy'] else 'выключен ❌'}\n'
-        if error := kwargs.get('SystemExit'):
-            return error + '\n' + users.config_arg_parser.get_usage()
+    # async def change_config(self, kwargs: dict) -> str:
+    #     output = ''
+    #     # if (proxy := kwargs.get('turn_proxy')) is not None:
+    #     #     output += users.turn_proxy(proxy)
+    #     if self.current_bot.name == 'gemini':
+    #         output += f'{await self.current_bot.change_chat_config(**kwargs)}\n'
+    #     if self.current_bot.name == 'groq':
+    #         self.current_bot.create_client(kwargs['proxy'])
+    #         output += f'Прокси {'включен ✅' if kwargs['proxy'] else 'выключен ❌'}\n'
+    #     if error := kwargs.get('SystemExit'):
+    #         return error + '\n' + users.config_arg_parser.get_usage()
 
-        return output.strip().strip('None')
+    #     return output.strip().strip('None')
 
 
     async def change_bot(self, bot_name: str) -> str:
+        '''DEPRECATED'''
         self.current_bot = self.api_factory.get(bot_name)
         await self.clear()
         return f'🤖 Смена бота на {self.current_bot.name}'
     
 
-    async def change_model(self, model_name: str) -> str:
-        cur_bot = self.current_bot
-        model = next((el for el in cur_bot.models if model_name in el), cur_bot.current)
-        self.current_bot.current = model
-        if hasattr(cur_bot, 'vlm_params') and model_name in cur_bot.vlm_params:
-            self.current_bot.current_vlm_model = model_name
-        await self.clear()
-        return f'🔄 Смена модели на {users.make_short_name(model_name)}'
-
-
-    def change_model_new(self, btn_type: str, bot: str, model: str) -> None:
+    async def change_model(self, btn_type: str, bot: str, model: str) -> None:
         cbt = f'current_{btn_type}'
         if getattr(self, cbt).name != bot:
-            setattr(self, cbt, getattr(self,  f'{btn_type}_dct')[bot](self.menu))
+            setattr(self, cbt, self.api_factory.get(bot))
         if model:
             getattr(self, cbt).current = model
+        await self.clear()
 
 
     def change_state(self, state: str) -> None:
@@ -1087,8 +1082,21 @@ class User:
                     'dlg_wipe': 'Очистка контекста и системной инструкции'}[cmd]
         else:
             return f'❌ Команда {cmd} отсутствует в {cbt.name}'
-            
 
+
+    async def utils_router(self, cmd: str, ) -> str:
+        """Router for utils actions."""
+        match cmd:
+            case 'utils_gemini_list':
+                output = await self.current_bot.get_list()
+            case 'utils_modify_models':
+                output: str = '❌ Используйте формат: `/modify_models gemini Ultra gemini-2.5-ultra`'\
+                            'Или `/modify_models gemini remove short_name` для удаления модели'
+            case _:
+                output = f'❌ Команда {cmd} отсутствует в {self.current_bot.name}'
+
+        return output
+        
 
     async def clear(self, delete_prev: bool = False) -> tuple:
         if self.current_bot.name == 'gemini':
@@ -1103,7 +1111,7 @@ class User:
                 status = 'полностью'
         if delete_prev:
             await bot.delete_message(**self.last_msg) # type: ignore
-        return f'🧹 Диалог очищен {status}', None
+        return f'🧹 Диалог очищен {status or ''}', None
     
 
     async def make_multi_modal_body(text, 
@@ -1161,7 +1169,6 @@ class UsersMap():
         self.queue_manager = RateLimitedQueueManager()
         self._user_instances: dict[int, User] = {}
         self.context_dict: dict = self.load_json('prompts')
-        # self.context_dict: dict = json.loads(open('./prompts.json','r', encoding="utf-8").read())
         self.template_prompts: dict = {
                 '💬 Цитата': 'Напиши остроумную цитату. Цитата может принадлежать как реально существующей или существовавшей личности, так и вымышленного персонажа',
                 '🤣 Шутка': self.context_dict.get("🤡 Юмор",{}).get("🍻 Братюня",'') + '\nВыступи в роли профессионального стендап комика и напиши остроумную шутку. Ответом должен быть только текст шутки',
@@ -1191,10 +1198,9 @@ class UsersMap():
         self.simple_cmds: set = {'clear', 'info'}
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
         self.DEFAULT_BOT: str = 'gemini' #'glif' gemini mistral
-        self.proxy_settings = os.environ.get('HTTPS_PROXY')
-        # self.builder: ReplyKeyboardBuilder = self.create_builder()
         self.image_arg_parser = ImageGenArgParser()
-        self.config_arg_parser = ConfigArgParser()
+        # self.builder: ReplyKeyboardBuilder = self.create_builder()
+        # self.config_arg_parser = ConfigArgParser()
 
 
     # def create_builder(self) -> ReplyKeyboardMarkup | InlineKeyboardMarkup:
@@ -1487,6 +1493,33 @@ class UsersMap():
         return ''
 
 
+    def edit_json_settings(self) -> None:
+        with open('./settings.json', 'w', encoding="utf-8") as f:
+            json.dump(self.menu, f, ensure_ascii=False, indent=4)
+
+
+    def modify_models(self, bot: str, nm_name: str, new_model: str) -> str:
+        """Modify models for bot"""
+        if new_model == 'remove':
+            try:
+                self.menu[bot]["buttons"].remove(
+                    next((m for m in self.menu[bot]["buttons"] if m["text"] == nm_name), None)
+                    )
+                output = f'✂️ Модель {nm_name} удалена из {bot}'
+            except ValueError:
+                return f'❌ Модель {nm_name} не найдена в {bot}'
+
+        else:
+            self.menu[bot]["buttons"] = [
+                *self.menu[bot]["buttons"][:-1],
+                {'text': nm_name, 'select': new_model},
+                self.menu[bot]["buttons"][-1]]
+            output = f'✅ В {bot} добавлена модель {nm_name}'
+        self.edit_json_settings()
+        self._user_instances.clear()  # Clear user instances to refresh menu
+        return output
+
+
 
 users = UsersMap()
 bot = Bot(token=os.environ['TELEGRAM_API_KEY'])
@@ -1641,32 +1674,24 @@ class Handlers:
             await message.reply(output)
 
 
-    @dp.message(Command(commands=["info","clear"]))
+    @dp.message(Command(commands=["info","clear","change_context"]))
     async def short_command_handler(message: Message, user_name: str):
         await Handlers.reply_kb_command(message)
 
 
-    @dp.message(Command(commands=["change_context"]))
-    async def change_context_command_handler(message: Message, user_name: str):
-        await Handlers.reply_kb_command(message)
-
-
-    @dp.message(Command(commands=["conf"]))
-    async def config_handler(message: Message, user_name: str):
-        user: User = users.get(message.from_user.id) # type: ignore
+    @dp.message(Command(commands=["modify_models"]))
+    async def modify_models_handler(message: Message, user_name: str, command: CommandObject):
         if user_name != 'ADMIN':
             await message.reply("You don't have admin privileges")
             return
         
-        args = message.text.split(maxsplit=1) # type: ignore
-
-        if len(args) != 2:
-            await message.reply(escape(
-                users.config_arg_parser.get_usage()), parse_mode=users.PARSE_MODE)
-            return
-        
-        output = await user.change_config(users.config_arg_parser.get_args(args[1]))
-        await message.reply(output)
+        args: list = message.text.split(maxsplit=3) if command.args else [] # type: ignore
+        if len(args) != 4:
+            output: str = '❌ Используйте формат: `/modify_models gemini Ultra gemini-2.5-ultra`'\
+                    'Или `/modify_models gemini remove short_name` для удаления модели'
+            return await message.reply(output, parse_mode=ParseMode.MARKDOWN_V2)
+            
+        await message.reply(users.modify_models(*args[1:])) # type: ignore
 
 
     @dp.message(Command(commands=["i","I","image"]))
@@ -1838,35 +1863,39 @@ class Callbacks:
     async def change_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
         user = await users.check_and_clear(query, 'callback')
         output = await getattr(user, callback_data.cb_type)(callback_data.name)
-        is_final_set = isinstance(output, str) and callback_data.name != '◀️'
-        reply_markup = None if is_final_set else users.create_inline_kb(output, user.text)
-        await query.message.edit_reply_markup(reply_markup=reply_markup) # type: ignore
-        if is_final_set:
+        # is_final_set = isinstance(output, str) and callback_data.name != '◀️'
+        if isinstance(output, str) and callback_data.name not in {'◀️','🏠'}:
             await query.message.edit_text(output) # type: ignore
-            # await bot.delete_message(query.message.chat.id, user.last_msg['message_id'])
-            # await bot.delete_message(**user.last_msg) # type: ignore
             await user.delete_menu_cmd()
-
-
-    @dp.callback_query(CallbackClass.filter(F.cb_type.contains('conf')))
-    async def conf_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
-        user = await users.check_and_clear(query, 'callback')
-        var_name = f'{callback_data.name.split()[-1]}'
-        kwargs: dict = {var_name: not getattr(user.current_bot, f'{var_name}_status')}
-        await user.change_config(kwargs)
-        await query.message.edit_reply_markup(reply_markup=user.make_conf_btns()) # type: ignore
+        else:
+            if callback_data.name == '🏠':
+                kwargs = users.create_menu_kb(user, "main")
+                await query.message.edit_text(**kwargs) # type: ignore
+            else:
+                reply_markup = users.create_inline_kb(output, 'change_context')
+                await query.message.edit_reply_markup(reply_markup=reply_markup) # type: ignore
 
 
 
-    @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
-    async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
-        user = await users.check_and_clear(query, 'callback')
-        await query.message.edit_text(f'{callback_data.name} 👇') # type: ignore
-        async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot):  # type: ignore
-            output = await user.template_prompts(callback_data.name)
-        await users.send_split_response(query.message, output) # type: ignore
-        # await bot.delete_message(query.message.chat.id, user.last_msg['message_id'])
-        await bot.delete_message(**user.last_msg) # type: ignore
+    # @dp.callback_query(CallbackClass.filter(F.cb_type.contains('conf')))
+    # async def conf_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
+    #     user = await users.check_and_clear(query, 'callback')
+    #     var_name = f'{callback_data.name.split()[-1]}'
+    #     kwargs: dict = {var_name: not getattr(user.current_bot, f'{var_name}_status')}
+    #     await user.change_config(kwargs)
+    #     await query.message.edit_reply_markup(reply_markup=user.make_conf_btns()) # type: ignore
+
+
+
+    # @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
+    # async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
+    #     user = await users.check_and_clear(query, 'callback')
+    #     await query.message.edit_text(f'{callback_data.name} 👇') # type: ignore
+    #     async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot):  # type: ignore
+    #         output = await user.template_prompts(callback_data.name)
+    #     await users.send_split_response(query.message, output) # type: ignore
+    #     # await bot.delete_message(query.message.chat.id, user.last_msg['message_id'])
+    #     await bot.delete_message(**user.last_msg) # type: ignore
 
 
 
@@ -1877,7 +1906,7 @@ class Callbacks:
         if cb.btn_target == 'exit':
             await query.message.delete() # type: ignore
             return
-        elif cb.btn_target == 'change_context':
+        elif cb.btn_target == 'context':
             cur_bot = user.current_bot
             kwargs: dict = {
                 'text': f'Текущая модель:\n🤖 {cur_bot.name}\n🧩 {cur_bot.current}',
@@ -1887,6 +1916,8 @@ class Callbacks:
             kwargs: dict = {'text': await user.template_prompts(cb.btn_target.split('_')[-1])}
         elif cb.btn_target.startswith('dlg_'):
             kwargs: dict = {'text': user.dialogue_router(cb.btn_target)}
+        elif cb.btn_target.startswith('utils_'):
+            kwargs: dict = {'text': await user.utils_router(cb.btn_target)}
         else:
             kwargs: dict = users.create_menu_kb(user, cb.btn_target)
         await query.message.edit_text(**kwargs) # type: ignore
@@ -1900,7 +1931,7 @@ class Callbacks:
         if cb.btn_act in users.state_btns:
             user.change_state(cb.btn_act)
         else:
-            user.change_model_new(
+            await user.change_model(
                 user.nav_type, 
                 cb.btn_target.replace('_pic',''), 
                 cb.btn_act
@@ -1914,7 +1945,7 @@ class Callbacks:
 
 async def main() -> None:
     await bot.set_my_commands([
-        BotCommand(command="/menu", description="🍽️ Меню"),
+        BotCommand(command="/menu", description="🏠 Меню"),
         BotCommand(command="/change_context", description="✍️ Добавить контекст"),
         BotCommand(command="/clear", description="🧹 Очистить диалог"),
         BotCommand(command="/info", description="📚 Вывести инфо"),

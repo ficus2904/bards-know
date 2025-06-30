@@ -13,7 +13,7 @@
             },
             {
                 "text": "✍️ Контекст",
-                "target": "change_context"
+                "target": "context"
             },
             {
                 "text": "⚡ Команды",
@@ -24,8 +24,12 @@
                 "target": "dialogue"
             },
             {
-                "text": "🔄 Настройки",
+                "text": "🔄 Свичи",
                 "target": "switch"
+            },
+            {
+                "text": "🧰 Настройки",
+                "target": "utils"
             },
             {
                 "text": "🚪 Exit",
@@ -66,8 +70,29 @@
             }
         ]
     },
+    "utils": {
+        "text": "🧰 Настройки",
+        "buttons": [
+            {
+                "text": "📊 Список gemini",
+                "target": "utils_gemini_list"
+            },
+            {
+                "text": "🤖 Изменить модели",
+                "target": "utils_modify_models"
+            },
+            {
+                "text": "🖼️ Pic Ratio",
+                "target": "utils_ratio"
+            },
+            {
+                "text": "⬅️",
+                "target": "main"
+            }
+        ]
+    },
     "switch": {
-        "text": "🔄 Настройки переключения",
+        "text": "🔄 Переключатели",
         "buttons": [
             {
                 "text": "🤖 Bot",
@@ -173,6 +198,10 @@
             {
                 "text": "Flash Lite",
                 "select": "gemini-2.5-flash-lite-preview-06-17"
+            },
+            {
+                "text": "Image gen",
+                "select": "gemini-2.0-flash-preview-image-generation"
             },
             {
                 "text": "⬅️",
