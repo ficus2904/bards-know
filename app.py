@@ -757,22 +757,10 @@ class FalAPI(BaseAPIInterface):
     name = 'FalAI'
     
     def __init__(self, menu: dict):
-        # self.models = ["v1.1-ultra","v1.1",]
         self.models = self.get_models(menu[self.name])
         self.current = self.models[0]
-        self.image_size = '9:16'
+        self.image_size = 'portrait_16_9'
         self.raw = False
-
-
-    # def change_model(self, model):
-    #     self.current = {
-    #         "ultra": "v1.1-ultra",
-    #         "1.1": "v1.1",
-    #     }.get(model, "v1.1-ultra")
-    #     if model == 'raw':
-    #         self.raw = True
-    #     elif model in {'no_raw','wo_raw'}:
-    #         self.raw = False
 
 
     async def prompt(self, *args, **kwargs):
@@ -781,64 +769,66 @@ class FalAPI(BaseAPIInterface):
 
     def get_info(self) -> str:
         return (f'\n📏 Ratio: {self.image_size}\n'
-                f'🤖 Model: {self.current} {int(self.raw)}')
+                f'🤖 Model: {self.current}') #  {int(self.raw)}
+
+
+    def to_aspect_ratio(self) -> str:
+        return {
+            "portrait_16_9":"9:16", 
+            "portrait_4_3":"3:4",
+            "square_hd":"1:1", 
+            "landscape_4_3":"4:3", 
+            "landscape_16_9":"16:9",
+        }.get(self.image_size, '4:3')
 
 
     def change_image_size_old(self, image_size: str) -> str:
-        self.image_size = {
-            "9:16":"portrait_16_9", 
-            "3:4":"portrait_4_3",
-            "1:1":"square_hd", 
-            "4:3":"landscape_4_3", 
-            "16:9":"landscape_16_9",
-        }.get(image_size, 'portrait_4_3')
-        return self.image_size
-
-
-    def change_image_size(self, image_size: str) -> str:
-        if image_size in {"9:21","9:16","3:4","1:1","4:3","16:9","21:9"}:
+        '''DEPRECATED'''
+        # "21:9" "9:21",
+        if image_size in {"9:16","3:4","1:1","4:3","16:9"}:
             self.image_size = image_size
         else:
             self.image_size = "9:16"
         return self.image_size
     
 
-    def get_kwargs(self, image_size: str, model: str) -> dict:
-        # if model:
-        #     self.change_model(model)
-
-        if self.current == 'flux-pro/v1.1':
+    def get_kwargs(self) -> dict[str,str]:
+        if self.current == 'flux-pro/v1.1-ultra':
             kwargs = {
-                "image_size": self.change_image_size_old(image_size),
-            }
-        elif self.current == 'flux-pro/v1.1-ultra':
-            kwargs = {
-                "aspect_ratio": self.change_image_size(image_size),
+                "aspect_ratio": self.to_aspect_ratio(),
                 "raw": self.raw,
+            }
+        elif 'imagen' in self.current:
+            kwargs = {
+                "aspect_ratio": self.to_aspect_ratio(),
+            }
+        elif 'hidream' in self.current:
+            kwargs = {
+                "image_size": self.image_size,
             }
         return kwargs
 
 
-    async def gen_image(self, prompt: str | None = None, 
-                        image_size: str | None = None, 
-                        model: str | None = None) -> str:
-
-        kwargs = self.get_kwargs(image_size, model)
-
-        if not prompt:
-            return self.get_info()
-        
-        url = "https://fal.run/fal-ai/" + self.current
-        headers = {"Authorization": f"Key {self.api_key}",
-                   'Content-Type': 'application/json'}
-        body = {
+    async def gen_image(self, prompt: str) -> str:
+        '''Method to generate an image using the Fal API'''
+        kwargs = self.get_kwargs()
+        headers: dict[str,str] = {
+            "Authorization": f"Key {self.api_key}",
+            'Content-Type': 'application/json',
+            }
+        body: dict[str,str] = {
                 "prompt": prompt,
                 "num_images": 1,
                 "enable_safety_checker": False,
                 "safety_tolerance": "5",
                 } | kwargs
         async with aiohttp.ClientSession() as session:
-            async with session.post(url=url,headers=headers,json=body, timeout=90) as response:
+            async with session.post(
+                url=f"https://fal.run/fal-ai/{self.current}",
+                headers=headers,
+                json=body, 
+                timeout=90,
+                ) as response:
                 try:
                     response.raise_for_status()
                     answer = await response.json()
@@ -922,38 +912,38 @@ class ImageGenArgParser:
                 sep='\n')
     
 
-# class ConfigArgParser:
-#     """
-#     A class to parse and handle configuration arguments for the application.
-#     ----
-#     get_args(args_str: str) -> dict:
-#         Parses the provided argument string and returns a dictionary of arguments and their values.
-#         Parameters:
-#             args_str (str): A string of arguments to be parsed.
-#         Returns:
-#             dict: A dictionary containing the parsed arguments and their values.
-#         Raises:
-#             ValueError: If the arguments are invalid.
-#     get_usage() -> str:
-#         Provides usage examples for the argument parser.
-#         Returns:
-#             str: A string containing usage examples.
-#     """
-#     def __init__(self):
-#         self.parser = ArgumentParser(description='Gemini configuration arguments')
-#         self.parser.add_argument('--nm', dest='new_model', help='Add new model in gemini',type=str)
+class ConfigArgParser:
+    """DEPRECATED
+    A class to parse and handle configuration arguments for the application.
+    ----
+    get_args(args_str: str) -> dict:
+        Parses the provided argument string and returns a dictionary of arguments and their values.
+        Parameters:
+            args_str (str): A string of arguments to be parsed.
+        Returns:
+            dict: A dictionary containing the parsed arguments and their values.
+        Raises:
+            ValueError: If the arguments are invalid.
+    get_usage() -> str:
+        Provides usage examples for the argument parser.
+        Returns:
+            str: A string containing usage examples.
+    """
+    def __init__(self):
+        self.parser = ArgumentParser(description='Gemini configuration arguments')
+        self.parser.add_argument('--nm', dest='new_model', help='Add new model in gemini',type=str)
 
 
-#     def get_args(self, args_str: str) -> dict:
-#         try:
-#             args = self.parser.parse_args(args_str.split())
-#             return {k:v for k,v in (vars(args).items()) if v is not None}
-#         except SystemExit:
-#             return {'SystemExit': "❌ Invalid arguments"}
+    def get_args(self, args_str: str) -> dict:
+        try:
+            args = self.parser.parse_args(args_str.split())
+            return {k:v for k,v in (vars(args).items()) if v is not None}
+        except SystemExit:
+            return {'SystemExit': "❌ Invalid arguments"}
 
-#     def get_usage(self) -> str:
-#         return text("🤖 Gemini's models: `/conf --nm list`",  
-#                     "➕ Add model to gemini: `/conf --nm str`")
+    def get_usage(self) -> str:
+        return text("🤖 Gemini's models: `/conf --nm list`",  
+                    "➕ Add model to gemini: `/conf --nm str`")
 
 
 
@@ -999,13 +989,13 @@ class User:
 
     async def template_prompts(self, template: str) -> str:
         if template.isdigit():
-            for num, prompt_text in enumerate(users.template_prompts.values(), start=1):
+            for num, prompt_text in enumerate(users.template_prompts.values(),1):
                 if num == int(template):
                     break
         else:
             prompt_text = users.template_prompts.get(template)
         output = await self.prompt(prompt_text)
-        return output
+        return escape(output)
     
 
     async def info(self, delete_prev: bool = False) -> tuple:
@@ -1031,19 +1021,18 @@ class User:
         return users.create_inline_kb(output, 'conf')
     
 
-    # async def change_config(self, kwargs: dict) -> str:
-    #     output = ''
-    #     # if (proxy := kwargs.get('turn_proxy')) is not None:
-    #     #     output += users.turn_proxy(proxy)
-    #     if self.current_bot.name == 'gemini':
-    #         output += f'{await self.current_bot.change_chat_config(**kwargs)}\n'
-    #     if self.current_bot.name == 'groq':
-    #         self.current_bot.create_client(kwargs['proxy'])
-    #         output += f'Прокси {'включен ✅' if kwargs['proxy'] else 'выключен ❌'}\n'
-    #     if error := kwargs.get('SystemExit'):
-    #         return error + '\n' + users.config_arg_parser.get_usage()
+    async def change_config(self, kwargs: dict) -> str:
+        '''DEPRECATED'''
+        output = ''
+        if self.current_bot.name == 'gemini':
+            output += f'{await self.current_bot.change_chat_config(**kwargs)}\n'
+        if self.current_bot.name == 'groq':
+            self.current_bot.create_client(kwargs['proxy'])
+            output += f'Прокси {'включен ✅' if kwargs['proxy'] else 'выключен ❌'}\n'
+        # if error := kwargs.get('SystemExit'):
+        #     return error + '\n' + users.config_arg_parser.get_usage()
 
-    #     return output.strip().strip('None')
+        return output.strip().strip('None')
 
 
     async def change_bot(self, bot_name: str) -> str:
@@ -1092,9 +1081,6 @@ class User:
             case 'utils_modify_models':
                 output: str = '❌ Используйте формат: `/modify_models gemini Ultra gemini-2.5-ultra`'\
                             'Или `/modify_models gemini remove short_name` для удаления модели'
-            case _:
-                output = f'❌ Команда {cmd} отсутствует в {self.current_bot.name}'
-
         return output
         
 
@@ -1177,10 +1163,10 @@ class UsersMap():
                             Уровень вопросов: Старшая школа. Ответом должен быть только текст с тремя вопросами без ответов''',
                 '🤓 QuizPlease': '''Выступи в роли профессионального ведущего quiz - вечеринок. Напиши 5 вопросов по теме кино и сериалы. 
                                 Вопросы должны быть минимум продвинутого уровня, рассчитанные на искушённых киноманов.''',
-                '📝 Промпт': ('Write 4 interesting and unusual prompts in different visual styles. '
-                            'First, think through the main idea of the picture and then realize the visual storytelling that will be revealed by that one prompt. '
-                            'It must consist a sarcastic, ironic and brutal plot with black humor, showing the situation. '
-                            'Wrap each prompt in quotation marks `...`.'),
+                '📝 Промпт': ''''Write 3 interesting and unusual prompts in different visual styles.
+                            First, think through the main idea of the picture and then realize the visual storytelling that will be revealed by that one prompt.
+                            It must consist a sarcastic, ironic and brutal plot with black humor, showing the situation.
+                            Wrap each prompt in plaintext block. Max tokens 500.''',
                 '⚖️ Правда': self.context_dict.get("🤡 Юмор",{}).get("🍻 Братюня",'') + (
                             '\nНапиши непопулярное мнение на твое усмотрение на основе научных данных.'
                             'Желательно такое, чтобы мир прям наизнанку и пиши развернутый аргументированный ответ')
@@ -1388,7 +1374,7 @@ class UsersMap():
         if type_prompt in {'callback','tts'}:
             return user
         elif type_prompt in ['gen_image']:
-            logger.info(f'{user_name or message.from_user.id}: "{message.text}"') # type: ignore
+            logger.info(f'{user_name or message.from_user.id}: "{message.text[:100]}"') # type: ignore
             return user
         ## clear dialog context after 1 hour
         if (time() - user.time_dump) > 3600:
@@ -1450,7 +1436,8 @@ class UsersMap():
         cb = getattr(user, f'current_{user.nav_type}')
         if user.nav_type in {'bot', 'pic'} and target not in {'main', 'switch', 'utils', 'cmd'}:
             headline: str = f'Текущая модель:\n🤖 {cb.name}\n'\
-                            f'{'🧩' if user.nav_type == 'bot' else '🎨'} {cb.current}'
+                            f'{'🧩' if user.nav_type == 'bot' else '🎨'} {cb.current}'\
+                            f'{'\n📐' + cb.image_size if user.nav_type == 'pic' else ''}'
         else:
             headline: str = target_menu['text']
 
@@ -1489,6 +1476,10 @@ class UsersMap():
             return '✅ ' if getattr(cb, state) else '❌ '
         # Handle model selection buttons
         if select:
+            if select.startswith('ratio'):
+                # Handle image_size selection buttons
+                return '✅ ' if select.removeprefix('ratio_') in {cb.image_size, btn_act} else ''
+            
             return '✅ ' if select in {cb.current, btn_act} else ''
         return ''
 
@@ -1694,19 +1685,16 @@ class Handlers:
         await message.reply(users.modify_models(*args[1:])) # type: ignore
 
 
-    @dp.message(Command(commands=["i","I","image"]))
-    async def image_gen_handler(message: Message, user_name: str):
+    @dp.message(Command(commands=["image", "i","I"]))
+    async def image_gen_handler(message: Message, user_name: str, command: CommandObject):
         user = await users.check_and_clear(message, "gen_image", user_name)
-        args = message.text.split(maxsplit=1) # type: ignore
-        if len(args) != 2:
-            await message.reply(escape(
-                users.image_arg_parser.get_usage() + user.current_pic.get_info()
-                ), parse_mode=users.PARSE_MODE)
-            return
-        
-        await message.reply('Картинка генерируется ⏳')
+        if command.args is None:
+            return await message.reply(
+                'Введите промпт для генерации картинки, например: /i your_prompt'
+                )
+            
         async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
-            image_url = await user.gen_image(*users.image_arg_parser.get_args(args[1]))
+            image_url = await user.gen_image(command.args)
         if image_url.startswith(('\n📏','❌')):
             await message.reply(image_url)
         else:
@@ -1715,6 +1703,7 @@ class Handlers:
 
     @dp.message(Command(commands=["imagen"]))
     async def imagen_handler(message: Message, user_name: str):
+        '''DEPRECATED'''
         user = await users.check_and_clear(message, "gen_image", user_name)
         args = message.text.split(maxsplit=1) # type: ignore
         if len(args) != 2 or (is_gemini := user.current_bot.name != 'gemini'):
@@ -1913,7 +1902,11 @@ class Callbacks:
                 'reply_markup':users.create_inline_kb(users.context_dict, 'change_context')
             }
         elif cb.btn_target.startswith('cmd_'):
-            kwargs: dict = {'text': await user.template_prompts(cb.btn_target.split('_')[-1])}
+            await query.answer()
+            async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot): # type: ignore
+                output: str = await user.template_prompts(cb.btn_target.removeprefix('cmd_'))
+            kwargs: dict = users.set_kwargs(output)
+
         elif cb.btn_target.startswith('dlg_'):
             kwargs: dict = {'text': user.dialogue_router(cb.btn_target)}
         elif cb.btn_target.startswith('utils_'):
@@ -1930,10 +1923,12 @@ class Callbacks:
         cb = callback_data
         if cb.btn_act in users.state_btns:
             user.change_state(cb.btn_act)
+        elif cb.btn_act.startswith('ratio'):
+            user.current_pic.image_size = cb.btn_act.split('_',1)[1]
         else:
             await user.change_model(
                 user.nav_type, 
-                cb.btn_target.replace('_pic',''), 
+                cb.btn_target.removesuffix('_pic'),#replace('_pic',''), 
                 cb.btn_act
                 )
         with suppress(Exception):

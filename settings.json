@@ -53,16 +53,20 @@
                 "target": "cmd_3"
             },
             {
-                "text": "🤓 QuizPlease",
+                "text": "🤔 Квиз",
                 "target": "cmd_4"
             },
             {
-                "text": "📝 Промпт",
+                "text": "🤓 QuizPlease",
                 "target": "cmd_5"
             },
             {
-                "text": "⚖️ Правда",
+                "text": "📝 Промпт",
                 "target": "cmd_6"
+            },
+            {
+                "text": "⚖️ Правда",
+                "target": "cmd_7"
             },
             {
                 "text": "⬅️",
@@ -80,10 +84,6 @@
             {
                 "text": "🤖 Изменить модели",
                 "target": "utils_modify_models"
-            },
-            {
-                "text": "🖼️ Pic Ratio",
-                "target": "utils_ratio"
             },
             {
                 "text": "⬅️",
@@ -284,8 +284,12 @@
         "text": "🗣️",
         "buttons": [
             {
-                "text": "FalAI",
+                "text": "🎨 FalAI",
                 "target": "FalAI"
+            },
+            {
+                "text": "📐 Aspect Ratio",
+                "target": "ratio"
             },
             {
                 "text": "⬅️",
@@ -301,12 +305,49 @@
                 "select": "flux-pro/v1.1-ultra"
             },
             {
-                "text": "Flux Pro",
-                "select": "flux-pro/v1.1"
+                "text": "Hidream i1 Fast",
+                "select": "hidream-i1-fast"
+            },
+            {
+                "text": "Hidream i1 Full",
+                "select": "hidream-i1-full"
+            },
+            {
+                "text": "Imagen4 Fast",
+                "select": "imagen4/preview/fast"
             },
             {
                 "text": "Imagen4 Ultra",
                 "select": "imagen4/preview/ultra"
+            },
+            {
+                "text": "⬅️",
+                "target": "pic"
+            }
+        ]
+    },
+    "ratio": {
+        "text": "📐 Aspect Ratio",
+        "buttons": [
+            {
+                "text": "🧍 9x16",
+                "select": "ratio_portrait_16_9"
+            },
+            {
+                "text": "🧍 3x4",
+                "select": "ratio_portrait_4_3"
+            },
+            {
+                "text": "🔳 1x1",
+                "select": "ratio_square_hd"
+            },
+            {
+                "text": "🖼️ 4x3",
+                "select": "ratio_landscape_4_3"
+            },
+            {
+                "text": "🖼️ 16x9",
+                "select": "ratio_landscape_16_9"
             },
             {
                 "text": "⬅️",
