@@ -195,6 +195,7 @@ class BaseAPIInterface(ABC):
 
 class BOTS:
     """LLM bot interfaces"""
+
     class GeminiAPI(BaseAPIInterface):
         """Class for Gemini API"""
         name = 'gemini'
@@ -203,16 +204,11 @@ class BOTS:
                                 in types.HarmCategory._member_names_[1:]]
 
         def __init__(self, menu: dict):
-            # self.models = [
-            #     'gemini-2.5-flash',
-            #     'gemini-2.0-flash-preview-image-generation',
-            #     'gemini-2.5-flash-lite-preview-06-17',
-            #     ]
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
             self.chat = None
             self.proxy_status: bool = True
-            self.search_status: bool = False
+            self.search_status: bool = True
             self.client: GeminiClient = None
             self.reset_chat(with_proxy=self.proxy_status)
 
@@ -278,7 +274,9 @@ class BOTS:
         
         def reset_chat(self, 
                        context: str | None = None, 
-                       with_proxy: bool | None = None):
+                       with_proxy: bool | None = None,
+                       history: str | None = None):
+            
             if isinstance(with_proxy, bool):
                 self.create_client(with_proxy)
             self.context = [{'role':'system', 'content': context}]
@@ -287,7 +285,16 @@ class BOTS:
                 safety_settings=self.safety_settings,
                 thinking_config=types.ThinkingConfig(thinking_budget=-1),
                 )
-            self.chat = self.client.aio.chats.create(model=self.current, config=config)
+            self.chat = self.client.aio.chats.create(
+                model=self.current, 
+                config=config,
+                history=history,
+                )
+            if self.search_status and ('image' not in self.current):
+                self.chat._config.tools = [types.Tool(google_search=types.GoogleSearch(),
+                        url_context = types.UrlContext())]
+            else:
+                self.chat._config.tools = None
             if 'image' in self.current:
                 self.chat._config.thinking_config = None
                 self.chat._config.response_modalities = ['Text','Image']
@@ -304,6 +311,7 @@ class BOTS:
                                     search: int | None = None, 
                                     new_model: str | None = None, 
                                     proxy: int | None = None) -> str | None:
+            '''DEPRECATED'''
             if self.chat._model != self.current:
                 return self.reset_chat()
             
@@ -399,28 +407,38 @@ class BOTS:
                 raise Exception(f'Gemini error {e.code}: {e}')
 
 
-        def dialogue_api_router(self, cmd: str) -> None:
+        def dialogue_api_router(self, cmd: str | None = None) -> str:
             '''Remove last question and answer from the chat history'''
+            if cmd is None:
+                cmd: str = 'clear' if (self.chat._curated_history 
+                                and self.chat._config.system_instruction
+                                ) else 'wipe'
             system_content: str | None = self.context[0].get('content') if self.context else None
-            system_instruction: str | None = {
-                'dlg_last': system_content,
-                'dlg_clear': system_content,
-                'dlg_wipe': None,
-            }.get(cmd)
-            self.context = [{'role':'system', 'content': system_instruction}]
-            config = types.GenerateContentConfig(
-                system_instruction=system_instruction, 
-                safety_settings=self.safety_settings,
-                thinking_config=types.ThinkingConfig(thinking_budget=-1),
+            system_instruction: str = {
+                'last': system_content,
+                'clear': system_content,
+                'wipe': None,}[cmd]
+            self.reset_chat(
+                context=system_instruction,
+                history=self.chat.get_history()[:-2] if cmd == 'last' else None
                 )
-            self.chat = self.client.aio.chats.create(
-                model=self.current, 
-                config=config, 
-                history=self.chat.get_history()[:-2] if cmd == 'dlg_last' else None
-                )
-            if 'image' in self.current:
-                self.chat._config.thinking_config = None
-                self.chat._config.response_modalities = ['Text', 'Image']
+
+            # self.context = [{'role':'system', 'content': system_instruction}]
+            # config = types.GenerateContentConfig(
+            #     system_instruction=system_instruction, 
+            #     safety_settings=self.safety_settings,
+            #     thinking_config=types.ThinkingConfig(thinking_budget=-1),
+            #     )
+            # self.chat = self.client.aio.chats.create(
+            #     model=self.current, 
+            #     config=config, 
+            #     history=self.chat.get_history()[:-2] if cmd == 'dlg_last' else None
+            #     )
+            # if 'image' in self.current:
+            #     self.chat._config.thinking_config = None
+            #     self.chat._config.response_modalities = ['Text', 'Image']
+            
+            return 'кроме системного' if cmd == 'clear' else 'полностью'
 
 
 
@@ -513,7 +531,7 @@ class BOTS:
 
 
     class NvidiaAPI(BaseAPIInterface):
-        """Class for Nvidia API"""
+        """DEPRECATED Class for Nvidia API"""
         name = 'nvidia'
         
         def __init__(self):
@@ -592,7 +610,7 @@ class BOTS:
 
 
     class TogetherAPI(BaseAPIInterface):
-        """Class for Together API"""
+        """DEPRECATED Class for Together API"""
         name = 'together'
         
         def __init__(self):
@@ -623,7 +641,7 @@ class BOTS:
 
 
     class OpenRouterAPI(BaseAPIInterface):
-        """Class for OpenRouter API"""
+        """DEPRECATED Class for OpenRouter API"""
         name = 'open_router'
         
         def __init__(self):
@@ -752,6 +770,7 @@ class BOTS:
                     return None
 
 
+
 class FalAPI(BaseAPIInterface):
     """Class for Fal API"""
     name = 'FalAI'
@@ -849,7 +868,6 @@ class FalAPI(BaseAPIInterface):
                     return f'❌: {error_msg}'
 
 
-
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
     # bots_lst: list = [NvidiaAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI, OpenRouterAPI]
@@ -887,6 +905,7 @@ class RateLimitedQueueManager:
 
 
 class ImageGenArgParser:
+    '''DEPRECATED'''
     def __init__(self):
         self.parser = ArgumentParser(description='Generate images with custom parameters')
         self.parser.add_argument('prompt', nargs='*', help='Image generation prompt')
@@ -1057,15 +1076,17 @@ class User:
             attr: bool = getattr(cbt, state)
             if 'proxy' in state:
                 cbt.create_client(not attr)
-            else:
+            elif 'search' in state:
                 setattr(cbt, state, not attr)
+                cbt.reset_chat()
+
 
 
     def dialogue_router(self, cmd: str) -> str:
         """Router for command actions."""
         cbt = getattr(self, f'current_{self.nav_type}')
         if hasattr(cbt, 'dialogue_api_router'):
-            getattr(cbt, 'dialogue_api_router')(cmd)
+            getattr(cbt, 'dialogue_api_router')(cmd.removeprefix('dlg_'))
             return {'dlg_last': 'Удален последний ответ и вопрос из контекста',
                     'dlg_clear': 'Очистка контекста',
                     'dlg_wipe': 'Очистка контекста и системной инструкции'}[cmd]
@@ -1073,7 +1094,7 @@ class User:
             return f'❌ Команда {cmd} отсутствует в {cbt.name}'
 
 
-    async def utils_router(self, cmd: str, ) -> str:
+    async def utils_router(self, cmd: str, user_id: int) -> str:
         """Router for utils actions."""
         match cmd:
             case 'utils_gemini_list':
@@ -1081,20 +1102,23 @@ class User:
             case 'utils_modify_models':
                 output: str = '❌ Используйте формат: `/modify_models gemini Ultra gemini-2.5-ultra`'\
                             'Или `/modify_models gemini remove short_name` для удаления модели'
-        return output
+            case 'utils_context':
+                output: str = users.get_current_context(user_id) or '❌ Нет текущего контекста'
+                output: str = f'```plaintext\n{output}\n```' if not output.startswith('❌') else output
+        return escape(output)
         
 
     async def clear(self, delete_prev: bool = False) -> tuple:
         if self.current_bot.name == 'gemini':
-            status = await self.current_bot.change_chat_config(clear=True)
+            status: str = self.current_bot.dialogue_api_router()
         else:
             ct = self.current_bot.context
             if (len(ct) not in {0,1}) and (ct[0].get('role') == 'system'):
                 self.current_bot.context = ct[:1]
-                status = 'кроме системного'
+                status: str = 'кроме системного'
             else:
                 self.current_bot.context.clear()
-                status = 'полностью'
+                status: str = 'полностью'
         if delete_prev:
             await bot.delete_message(**self.last_msg) # type: ignore
         return f'🧹 Диалог очищен {status or ''}', None
@@ -1136,7 +1160,7 @@ class User:
         return output
 
 
-    async def delete_menu_cmd(self) -> None:
+    async def delete_last_cmd(self) -> None:
         """Deletes the /menu message in the chat"""
         if self.last_msg:
             await bot.delete_message(**self.last_msg) # type: ignore
@@ -1341,10 +1365,10 @@ class UsersMap():
     def create_help(self) -> str:
         help_items_simple = [
             text('1. 🧑‍💼 User Management:',
-                 '🔹 Add new user: /add 123456 UserName',
-                 '🔹 Remove existing user: /remove UserName',
+                 '🔹 Add new user: /add_user 123456 UserName',
+                 '🔹 Remove existing user: /remove_user UserName',
                   sep='\n'),
-            text('2. 🗂️ Agent Context:',
+            text('2. 🗂️ Context:',
                  '🔹 -i: Get context_body info',
                  '🔹 -a: Add new context',
                  '🔹 -r: Remove existing context',
@@ -1353,14 +1377,9 @@ class UsersMap():
                  '🔹 /context [-a] context_name | context_body', 
                  sep='\n'),
             text('3. 🖼️ Generate Image:',
-                 '🔹 Equal commands: /image or /i',
-                 '🔹 Default size with prompt: /image your_prompt with 9:16 default size',
-                 '🔹 Target size with prompt: /image your_prompt --ar 9:16',
-                 '🔹 Only change size: /i --ar 9:16',
+                 '🔹 Equal commands: /image or /i or /I',
+                 '🔹 Usage: /image your_prompt',
                  '🔹 Acceptable ratio size: 9:16, 3:4, 1:1, 4:3, 16:9', 
-                 sep='\n'),
-            text('4. ⚙️ Change config',
-                 '🔹 /conf: Get conf cases', 
                  sep='\n'),
         ]
         return ExpandableBlockQuote(text(*help_items_simple, sep='\n')).as_markdown()
@@ -1410,12 +1429,11 @@ class UsersMap():
         return builder_inline.adjust(*[2]*(len(dict_iter)//2)).as_markup()
 
 
-    def get_current_context(self, user_id: int) -> str:
-        user: User = self.get(user_id)
+    def get_current_context(self, user) -> str | None:
         ct = user.current_bot.context
         if len(ct) and ct[0].get('role') == 'system':
             return ct[0].get('content')
-        return 'No current context'
+        # return 'No current context'
     
 
     def create_menu_kb(self, user: User, target: str, btn_act: str | None = None) -> dict:
@@ -1520,6 +1538,7 @@ dp.callback_query.middleware(UserFilterMiddleware())
 
 
 class Handlers:
+
     @dp.message(CommandStart())
     async def start_handler(message: Message):
         output = ('Доступ открыт.\nДобро пожаловать '
@@ -1535,37 +1554,38 @@ class Handlers:
         user.last_msg = {'chat_id': message.chat.id, 
                          'message_id': message.message_id}
         await message.answer(**users.create_menu_kb(user, "main")) # type: ignore
-        await user.delete_menu_cmd()
+        await user.delete_last_cmd()
 
 
     @dp.message(Command(commands=["context"]))
-    async def context_handler(message: Message, user_name: str):
+    async def context_handler(message: Message, user_name: str, command: CommandObject):
+        '''Handles the context management commands for the bot.'''
         if user_name != 'ADMIN':
-            await message.reply("You don't have admin privileges")
-            return
-        args = message.text.split(maxsplit=2) # type: ignore
-        if (len(args) == 1) or (len(args) != 3 and not args[1].startswith('-')):
-            await message.reply("Usage: `/context [-i/-r/-a] prompt_name [| prompt]`")
-            return
-        
-        _, arg, prompt_body = args
+            return await message.reply("You don't have admin privileges")
+
+        cur_cont: str | None = users.get_current_context(users.get(message.from_user.id)) # type: ignore
+        if not command.args and cur_cont:
+            arg, prompt_body = ('-i', 'c')
+        elif command.args:
+            arg, prompt_body = command.args.split(maxsplit=1)
+        else:
+            arg, prompt_body = '', ''
+
         if arg == '-i':
             if prompt_body in ['c', 'current']:
-                text = users.get_current_context(message.from_user.id) # type: ignore
+                text: str = cur_cont or 'No current context'
             else:
-                text = users.get_context(prompt_body) or 'Context name not found'
+                text: str = str(users.get_context(prompt_body)) or 'Context name not found'
             text = f'```plaintext\n{text}\n```'
             await message.reply(**users.set_kwargs(escape(text))) # type: ignore
-            return
         
-        if arg == '-r' and prompt_body in users.context_dict:
+        elif arg == '-r' and prompt_body in users.context_dict:
             users.context_dict.pop(prompt_body)
             with open('./prompts.json', 'w', encoding="utf-8") as f:
                 json.dump(users.context_dict, f, ensure_ascii=False, indent=4)
             await message.reply(f"Context {prompt_body} removed successfully.")
-            return
         
-        if arg == '-a' and prompt_body.count('|') == 1:
+        elif arg == '-a' and prompt_body.count('|') == 1:
             prompt_name, prompt = [el.strip() for el in prompt_body.split("|",maxsplit=1)]
             if users.context_dict.get(prompt_name):
                 await message.reply(f"Context {prompt_name} already exists")
@@ -1577,13 +1597,17 @@ class Handlers:
                 await message.reply(f"Context {prompt_name} added successfully.")
             except Exception as e:
                 await message.reply(f"An error occurred: {e}.")
+
         else:
-            await message.reply("Usage: `/context -a prompt_name | prompt`")
+            text = escape("Usage: `/context [-i/-r/-a] prompt_name [| prompt]`")
+            await message.reply(**users.set_kwargs(text)) # type: ignore
             return
+        
+        await bot.delete_message(message.chat.id, message.message_id)
         
 
     @dp.message(Command(commands=["add_user","remove_user"]))
-    async def add_remove_user_handler(message: Message, user_name: str):
+    async def add_remove_user_handler(message: Message, user_name: str, command: CommandObject):
         """
         Handles the addition and removal of users based on the command received.
 
@@ -1640,17 +1664,15 @@ class Handlers:
             if user_name != 'ADMIN':
                 raise Exception("You don't have admin privileges")
             
-            is_add_command = message.text.startswith('/add') # type: ignore
-            args = message.text.split(maxsplit=1) # type: ignore
-            if len(args) < 2:
-                raise Exception(f"Usage: `/add {'123456 ' if is_add_command else ''}UserName`")
+            if not command.args:
+                raise Exception("Usage: `/add_user 123456 UserName`")
         
-            if is_add_command:
-                user_id, name = args[1].split(maxsplit=1)
+            if command.command == 'add_user':
+                user_id, name = command.args.split(maxsplit=1)
                 users.db.add_user(int(user_id), name)
                 output = f"✅ User {name} with ID {user_id} added successfully."
-            else:
-                name_to_remove = args[1].strip()
+            elif command.command == 'remove_user':
+                name_to_remove = command.args.strip()
                 if user_name:
                     users.db.remove_user(name_to_remove)
                     output = f"✅ User `{name_to_remove}` removed successfully."
@@ -1658,15 +1680,15 @@ class Handlers:
                     output = f"⚠️ User `{name_to_remove}` not found."
 
         except sqlite3.IntegrityError:
-            output = "⚠️ This user ID already exists."
+            output: str = "⚠️ This user ID already exists."
         except Exception as e:
-            output = f"❌ An error occurred: {e}."
+            output: str = f"❌ An error occurred: {e}."
         finally:
             await message.reply(output)
 
 
     @dp.message(Command(commands=["info","clear","change_context"]))
-    async def short_command_handler(message: Message, user_name: str):
+    async def short_command_handler(message: Message):
         await Handlers.reply_kb_command(message)
 
 
@@ -1830,7 +1852,7 @@ class Handlers:
 
 
     @dp.message(F.text.startswith('/') | F.text.casefold().startswith('help'))
-    async def unknown_handler(message: Message, user_name: str):
+    async def unknown_handler(message: Message):
         await bot.delete_message(message.chat.id, message.message_id)
         await message.answer(**users.set_kwargs()) # type: ignore
 
@@ -1848,6 +1870,7 @@ class Handlers:
 
 
 class Callbacks:
+
     @dp.callback_query(CallbackClass.filter(F.cb_type.contains('change')))
     async def change_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
         user = await users.check_and_clear(query, 'callback')
@@ -1855,7 +1878,7 @@ class Callbacks:
         # is_final_set = isinstance(output, str) and callback_data.name != '◀️'
         if isinstance(output, str) and callback_data.name not in {'◀️','🏠'}:
             await query.message.edit_text(output) # type: ignore
-            await user.delete_menu_cmd()
+            await user.delete_last_cmd()
         else:
             if callback_data.name == '🏠':
                 kwargs = users.create_menu_kb(user, "main")
@@ -1910,7 +1933,8 @@ class Callbacks:
         elif cb.btn_target.startswith('dlg_'):
             kwargs: dict = {'text': user.dialogue_router(cb.btn_target)}
         elif cb.btn_target.startswith('utils_'):
-            kwargs: dict = {'text': await user.utils_router(cb.btn_target)}
+            # kwargs: dict = {'text': await user.utils_router(cb.btn_target, query.message.from_user.id)}  # type: ignore
+            kwargs: dict = users.set_kwargs(await user.utils_router(cb.btn_target, user))  # type: ignore
         else:
             kwargs: dict = users.create_menu_kb(user, cb.btn_target)
         await query.message.edit_text(**kwargs) # type: ignore

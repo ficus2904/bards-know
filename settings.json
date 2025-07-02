@@ -86,6 +86,10 @@
                 "target": "utils_modify_models"
             },
             {
+                "text": "📝 Получить контекст",
+                "target": "utils_context"
+            },
+            {
                 "text": "⬅️",
                 "target": "main"
             }
@@ -263,16 +267,16 @@
         "text": "🧩 Glif",
         "buttons": [
             {
-                "text": "Claude 3.7 Sonnet",
-                "select": "claude"
+                "text": "Claude 4 sonnet",
+                "select": "Claude 4 sonnet"
             },
             {
-                "text": "OpenAI GPTo3",
-                "select": "GPTo3"
+                "text": "Claude 4 opus",
+                "select": "Claude 4 opus"
             },
             {
-                "text": "xAI Groq2",
-                "select": "groq2"
+                "text": "OpenAI o3 mini",
+                "select": "OpenAI o3 mini"
             },
             {
                 "text": "⬅️",
