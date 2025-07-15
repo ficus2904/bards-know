@@ -199,9 +199,10 @@ class BOTS:
     class GeminiAPI(BaseAPIInterface):
         """Class for Gemini API"""
         name = 'gemini'
-        safety_settings = [types.SafetySetting(category=category, 
-                                threshold="BLOCK_NONE") for category # type: ignore
-                                in types.HarmCategory._member_names_[1:]]
+        safety_settings = [types.SafetySetting(
+            category=category, 
+            threshold="BLOCK_NONE"
+            ) for category in types.HarmCategory._member_names_[1:-5]]
 
         def __init__(self, menu: dict):
             self.models = self.get_models(menu[self.name])
