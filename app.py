@@ -485,7 +485,7 @@ class BOTS:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
             
-            kwargs = {'model':('meta-llama/' if '4' in self.current else '') + self.current,
+            kwargs = {'model':('meta-llama/' if 'llama-4' in self.current else '') + self.current,
                     'messages': self.context}
             try:
                 response = await self.client.chat.completions.create(**kwargs)

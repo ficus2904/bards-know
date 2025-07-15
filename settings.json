@@ -233,6 +233,10 @@
                 "select": "deepseek-r1-distill-qwen-32b"
             },
             {
+                "text": "Kimi K2",
+                "select": "moonshotai/kimi-k2-instruct"
+            },
+            {
                 "text": "⬅️",
                 "target": "bot"
             }
