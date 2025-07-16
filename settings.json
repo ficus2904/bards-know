@@ -124,6 +124,10 @@
                 "state": "search_status"
             },
             {
+                "text": "Сброс у Image gen",
+                "state": "image_gen_reset_status"
+            },
+            {
                 "text": "⬅️",
                 "target": "switch"
             }

@@ -210,6 +210,7 @@ class BOTS:
             self.chat = None
             self.proxy_status: bool = True
             self.search_status: bool = True
+            self.image_gen_reset_status: bool = True
             self.client: GeminiClient = None
             self.reset_chat(with_proxy=self.proxy_status)
 
@@ -253,7 +254,9 @@ class BOTS:
                     
                     except Exception:
                         return str(response.candidates[0].finish_reason)
-
+                    finally:
+                        if self.image_gen_reset_status:
+                            self.dialogue_api_router('clear')
                 else:
                     return response.text
                 
@@ -1068,7 +1071,7 @@ class User:
             setattr(self, cbt, self.api_factory.get(bot))
         if model:
             getattr(self, cbt).current = model
-        await self.clear()
+        await self.clear(cmd='wipe')
 
 
     def change_state(self, state: str) -> None:
@@ -1080,6 +1083,9 @@ class User:
             elif 'search' in state:
                 setattr(cbt, state, not attr)
                 cbt.reset_chat()
+            elif 'image_gen_reset' in state:
+                setattr(cbt, state, not attr)
+            print(getattr(getattr(self, f'current_{self.nav_type}'), state))
 
 
 
@@ -1109,9 +1115,9 @@ class User:
         return escape(output)
         
 
-    async def clear(self, delete_prev: bool = False) -> tuple:
+    async def clear(self, delete_prev: bool = False, cmd: str | None = None) -> tuple:
         if self.current_bot.name == 'gemini':
-            status: str = self.current_bot.dialogue_api_router()
+            status: str = self.current_bot.dialogue_api_router(cmd)
         else:
             ct = self.current_bot.context
             if (len(ct) not in {0,1}) and (ct[0].get('role') == 'system'):
