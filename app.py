@@ -1755,19 +1755,28 @@ class Handlers:
 
 
     @dp.message(Command(commands=["tts"]))
-    async def generate_audio_story(message: Message, user_name: str):
+    async def generate_audio_story(message: Message, user_name: str, command: CommandObject):
         user = await users.check_and_clear(message, 'tts', user_name)
-        parts = message.text.split(maxsplit=1) # type: ignore
-        text = parts[1] if len(parts) == 2 else None
-        if (not text) or (user.current_bot.name == 'gemini'):
+        # parts = message.text.split(maxsplit=1)
+        if (command.args is None) or (user.current_bot.name == 'gemini'):
             await message.reply("Отсутствует текст/переключите модель на gemini")
         else:
             async with ChatActionSender.record_voice(chat_id=message.chat.id, bot=bot):
-                link = await user.current_bot.tts(text)
+                link = await user.current_bot.tts(command.args)
                 if link:
                     await message.answer_voice(link)
 
 
+    @dp.message(Command(commands=["rc"]))
+    async def remote_control_handler(message: Message, user_name: str, command: CommandObject):
+        '''Remote control command handler for admin user.'''
+        if user_name != 'ADMIN':
+            return await message.reply("You don't have admin privileges")
+        
+        from remote_control import RemoteControl
+
+        return RemoteControl().command_router(command.args)
+    
 
 
     @dp.message(F.text.in_(users.buttons) | F.text.casefold().in_(users.simple_cmds))
