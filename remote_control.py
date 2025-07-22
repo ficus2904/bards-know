@@ -1,3 +1,10 @@
+# /// script
+# dependencies = [
+#   "pyserial",
+#   "loguru",
+# ]
+# ///
+
 import serial
 import argparse
 from loguru import logger
