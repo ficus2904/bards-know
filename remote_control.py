@@ -13,8 +13,7 @@ from loguru import logger
 class RemoteControl():
     """Класс для управления ИК-портом."""
     
-    tx_port: str = '/dev/ttyS5'
-    rx_port: str = '/dev/ttyS4'
+    port: str = '/dev/ttyS5'
     def __init__(self):
         self.tv_code: str = 'a1 f1 01 01 a2'  # Пример кода для отправки
         self.audio_code: str = 'a1 f1 01 02 a2'  # Пример кода для отправки аудио
@@ -43,7 +42,7 @@ class RemoteControl():
             # Например, 'a1 f1 01 01 a2' -> b'\xa1\xf1\x01\x01\xa2'
             command_bytes = bytes.fromhex(hex_code_string)
 
-            with serial.Serial(self.tx_port, 9600, timeout=1) as ser:
+            with serial.Serial(self.port, 9600, timeout=1) as ser:
                 print(f"⚠️ Отправка команды: {hex_code_string}")
                 ser.write(command_bytes)
                 output = "✅ Команда отправлена."
@@ -62,7 +61,7 @@ class RemoteControl():
     def _read_ir(cls) -> None:
         """Читает данные из ИК-порта."""
         try:
-            with serial.Serial(cls.rx_port, 9600, timeout=1) as ser:
+            with serial.Serial(cls.port, 9600, timeout=1) as ser:
                 print("⚠️ Направьте пульт на ИК-приемник и нажмите кнопку...")
                 while True:
                     ir_code = ser.read(5)
@@ -81,4 +80,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.read:
         RemoteControl._read_ir()
-        # python remote_control.py --read
+        # uv run remote_control.py --read
