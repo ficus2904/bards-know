@@ -10,11 +10,11 @@ services:
       dockerfile: Dockerfile
     container_name: bard-knows
     networks:
-      - network # Логическое имя сети внутри этого файла
+      - network
     restart: unless-stopped
     volumes:
       - .:/app
 
 networks:
-  network: # Логическое имя сети внутри этого файла
+  network:
     driver: bridge
