@@ -451,12 +451,6 @@ class BOTS:
         name = 'groq'
 
         def __init__(self, menu: dict):
-            # self.models = [
-            #     'llama-4-scout-17b-16e-instruct',
-            #     'llama-4-maverick-17b-128e-instruct',
-            #     'deepseek-r1-distill-llama-70b',
-            #     'llama-3.2-90b-vision-preview',
-            #     ] # https://console.groq.com/docs/models
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
             self.proxy_status: bool = False
@@ -489,10 +483,19 @@ class BOTS:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
             
-            kwargs = {'model':('meta-llama/' if 'llama-4' in self.current else '') + self.current,
-                    'messages': self.context}
+            # kwargs = {'model': self.current, 'messages': self.context}
+            qwen_kwargs = {
+                'reasoning_format': 'hidden',
+                'reasoning_effort': 'default',
+                'temperature':0.6, 
+                'top_p':0.95, 
+            }
             try:
-                response = await self.client.chat.completions.create(**kwargs)
+                response = await self.client.chat.completions.create(
+                    model=self.current, 
+                    messages=self.context,
+                    **(qwen_kwargs if 'qwen3-32b' in self.current else {})
+                    )
                 data = response.choices[-1].message.content
                 self.context.append({'role':'assistant', 'content': data})
                 return data
@@ -1767,15 +1770,15 @@ class Handlers:
                     await message.answer_voice(link)
 
 
-    @dp.message(Command(commands=["rc"]))
-    async def remote_control_handler(message: Message, user_name: str, command: CommandObject):
-        '''Remote control command handler for admin user.'''
-        if user_name != 'ADMIN':
-            return await message.reply("You don't have admin privileges")
+    # @dp.message(Command(commands=["rc"]))
+    # async def remote_control_handler(message: Message, user_name: str, command: CommandObject):
+    #     '''Remote control command handler for admin user.'''
+    #     if user_name != 'ADMIN':
+    #         return await message.reply("You don't have admin privileges")
         
-        from remote_control import RemoteControl
+    #     from remote_control import RemoteControl
 
-        return RemoteControl().command_router(command.args)
+    #     return RemoteControl().command_router(command.args)
     
 
 

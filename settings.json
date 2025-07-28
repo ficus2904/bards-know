@@ -221,20 +221,8 @@
         "text": "🧩 Groq",
         "buttons": [
             {
-                "text": "Llama 4 scout",
-                "select": "llama-4-scout-17b-16e-instruct"
-            },
-            {
-                "text": "Llama 4 maverick",
-                "select": "llama-4-maverick-17b-128e-instruct"
-            },
-            {
-                "text": "Deepseek Llama",
-                "select": "deepseek-r1-distill-llama-70b"
-            },
-            {
-                "text": "Deepseek QWEN",
-                "select": "deepseek-r1-distill-qwen-32b"
+                "text": "Qwen 3 32B",
+                "select": "qwen/qwen3-32b"
             },
             {
                 "text": "Kimi K2",
