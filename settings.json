@@ -221,6 +221,10 @@
         "text": "🧩 Groq",
         "buttons": [
             {
+                "text": "OpenAI GPT-OSS 120B",
+                "select": "openai/gpt-oss-120b"
+            },
+            {
                 "text": "Qwen 3 32B",
                 "select": "qwen/qwen3-32b"
             },
