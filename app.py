@@ -666,7 +666,7 @@ class BOTS:
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.api_key}"}
             self.models_with_ids = {
                 "Claude 4 sonnet":"clxwyy4pf0003jo5w0uddefhd",
-                "GPT 5 mini":"clyzjs4ht0000iwvdlacfm44y",
+                "GPT 5 nano":"clyzjs4ht0000iwvdlacfm44y",
                 "GPT 5":"clxx330wj000ipbq9rwh4hmp3",
                 }
             self.models = list(self.models_with_ids.keys())
@@ -1765,28 +1765,28 @@ class Handlers:
             await message.answer_photo(photo=image_url)
 
 
-    @dp.message(Command(commands=["imagen"]))
-    async def imagen_handler(message: Message, user_name: str):
-        '''DEPRECATED'''
-        user = await users.check_and_clear(message, "gen_image", user_name)
-        args = message.text.split(maxsplit=1) # type: ignore
-        if len(args) != 2 or (is_gemini := user.current_bot.name != 'gemini'):
-            text = 'Переключите на gemini' if is_gemini else "Usage: `/imagen prompt --ar 9:16 --m 2`"
-            await message.reply(escape(text), parse_mode=users.PARSE_MODE)
-            return
+    # @dp.message(Command(commands=["imagen"]))
+    # async def imagen_handler(message: Message, user_name: str):
+    #     '''DEPRECATED'''
+    #     user = await users.check_and_clear(message, "gen_image", user_name)
+    #     args = message.text.split(maxsplit=1) # type: ignore
+    #     if len(args) != 2 or (is_gemini := user.current_bot.name != 'gemini'):
+    #         text = 'Переключите на gemini' if is_gemini else "Usage: `/imagen prompt --ar 9:16 --m 2`"
+    #         await message.reply(escape(text), parse_mode=users.PARSE_MODE)
+    #         return
 
-        await message.reply('Картинка генерируется ⏳')
-        try:
-            parse_args = users.image_arg_parser.get_args(args[1])
-            async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
-                output = await user.current_bot.gen_image(*parse_args)
-            if isinstance(output, str):
-                await message.reply(f"❌ RAI: {output}")
-            else:
-                await message.answer_photo(photo=output)
+    #     await message.reply('Картинка генерируется ⏳')
+    #     try:
+    #         parse_args = users.image_arg_parser.get_args(args[1])
+    #         async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
+    #             output = await user.current_bot.gen_image(*parse_args)
+    #         if isinstance(output, str):
+    #             await message.reply(f"❌ RAI: {output}")
+    #         else:
+    #             await message.answer_photo(photo=output)
 
-        except Exception as e:
-            await message.reply(f"❌ Ошибка: {e}")
+    #     except Exception as e:
+    #         await message.reply(f"❌ Ошибка: {e}")
 
 
     @dp.message(Command(commands=["tts"]))
