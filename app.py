@@ -485,15 +485,10 @@ class BOTS:
     class MistralAPI(BaseAPIInterface):
         """Class for Mistral API"""
         name = 'mistral'
+        # https://docs.mistral.ai/getting-started/models/
 
         def __init__(self, menu: dict):
             self.client = Mistral(api_key=self.api_key)
-            # self.models = [
-            #     'mistral-large-latest',
-            #     'mistral-medium-latest',
-            #     'mistral-small-latest',
-            #     'pixtral-large-latest',
-            #     ] # https://docs.mistral.ai/getting-started/models/
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
 
@@ -667,7 +662,7 @@ class BOTS:
                 "GPT 5 nano":"clyzjs4ht0000iwvdlacfm44y",
                 "GPT 5":"clxx330wj000ipbq9rwh4hmp3",
                 }
-            self.models = list(self.models_with_ids.keys())
+            self.models = self.get_models(menu['glif']) # list(self.models_with_ids.keys())
             self.current = self.models[0]
 
 
@@ -722,7 +717,6 @@ class BOTS:
                 except httpx.HTTPStatusError as e:
                     logger.error(f"{e.response.status_code} {e.response.text}")
                     return None
-
 
 
 class PIC_BOTS:
@@ -860,6 +854,10 @@ class PIC_BOTS:
 
         def __init__(self, menu: dict):
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.get_api_key('glif')}"}
+            self.models_with_ids = {
+                'qwen':'clzmbpo6k000u1pb2ar3udjff',
+                'flux':'clzj1yoqc000i13n0li4mwa2b',
+                }
             self.models = self.get_models(menu['glif_img'])
             self.current = self.models[0]
             self.image_size = '9:16'
@@ -867,8 +865,7 @@ class PIC_BOTS:
 
         async def gen_image(self, prompt: str) -> str:
             body: dict[str,str] = {
-                "id": {'qwen':'clzmbpo6k000u1pb2ar3udjff',
-                       'flux':'clzj1yoqc000i13n0li4mwa2b'}.get(self.current), 
+                "id": self.models_with_ids.get(self.current), 
                 "inputs": {"prompt": prompt}
                 }
             async with aiohttp.ClientSession() as session:
