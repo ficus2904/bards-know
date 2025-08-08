@@ -292,6 +292,14 @@
                 "target": "FalAI"
             },
             {
+                "text": "🎨 Imagen",
+                "target": "imagen"
+            },
+            {
+                "text": "🎨 Glif",
+                "target": "glif_img"
+            },
+            {
                 "text": "📐 Aspect Ratio",
                 "target": "ratio"
             },
@@ -323,6 +331,44 @@
             {
                 "text": "Imagen4 Ultra",
                 "select": "imagen4/preview/ultra"
+            },
+            {
+                "text": "⬅️",
+                "target": "pic"
+            }
+        ]
+    },
+    "imagen": {
+        "text": "🎨 Gemini Imagen",
+        "buttons": [
+            {
+                "text": "Imagen 3",
+                "select": "3.0-generate-002"
+            },
+            {
+                "text": "Imagen 4 preview",
+                "select": "4.0-generate-preview-06-06"
+            },
+            {
+                "text": "Imagen 4 ultra",
+                "select": "4.0-ultra-generate-preview-06-06"
+            },
+            {
+                "text": "⬅️",
+                "target": "pic"
+            }
+        ]
+    },
+    "glif_img": {
+        "text": "🎨 Glif",
+        "buttons": [
+            {
+                "text": "➕ enhancement",
+                "select": "clzmbpo6k000u1pb2ar3udjff"
+            },
+            {
+                "text": "➖ enhancement",
+                "select": "clzj1yoqc000i13n0li4mwa2b"
             },
             {
                 "text": "⬅️",

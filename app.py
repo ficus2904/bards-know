@@ -355,26 +355,6 @@ class BOTS:
             return int(self.chat._config.system_instruction is not None) + len(self.chat._curated_history)
 
 
-        async def gen_image(self, prompt, image_size: str = '9:16', model: str | None = None):
-            response = self.client.models.generate_images(
-                model = f'imagen-3.0-generate-00{model or 2}',
-                prompt = prompt,
-                config = types.GenerateImagesConfig(
-                    number_of_images=1,
-                    include_rai_reason=True,
-                    output_mime_type='image/jpeg',
-                    safety_filter_level="BLOCK_LOW_AND_ABOVE", # type: ignore
-                    # BLOCK_LOW_AND_ABOVE BLOCK_ONLY_HIGH
-                    person_generation="ALLOW_ADULT", # type: ignore
-                    # ALLOW_ADULT ALLOW_ALL
-                    output_compression_quality=95,
-                    aspect_ratio=image_size
-                )
-            )
-            output = response.generated_images[0]
-            return output.image or output.rai_filtered_reason
-        
-
         async def tts(self, text: str, attempts: int = 0) -> BIF | None:
             try:
                 response = await self.client.aio.models.generate_content(
@@ -686,8 +666,8 @@ class BOTS:
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.api_key}"}
             self.models_with_ids = {
                 "Claude 4 sonnet":"clxwyy4pf0003jo5w0uddefhd",
-                "Claude 4 opus":"clyzjs4ht0000iwvdlacfm44y",
-                "OpenAI o3 mini":"clxx330wj000ipbq9rwh4hmp3",
+                "GPT 5 mini":"clyzjs4ht0000iwvdlacfm44y",
+                "GPT 5":"clxx330wj000ipbq9rwh4hmp3",
                 }
             self.models = list(self.models_with_ids.keys())
             self.current = self.models[0]
@@ -723,37 +703,6 @@ class BOTS:
                         return 'Error exception'
                     
 
-        async def gen_image(self, prompt: str) -> dict:
-            '''DEPRECATED'''
-            body: dict[str,str] = {
-                "id": {True:'clzmbpo6k000u1pb2ar3udjff',
-                    False:'clzj1yoqc000i13n0li4mwa2b'}.get(prompt.startswith('-f')), 
-                "inputs": {"initial_prompt": prompt.lstrip('-f ')}
-                }
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url=self.url,headers=self.headers,json=body, timeout=90) as response:
-                    try:
-                        response.raise_for_status()
-                        answer = await response.json()
-                        try:
-                            return json.loads(answer['output'])
-                        except Exception:
-                            match = re.search(r'https://[^"]+\.jpg', answer['output'])
-                            return {"photo":match.group(0) if match else None,
-                                    "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
-                    except Exception as e:
-                        match e:
-                            case asyncio.TimeoutError():
-                                logger.error(error_msg := 'Timeout error')
-                            case aiohttp.ClientResponseError():
-                                logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
-                            case KeyError():
-                                logger.error(error_msg := 'No output data')
-                            case _:
-                                logger.error(error_msg := f'Unexpected error: {str(e)}')
-                        return {'error': error_msg}
-                    
-
         async def prompt(self, text, image = None) -> str:
             system_prompt = self.form_system_prompt()
             self.context.append({"role": "user","content": text})
@@ -778,117 +727,194 @@ class BOTS:
 
 
 
-class FalAPI(BaseAPIInterface):
-    """Class for Fal API"""
-    name = 'FalAI'
-    
-    def __init__(self, menu: dict):
-        self.models = self.get_models(menu[self.name])
-        self.current = self.models[0]
-        self.image_size = 'portrait_16_9'
-        self.raw = False
+class PIC_BOTS:
+    """Picture generation bot interfaces"""
+
+    class GeminiImagen(BOTS.GeminiAPI):
+        name = 'imagen'
+
+        def __init__(self, menu: dict):
+            self.models = self.get_models(menu['imagen'])
+            self.current = self.models[0]
+            self.proxy_status = True
+            self.image_size = '9:16'
+            self.create_client(self.proxy_status)
 
 
-    async def prompt(self, *args, **kwargs):
-        pass
+        async def gen_image(self, prompt: str):
+            response = self.client.models.generate_images(
+                model = 'imagen-' + self.current,
+                prompt = prompt,
+                config = types.GenerateImagesConfig(
+                    number_of_images=1,
+                    include_rai_reason=True,
+                    output_mime_type='image/jpeg',
+                    safety_filter_level="BLOCK_LOW_AND_ABOVE", 
+                    person_generation="ALLOW_ADULT",
+                    output_compression_quality=95,
+                    aspect_ratio=self.image_size
+                )
+            )
+            output = response.generated_images[0]
+            return output.image or output.rai_filtered_reason
 
 
-    def get_info(self) -> str:
-        return (f'\n📏 Ratio: {self.image_size}\n'
-                f'🤖 Model: {self.current}') #  {int(self.raw)}
+    class FalAPI(BaseAPIInterface):
+        """Class for Fal API"""
+        name = 'FalAI'
+        
+        def __init__(self, menu: dict):
+            self.models = self.get_models(menu[self.name])
+            self.current = self.models[0]
+            self.image_size = 'portrait_16_9'
+            self.raw = False
 
 
-    def to_aspect_ratio(self) -> str:
-        return {
-            "portrait_16_9":"9:16", 
-            "portrait_4_3":"3:4",
-            "square_hd":"1:1", 
-            "landscape_4_3":"4:3", 
-            "landscape_16_9":"16:9",
-        }.get(self.image_size, '4:3')
+        async def prompt(self, *args, **kwargs):
+            pass
 
 
-    def change_image_size_old(self, image_size: str) -> str:
-        '''DEPRECATED'''
-        # "21:9" "9:21",
-        if image_size in {"9:16","3:4","1:1","4:3","16:9"}:
-            self.image_size = image_size
-        else:
-            self.image_size = "9:16"
-        return self.image_size
-    
-
-    def get_kwargs(self) -> dict[str,str]:
-        if self.current == 'flux-pro/v1.1-ultra':
-            kwargs = {
-                "aspect_ratio": self.to_aspect_ratio(),
-                "raw": self.raw,
-            }
-        elif 'imagen' in self.current:
-            kwargs = {
-                "aspect_ratio": self.to_aspect_ratio(),
-            }
-        elif 'hidream' in self.current:
-            kwargs = {
-                "image_size": self.image_size,
-            }
-        return kwargs
+        def get_info(self) -> str:
+            return (f'\n📏 Ratio: {self.image_size}\n'
+                    f'🤖 Model: {self.current}')
 
 
-    async def gen_image(self, prompt: str) -> str:
-        '''Method to generate an image using the Fal API'''
-        kwargs = self.get_kwargs()
-        headers: dict[str,str] = {
-            "Authorization": f"Key {self.api_key}",
-            'Content-Type': 'application/json',
-            }
-        body: dict[str,str] = {
-                "prompt": prompt,
-                "num_images": 1,
-                "enable_safety_checker": False,
-                "safety_tolerance": "5",
-                } | kwargs
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url=f"https://fal.run/fal-ai/{self.current}",
-                headers=headers,
-                json=body, 
-                timeout=90,
-                ) as response:
-                try:
-                    response.raise_for_status()
-                    answer = await response.json()
+        def to_aspect_ratio(self) -> str:
+            return {
+                "portrait_16_9":"9:16", 
+                "portrait_4_3":"3:4",
+                "square_hd":"1:1", 
+                "landscape_4_3":"4:3", 
+                "landscape_16_9":"16:9",
+            }.get(self.image_size, '4:3')
+
+
+        def change_image_size_old(self, image_size: str) -> str:
+            '''DEPRECATED'''
+            # "21:9" "9:21",
+            if image_size in {"9:16","3:4","1:1","4:3","16:9"}:
+                self.image_size = image_size
+            else:
+                self.image_size = "9:16"
+            return self.image_size
+        
+
+        def get_kwargs(self) -> dict[str,str]:
+            if self.current == 'flux-pro/v1.1-ultra':
+                kwargs = {
+                    "aspect_ratio": self.to_aspect_ratio(),
+                    "raw": self.raw,
+                }
+            elif 'imagen' in self.current:
+                kwargs = {
+                    "aspect_ratio": self.to_aspect_ratio(),
+                }
+            elif 'hidream' in self.current:
+                kwargs = {
+                    "image_size": self.image_size,
+                }
+            return kwargs
+
+
+        async def gen_image(self, prompt: str) -> str:
+            '''Method to generate an image using the Fal API'''
+            kwargs = self.get_kwargs()
+            headers: dict[str,str] = {
+                "Authorization": f"Key {self.api_key}",
+                'Content-Type': 'application/json',
+                }
+            body: dict[str,str] = {
+                    "prompt": prompt,
+                    "num_images": 1,
+                    "enable_safety_checker": False,
+                    "safety_tolerance": "5",
+                    } | kwargs
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url=f"https://fal.run/fal-ai/{self.current}",
+                    headers=headers,
+                    json=body, 
+                    timeout=90,
+                    ) as response:
                     try:
-                        return answer['images'][0]['url']
-                    except Exception:
-                        return str(answer)
-                except Exception as e:
-                    match e:
-                        case asyncio.TimeoutError():
-                            logger.error(error_msg := 'Timeout error')
-                        case aiohttp.ClientResponseError():
-                            logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
-                        case KeyError():
-                            logger.error(error_msg := 'No output data')
-                        case _:
-                            logger.error(error_msg := f'Unexpected error: {str(e)}')
-                    return f'❌: {error_msg}'
+                        response.raise_for_status()
+                        answer = await response.json()
+                        try:
+                            return answer['images'][0]['url']
+                        except Exception:
+                            return str(answer)
+                    except Exception as e:
+                        match e:
+                            case asyncio.TimeoutError():
+                                logger.error(error_msg := 'Timeout error')
+                            case aiohttp.ClientResponseError():
+                                logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
+                            case KeyError():
+                                logger.error(error_msg := 'No output data')
+                            case _:
+                                logger.error(error_msg := f'Unexpected error: {str(e)}')
+                        return f'❌: {error_msg}'
+                    
+
+    class GlifAPIPic(BOTS.GlifAPI):
+        name = 'glif_img'
+
+        def __init__(self, menu: dict):
+            self.url = "https://simple-api.glif.app"
+            self.headers: dict[str,str] = {"Authorization": f"Bearer {self.api_key}"}
+            self.models = self.get_models(menu['glif_img'])
+            self.current = self.models[0]
+            self.image_size = '9:16'
+
+
+        async def gen_image(self, prompt: str) -> dict:
+            body: dict[str,str] = {
+                "id": self.current, 
+                "inputs": {"initial_prompt": prompt}
+                }
+            # body: dict[str,str] = {
+            #     "id": {True:'clzmbpo6k000u1pb2ar3udjff',
+            #         False:'clzj1yoqc000i13n0li4mwa2b'}.get(prompt.startswith('-f')), 
+            #     "inputs": {"initial_prompt": prompt.lstrip('-f ')}
+            #     }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url=self.url,headers=self.headers,json=body, timeout=90) as response:
+                    try:
+                        response.raise_for_status()
+                        answer = await response.json()
+                        try:
+                            return json.loads(answer['output'])
+                        except Exception:
+                            match = re.search(r'https://[^"]+\.jpg', answer['output'])
+                            return {"photo":match.group(0) if match else None,
+                                    "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
+                    except Exception as e:
+                        match e:
+                            case asyncio.TimeoutError():
+                                logger.error(error_msg := 'Timeout error')
+                            case aiohttp.ClientResponseError():
+                                logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
+                            case KeyError():
+                                logger.error(error_msg := 'No output data')
+                            case _:
+                                logger.error(error_msg := f'Unexpected error: {str(e)}')
+                        return {'error': error_msg}
 
 
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
-    # bots_lst: list = [NvidiaAPI, GroqAPI, GeminiAPI, TogetherAPI, GlifAPI, MistralAPI, OpenRouterAPI]
     bots: dict = {v.name:v for k,v in BOTS.__dict__.items() if not k.startswith('__')}
-    # bots: dict = {bot_class.name:bot_class for bot_class in bots_lst}
-    image_bots_lst: list = [FalAPI]
-    image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
+    image_bots: dict = {v.name:v for k,v in PIC_BOTS.__dict__.items() if not k.startswith('__')}
+    # image_bots_lst: list = [FalAPI, BOTS.GeminiAPI, BOTS.GlifAPI]
+    # image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
     
     def __init__(self):
         self._instances: dict[str,BaseAPIInterface] = {}
 
 
-    def get(self, bot_name: str) -> BaseAPIInterface:
-        return self._instances.setdefault(bot_name, self.bots[bot_name](users.menu))
+    def get(self, bot_type: str, bot_name: str) -> BaseAPIInterface:
+        dct = self.bots if bot_type == 'bot' else self.image_bots
+        return self._instances.setdefault(bot_name, dct[bot_name](users.menu))
 
 
 class RateLimitedQueueManager:
@@ -977,8 +1003,9 @@ class User:
     '''Specific user interface in chat'''
     def __init__(self):
         self.api_factory = APIFactory()
-        self.current_bot: BaseAPIInterface = self.api_factory.get(users.DEFAULT_BOT)
-        self.current_pic = FalAPI(users.menu)
+        self.current_bot: BaseAPIInterface = self.api_factory.get('bot',users.DEFAULT_BOT)
+        self.current_pic: BaseAPIInterface = self.api_factory.get('pic',users.DEFAULT_PIC)
+        # self.current_pic = FalAPI(users.menu)
         self.time_dump = time()
         self.text: str = None
         self.last_msg: dict = None # for deleting messages
@@ -999,7 +1026,7 @@ class User:
         
         output_text = f'Контекст {context_name} добавлен'
         
-        if context_name in users.context_dict['🖼️ Image_desc']:
+        if context_name in users.context_dict['🖼️ Image_desc'] and hasattr(self.current_pic,'get_info'):
             output_text += self.current_pic.get_info()
 
         if isinstance(self.current_bot, BOTS.GeminiAPI):
@@ -1063,7 +1090,7 @@ class User:
 
     async def change_bot(self, bot_name: str) -> str:
         '''DEPRECATED'''
-        self.current_bot = self.api_factory.get(bot_name)
+        self.current_bot = self.api_factory.get('bot',bot_name)
         await self.clear()
         return f'🤖 Смена бота на {self.current_bot.name}'
     
@@ -1071,10 +1098,13 @@ class User:
     async def change_model(self, btn_type: str, bot: str, model: str) -> None:
         cbt = f'current_{btn_type}'
         if getattr(self, cbt).name != bot:
-            setattr(self, cbt, self.api_factory.get(bot))
+            # setattr(self, cbt, self.api_factory.get(bot))
+            setattr(self, cbt, self.api_factory.get(btn_type, bot))
+            # setattr(self, cbt, getattr(self.api_factory, f'get_{btn_type}')(bot))
         if model:
             getattr(self, cbt).current = model
-        await self.clear(cmd='wipe')
+        if btn_type == 'bot':
+            await self.clear(cmd='wipe')
 
 
     def change_state(self, state: str) -> None:
@@ -1218,6 +1248,7 @@ class UsersMap():
         self.simple_cmds: set = {'clear', 'info'}
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
         self.DEFAULT_BOT: str = 'gemini' #'glif' gemini mistral
+        self.DEFAULT_PIC: str = 'FalAI' #'glif' gemini mistral
         self.image_arg_parser = ImageGenArgParser()
         # self.builder: ReplyKeyboardBuilder = self.create_builder()
         # self.config_arg_parser = ConfigArgParser()
