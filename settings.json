@@ -288,15 +288,15 @@
         "text": "🗣️",
         "buttons": [
             {
-                "text": "🎨 FalAI",
+                "text": "FalAI",
                 "target": "FalAI"
             },
             {
-                "text": "🎨 Imagen",
+                "text": "Imagen",
                 "target": "imagen"
             },
             {
-                "text": "🎨 Glif",
+                "text": "Glif",
                 "target": "glif_img"
             },
             {

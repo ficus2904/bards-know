@@ -859,8 +859,7 @@ class PIC_BOTS:
         name = 'glif_img'
 
         def __init__(self, menu: dict):
-            self.api_key = self.get_api_key('glif')
-            self.headers: dict[str,str] = {"Authorization": f"Bearer {self.api_key}"}
+            self.headers: dict[str,str] = {"Authorization": f"Bearer {self.get_api_key('glif')}"}
             self.models = self.get_models(menu['glif_img'])
             self.current = self.models[0]
             self.image_size = '9:16'
@@ -873,22 +872,21 @@ class PIC_BOTS:
                 "inputs": {"prompt": prompt}
                 }
             async with aiohttp.ClientSession() as session:
-                async with session.post(url=self.url,headers=self.headers,json=body, timeout=90) as response:
+                async with session.post(url=self.url, headers=self.headers, json=body, timeout=90) as response:
                     try:
                         response.raise_for_status()
-                        answer = await response.json()
-                        return answer['output']
+                        answer: dict = await response.json()
+                        logger.info(answer)
+                        return answer.get('output') or '❌ ' + answer.get('error','No output data')
                     except Exception as e:
                         match e:
                             case asyncio.TimeoutError():
                                 logger.error(error_msg := 'Timeout error')
                             case aiohttp.ClientResponseError():
                                 logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
-                            case KeyError():
-                                logger.error(error_msg := 'No output data')
                             case _:
                                 logger.error(error_msg := f'Unexpected error: {str(e)}')
-                        return '❌ ' + error_msg
+                        return '❌: ' + error_msg
 
 
 class APIFactory:
@@ -1054,14 +1052,15 @@ class User:
         return output, None #self.make_conf_btns()
     
 
-    def make_conf_btns(self):
-        emoji_stat = {True:'✅',False:'❌'}
-        output = []
-        if hasattr(self.current_bot,'proxy_status'):
-            output += [f'{emoji_stat[self.current_bot.proxy_status]} proxy']
-        if hasattr(self.current_bot,'search_status'):
-            output += [f'{emoji_stat[self.current_bot.search_status]} search']
-        return users.create_inline_kb(output, 'conf')
+    # def make_conf_btns(self):
+    #     '''DEPRECATED'''
+    #     emoji_stat = {True:'✅',False:'❌'}
+    #     output = []
+    #     if hasattr(self.current_bot,'proxy_status'):
+    #         output += [f'{emoji_stat[self.current_bot.proxy_status]} proxy']
+    #     if hasattr(self.current_bot,'search_status'):
+    #         output += [f'{emoji_stat[self.current_bot.search_status]} search']
+    #     return users.create_inline_kb(output, 'conf')
     
 
     async def change_config(self, kwargs: dict) -> str:
@@ -1238,7 +1237,7 @@ class UsersMap():
         self.simple_cmds: set = {'clear', 'info'}
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
         self.DEFAULT_BOT: str = 'gemini' #'glif' gemini mistral
-        self.DEFAULT_PIC: str = 'FalAI' #'glif' gemini mistral
+        self.DEFAULT_PIC: str = 'glif_img' #'glif' gemini mistral
         self.image_arg_parser = ImageGenArgParser()
         # self.builder: ReplyKeyboardBuilder = self.create_builder()
         # self.config_arg_parser = ConfigArgParser()
@@ -1748,8 +1747,8 @@ class Handlers:
             
         async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
             image_url = await user.gen_image(command.args)
-        if image_url.startswith(('\n📏','❌')):
-            await message.reply(image_url)
+        if isinstance(image_url, str) and image_url.startswith('❌'):
+            await message.answer(image_url)
         else:
             await message.answer_photo(photo=image_url)
 
