@@ -867,7 +867,7 @@ class PIC_BOTS:
             self.image_size = '9:16'
 
 
-        async def gen_image(self, prompt: str) -> dict:
+        async def gen_image(self, prompt: str) -> str:
             body: dict[str,str] = {
                 "id": self.current, 
                 "inputs": {"initial_prompt": prompt}
@@ -886,8 +886,9 @@ class PIC_BOTS:
                             return json.loads(answer['output'])
                         except Exception:
                             match = re.search(r'https://[^"]+\.jpg', answer['output'])
-                            return {"photo":match.group(0) if match else None,
-                                    "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
+                            # return {"photo":match.group(0) if match else None,
+                            #         "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
+                            return match.group(0) if match else f'❌ {answer['output']}'
                     except Exception as e:
                         match e:
                             case asyncio.TimeoutError():
@@ -898,7 +899,7 @@ class PIC_BOTS:
                                 logger.error(error_msg := 'No output data')
                             case _:
                                 logger.error(error_msg := f'Unexpected error: {str(e)}')
-                        return {'error': error_msg}
+                        return f'❌ {error_msg}'
 
 
 class APIFactory:
