@@ -1,6 +1,5 @@
 import os
 import io
-import re
 import wave
 import json
 import httpx
@@ -34,8 +33,6 @@ from aiogram.types import (
     Message, 
     CallbackQuery,
     BotCommand
-    # ReplyKeyboardMarkup,
-    # InlineKeyboardMarkup,
     )
 from aiogram.types import BufferedInputFile as BIF
 from aiogram.utils.markdown import text
@@ -102,7 +99,8 @@ class UserFilterMiddleware(BaseMiddleware):
                 logger.exception(e)
                 if isinstance(event, Message):
                     await bot.send_message(
-                        event.chat.id, **users.set_kwargs(f'❌ Error: {e}'[:200])
+                        # event.chat.id, **users.set_kwargs(f'❌ Error: {e}'[:200])
+                        event.chat.id, f'❌ Error: {e}'[:200]
                         ) # type: ignore
         else:
             if isinstance(event, Message):
@@ -660,9 +658,9 @@ class BOTS:
     class GlifAPI(BaseAPIInterface):
         """Class for Glif API"""
         name = 'glif'
+        url = "https://simple-api.glif.app"
 
         def __init__(self, menu: dict):
-            self.url = "https://simple-api.glif.app"
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.api_key}"}
             self.models_with_ids = {
                 "Claude 4 sonnet":"clxwyy4pf0003jo5w0uddefhd",
@@ -734,6 +732,7 @@ class PIC_BOTS:
         name = 'imagen'
 
         def __init__(self, menu: dict):
+            self.api_key = self.get_api_key('gemini')
             self.models = self.get_models(menu['imagen'])
             self.current = self.models[0]
             self.proxy_status = True
@@ -860,7 +859,7 @@ class PIC_BOTS:
         name = 'glif_img'
 
         def __init__(self, menu: dict):
-            self.url = "https://simple-api.glif.app"
+            self.api_key = self.get_api_key('glif')
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.api_key}"}
             self.models = self.get_models(menu['glif_img'])
             self.current = self.models[0]
@@ -869,26 +868,16 @@ class PIC_BOTS:
 
         async def gen_image(self, prompt: str) -> str:
             body: dict[str,str] = {
-                "id": self.current, 
-                "inputs": {"initial_prompt": prompt}
+                "id": {'qwen':'clzmbpo6k000u1pb2ar3udjff',
+                       'flux':'clzj1yoqc000i13n0li4mwa2b'}.get(self.current), 
+                "inputs": {"prompt": prompt}
                 }
-            # body: dict[str,str] = {
-            #     "id": {True:'clzmbpo6k000u1pb2ar3udjff',
-            #         False:'clzj1yoqc000i13n0li4mwa2b'}.get(prompt.startswith('-f')), 
-            #     "inputs": {"initial_prompt": prompt.lstrip('-f ')}
-            #     }
             async with aiohttp.ClientSession() as session:
                 async with session.post(url=self.url,headers=self.headers,json=body, timeout=90) as response:
                     try:
                         response.raise_for_status()
                         answer = await response.json()
-                        try:
-                            return json.loads(answer['output'])
-                        except Exception:
-                            match = re.search(r'https://[^"]+\.jpg', answer['output'])
-                            # return {"photo":match.group(0) if match else None,
-                            #         "caption":answer['output'].split('"caption":"')[-1].rstrip('"}')}
-                            return match.group(0) if match else f'❌ {answer['output']}'
+                        return answer['output']
                     except Exception as e:
                         match e:
                             case asyncio.TimeoutError():
@@ -899,7 +888,7 @@ class PIC_BOTS:
                                 logger.error(error_msg := 'No output data')
                             case _:
                                 logger.error(error_msg := f'Unexpected error: {str(e)}')
-                        return f'❌ {error_msg}'
+                        return '❌ ' + error_msg
 
 
 class APIFactory:

@@ -363,12 +363,12 @@
         "text": "🎨 Glif",
         "buttons": [
             {
-                "text": "➕ enhancement",
-                "select": "clzmbpo6k000u1pb2ar3udjff"
+                "text": "Qwen image",
+                "select": "qwen" 
             },
             {
-                "text": "➖ enhancement",
-                "select": "clzj1yoqc000i13n0li4mwa2b"
+                "text": "Flux",
+                "select": "flux"
             },
             {
                 "text": "⬅️",
