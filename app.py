@@ -246,7 +246,7 @@ class BOTS:
                             if part.inline_data is not None:
                                 output['photo'] = BIF(part.inline_data.data, "image.png")
                             elif part.text is not None:
-                                output['caption'] = part.text
+                                output['caption'] = part.text[:100]
 
                         return output or response.candidates[0].finish_reason
                     
@@ -873,7 +873,6 @@ class PIC_BOTS:
                     try:
                         response.raise_for_status()
                         answer: dict = await response.json()
-                        logger.info(answer)
                         return answer.get('output') or '❌ ' + answer.get('error','No output data')
                     except Exception as e:
                         match e:
