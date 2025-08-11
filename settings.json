@@ -271,12 +271,12 @@
                 "select": "Claude 4 sonnet"
             },
             {
-                "text": "OpenAI GPT 5 nano",
-                "select": "GPT 5 nano"
+                "text": "OpenAI GPT 5 mini",
+                "select": "GPT 5 mini"
             },
             {
-                "text": "OpenAI GPT 5",
-                "select": "GPT 5"
+                "text": "OpenAI GPT 5 nano",
+                "select": "GPT 5 nano"
             },
             {
                 "text": "⬅️",
