@@ -200,7 +200,7 @@
         "text": "🧩 Gemini",
         "buttons": [
             {
-                "text": "Flash",
+                "text": "Pro",
                 "select": "gemini-2.5-pro"
             },
             {
