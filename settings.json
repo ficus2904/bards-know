@@ -201,6 +201,10 @@
         "buttons": [
             {
                 "text": "Flash",
+                "select": "gemini-2.5-pro"
+            },
+            {
+                "text": "Flash",
                 "select": "gemini-2.5-flash"
             },
             {
