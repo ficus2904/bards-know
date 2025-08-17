@@ -36,7 +36,7 @@ from aiogram.types import (
     )
 from aiogram.types import BufferedInputFile as BIF
 from aiogram.utils.markdown import text
-from aiogram.utils.formatting import ExpandableBlockQuote
+from aiogram.utils.formatting import ExpandableBlockQuote, as_numbered_list
 from aiogram.filters import Command, CommandStart, CommandObject
 from aiogram.filters.callback_data import CallbackData
 from aiogram.enums import ParseMode
@@ -91,7 +91,7 @@ class UserFilterMiddleware(BaseMiddleware):
                         event: TelegramObject | CallbackQuery, 
                         data: dict):
         USER_ID = data['event_from_user'].id
-        if user_name:= users.db.check_user(USER_ID):
+        if user_name:= users.db.check_tg_id(USER_ID):
             data.setdefault('user_name', user_name)
             try:
                 await handler(event, data)
@@ -126,7 +126,6 @@ class DBConnection:
             self.init_table()
 
     def fetchone(self, *args) -> tuple | None:
-        # self.execute(*args)
         self.cursor.execute(*args)
         return self.cursor.fetchone()
     
@@ -143,28 +142,35 @@ class DBConnection:
                             (id INT PRIMARY KEY, name TEXT)''')
         self.conn.commit()
 
-    def add_user(self, user_id: int, name: str) -> None:
+    def add_user(self, username: str, tg_id: str) -> None:
         """
         Insert a new user into the table.
-        :param user_id: The user's ID.
-        :param name: The user's name.
+        :param username: The user's name.
+        :param tg_id: The user's ID.
         """
         query = 'INSERT INTO users (id, name) VALUES (?, ?)'
-        self.cursor.execute(query, (user_id, name))
+        self.cursor.execute(query, (tg_id, username.upper()))
         self.conn.commit()
 
-    def remove_user(self, name: str) -> None:
+    def remove_user(self, username: str) -> None:
         """
         Remove a user from the users table.
-        :param name: The user's name.
+        :param username: The user's name.
         """
         query = 'DELETE FROM users WHERE name = ?'
-        self.cursor.execute(query, (name,))
+        self.cursor.execute(query, (username,))
         self.conn.commit()
     
-    def check_user(self, user_id: int) -> str | None:
+    def check_tg_id(self, user_id: int) -> str | None:
         answer = self.fetchone("SELECT name FROM users WHERE id = ? LIMIT 1", (user_id,))
         return answer[0] if answer else None
+    
+    def check_username(self, username: str) -> str | None:
+        answer = self.fetchone("SELECT name FROM users WHERE name = ? LIMIT 1", (username,))
+        return answer[0] if answer else None
+    
+    def get_list(self) -> str | None:
+        return self.fetchall("SELECT * FROM users")
 
     def close(self):
         self.conn.close()
@@ -948,26 +954,40 @@ class ImageGenArgParser:
                 sep='\n')
     
 
-class ConfigArgParser:
-    """DEPRECATED
-    A class to parse and handle configuration arguments for the application.
-    ----
-    get_args(args_str: str) -> dict:
-        Parses the provided argument string and returns a dictionary of arguments and their values.
-        Parameters:
-            args_str (str): A string of arguments to be parsed.
-        Returns:
-            dict: A dictionary containing the parsed arguments and their values.
-        Raises:
-            ValueError: If the arguments are invalid.
-    get_usage() -> str:
-        Provides usage examples for the argument parser.
-        Returns:
-            str: A string containing usage examples.
+class UsersArgParser:
+    """A wrapper for ArgumentParser to handle user management commands.
+
+    This class encapsulates the argparse configuration for parsing command-line
+    arguments related to user operations like adding, removing, and listing users.
+    It provides a clean interface to parse command strings and retrieve usage
+    information, suitable for use in applications like chat bots.
+
+    Attributes:
+        parser (ArgumentParser): The main ArgumentParser instance.
+        subparser: The special action object for creating subparsers.
+        parser_add (ArgumentParser): The subparser for the 'add' action.
+        parser_remove (ArgumentParser): The subparser for the 'remove' action.
+        parser_list (ArgumentParser): The subparser for the 'list' action.
     """
     def __init__(self):
-        self.parser = ArgumentParser(description='Gemini configuration arguments')
-        self.parser.add_argument('--nm', dest='new_model', help='Add new model in gemini',type=str)
+        self.parser = ArgumentParser(description="User's management", exit_on_error=False)
+        # главный парсер
+        self.subparser = self.parser.add_subparsers(
+            dest='action', 
+            required=True, 
+            help='Действие'
+            )
+        # Парсер для команды "add"
+        self.parser_add = self.subparser.add_parser('add', help='Добавить нового пользователя')
+        self.parser_add.add_argument('username', type=str.upper, help='Имя нового пользователя')
+        self.parser_add.add_argument('tg_id', type=str, help='ID нового пользователя')
+
+        # Парсер для команды "remove"
+        self.parser_remove = self.subparser.add_parser('remove', help='Удалить пользователя')
+        self.parser_remove.add_argument('username', type=str.upper, help='Имя пользователя')
+
+        # Парсер для команды "list"
+        self.parser_list = self.subparser.add_parser('list', help='Список пользователей')
 
 
     def get_args(self, args_str: str) -> dict:
@@ -978,8 +998,9 @@ class ConfigArgParser:
             return {'SystemExit': "❌ Invalid arguments"}
 
     def get_usage(self) -> str:
-        return text("🤖 Gemini's models: `/conf --nm list`",  
-                    "➕ Add model to gemini: `/conf --nm str`")
+        return text("➕ Add: `/user add username ID`",  
+                    "➖ Remove: `/user remove username`",
+                    "📃 List: `/user list`", sep='\n')
 
 
 
@@ -989,7 +1010,6 @@ class User:
         self.api_factory = APIFactory()
         self.current_bot: BaseAPIInterface = self.api_factory.get('bot',users.DEFAULT_BOT)
         self.current_pic: BaseAPIInterface = self.api_factory.get('pic',users.DEFAULT_PIC)
-        # self.current_pic = FalAPI(users.menu)
         self.time_dump = time()
         self.text: str = None
         self.last_msg: dict = None # for deleting messages
@@ -1047,18 +1067,7 @@ class User:
             await bot.delete_message(**self.last_msg) # type: ignore
         return output, None #self.make_conf_btns()
     
-
-    # def make_conf_btns(self):
-    #     '''DEPRECATED'''
-    #     emoji_stat = {True:'✅',False:'❌'}
-    #     output = []
-    #     if hasattr(self.current_bot,'proxy_status'):
-    #         output += [f'{emoji_stat[self.current_bot.proxy_status]} proxy']
-    #     if hasattr(self.current_bot,'search_status'):
-    #         output += [f'{emoji_stat[self.current_bot.search_status]} search']
-    #     return users.create_inline_kb(output, 'conf')
     
-
     async def change_config(self, kwargs: dict) -> str:
         '''DEPRECATED'''
         output = ''
@@ -1632,85 +1641,40 @@ class Handlers:
         await bot.delete_message(message.chat.id, message.message_id)
         
 
-    @dp.message(Command(commands=["add_user","remove_user"]))
-    async def add_remove_user_handler(message: Message, user_name: str, command: CommandObject):
+    @dp.message(Command(commands=["user","users"]))
+    async def user_management_handler(message: Message, user_name: str, command: CommandObject):
         """
-        Handles the addition and removal of users based on the command received.
-
-        Parameters
-        ----------
-        message : types.Message
-            The message object containing the command and arguments.
-        
-        user_name : str
-            The user name if user in base
-
-        Returns
-        -------
-        None
-            The function sends a reply message to the user and does not return any value.
-
-        Raises
-        ------
-        Exception
-            
-        sqlite3.IntegrityError
-            If the user ID already exists in the database.
-        Exception
-            If the user does not have admin privileges or if the command usage is incorrect. 
-            OR For any other unexpected errors.
-
-        Notes
-        -----
-        - The function checks if the user has admin privileges by verifying the username.
-        - It splits the message text to extract the command and arguments.
-        - If the command is `/add_user`, it expects a user ID and a username, adds the user to the database, and sends a success message.
-        - If the command is `/remove_user`, it expects a username, checks if the user exists, removes the user from the database, and sends a success message.
-        - If the user does not exist, it sends a warning message.
-        - The function handles various exceptions and provides appropriate feedback to the user.
-
-        Examples
-        --------
-        >>> # Example of adding a user
-        >>> message_text = "/add_user 123456 JohnDoe"
-        >>> await add_remove_user_handler(message)
-        ✅ User JohnDoe with ID 123456 added successfully.
-
-        >>> # Example of removing a user
-        >>> message_text = "/remove_user JohnDoe"
-        >>> await add_remove_user_handler(message)
-        ✅ User `JohnDoe` removed successfully.
-
-        >>> # Example of invalid usage
-        >>> message_text = "/add_user"
-        >>> await add_remove_user_handler(message)
-        ❌ An error occurred: Usage: /add_user 123456 UserName
+        Handles the addition / removal of users based on the command received.
         """
-        try:
-            if user_name != 'ADMIN':
-                raise Exception("You don't have admin privileges")
-            
-            if not command.args:
-                raise Exception("Usage: `/add_user 123456 UserName`")
+        if user_name != 'ADMIN':
+            return await message.reply("You don't have admin privileges")
         
-            if command.command == 'add_user':
-                user_id, name = command.args.split(maxsplit=1)
-                users.db.add_user(int(user_id), name)
-                output = f"✅ User {name} with ID {user_id} added successfully."
-            elif command.command == 'remove_user':
-                name_to_remove = command.args.strip()
-                if user_name:
-                    users.db.remove_user(name_to_remove)
-                    output = f"✅ User `{name_to_remove}` removed successfully."
-                else:
-                    output = f"⚠️ User `{name_to_remove}` not found."
-
-        except sqlite3.IntegrityError:
-            output: str = "⚠️ This user ID already exists."
-        except Exception as e:
-            output: str = f"❌ An error occurred: {e}."
-        finally:
-            await message.reply(output)
+        parser = UsersArgParser()
+        if not command.args:
+            output = parser.get_usage()
+        else:
+            dict_args = parser.get_args(command.args)
+            name = dict_args.get('username')
+            match dict_args['action']:
+                case 'add':
+                    if users.db.check_username(name):
+                        output = f"❌ User {name} already exists."
+                    elif users.db.check_tg_id(dict_args['tg_id']):
+                        output = f"❌ This TG ID {dict_args['tg_id']} already exists."
+                    else:
+                        users.db.add_user(name, dict_args['tg_id'])
+                        output = f"✅ User {name} added successfully."
+                case 'remove':
+                    if users.db.check_username(name):
+                        users.db.remove_user(name)
+                        output = f"✅ {name} removed successfully."
+                    else:
+                        output = f"❌ {name} not found."
+                case 'list':
+                    lst = users.db.get_list()
+                    output = as_numbered_list(*[f'{v[1]}: {v[0]}' for v in lst]).as_html()
+                    
+        await message.reply(output)
 
 
     @dp.message(Command(commands=["info","clear","change_context"]))
@@ -1747,30 +1711,6 @@ class Handlers:
             await message.answer(image_url)
         else:
             await message.answer_photo(photo=image_url)
-
-
-    # @dp.message(Command(commands=["imagen"]))
-    # async def imagen_handler(message: Message, user_name: str):
-    #     '''DEPRECATED'''
-    #     user = await users.check_and_clear(message, "gen_image", user_name)
-    #     args = message.text.split(maxsplit=1) # type: ignore
-    #     if len(args) != 2 or (is_gemini := user.current_bot.name != 'gemini'):
-    #         text = 'Переключите на gemini' if is_gemini else "Usage: `/imagen prompt --ar 9:16 --m 2`"
-    #         await message.reply(escape(text), parse_mode=users.PARSE_MODE)
-    #         return
-
-    #     await message.reply('Картинка генерируется ⏳')
-    #     try:
-    #         parse_args = users.image_arg_parser.get_args(args[1])
-    #         async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
-    #             output = await user.current_bot.gen_image(*parse_args)
-    #         if isinstance(output, str):
-    #             await message.reply(f"❌ RAI: {output}")
-    #         else:
-    #             await message.answer_photo(photo=output)
-
-    #     except Exception as e:
-    #         await message.reply(f"❌ Ошибка: {e}")
 
 
     @dp.message(Command(commands=["tts"]))
