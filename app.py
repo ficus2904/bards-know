@@ -262,7 +262,7 @@ class BOTS:
                     if response.text:
                         return response.text
                     else:
-                        raise GeminiError.APIError(598,response=response)
+                        raise GeminiError.APIError(598, response_json={})
                 
             except GeminiError.APIError as e:
                 match e.code:
