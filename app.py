@@ -1549,6 +1549,17 @@ class UsersMap():
         return output
 
 
+    async def remove_kb_for_users(self):
+        from aiogram.types import ReplyKeyboardRemove
+        for tg_id, username in self.db.get_list():
+            await bot.send_message(
+                chat_id=tg_id,
+                text="Технические сообщение, старая клавиатура убрана",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            logger.info(f"OK: {username}")
+            await asyncio.sleep(0.3)
+
 
 users = UsersMap()
 bot = Bot(token=os.environ['TELEGRAM_API_KEY'])
@@ -1909,6 +1920,7 @@ async def main() -> None:
         BotCommand(command="/clear", description="🧹 Очистить диалог"),
         BotCommand(command="/info", description="📚 Вывести инфо"),
     ])
+    # await users.remove_kb_for_users()
     await dp.start_polling(bot)
 
 
