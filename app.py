@@ -259,9 +259,10 @@ class BOTS:
                         if self.image_gen_reset_status:
                             self.dialogue_api_router('clear')
                 else:
-                    if response.text is None:
-                        raise GeminiError.APIError(598)
-                    return response.text
+                    if response.text:
+                        return response.text
+                    else:
+                        raise GeminiError.APIError(598,response=response)
                 
             except GeminiError.APIError as e:
                 match e.code:
