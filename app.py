@@ -233,7 +233,7 @@ class BOTS:
                                 'EXTERNAL-URL': 'https://generativelanguage.googleapis.com'},
                         **http_options)
             self.proxy_status = with_proxy
-            self.client = GeminiClient(api_key=self.api_key, http_options=http_options) # type: ignore
+            self.client = GeminiClient(api_key=self.api_key, http_options=http_options)
 
             
         async def prompt(self, 
@@ -262,6 +262,8 @@ class BOTS:
                         if self.image_gen_reset_status:
                             self.dialogue_api_router('clear')
                 else:
+                    if response.text is None:
+                        raise GeminiError.APIError(598)
                     return response.text
                 
             except GeminiError.APIError as e:
@@ -410,22 +412,6 @@ class BOTS:
                 context=system_instruction,
                 history=self.chat.get_history()[:-2] if cmd == 'last' else None
                 )
-
-            # self.context = [{'role':'system', 'content': system_instruction}]
-            # config = types.GenerateContentConfig(
-            #     system_instruction=system_instruction, 
-            #     safety_settings=self.safety_settings,
-            #     thinking_config=types.ThinkingConfig(thinking_budget=-1),
-            #     )
-            # self.chat = self.client.aio.chats.create(
-            #     model=self.current, 
-            #     config=config, 
-            #     history=self.chat.get_history()[:-2] if cmd == 'dlg_last' else None
-            #     )
-            # if 'image' in self.current:
-            #     self.chat._config.thinking_config = None
-            #     self.chat._config.response_modalities = ['Text', 'Image']
-            
             return 'кроме системного' if cmd == 'clear' else 'полностью'
 
 
@@ -1092,9 +1078,7 @@ class User:
     async def change_model(self, btn_type: str, bot: str, model: str) -> None:
         cbt = f'current_{btn_type}'
         if getattr(self, cbt).name != bot:
-            # setattr(self, cbt, self.api_factory.get(bot))
             setattr(self, cbt, self.api_factory.get(btn_type, bot))
-            # setattr(self, cbt, getattr(self.api_factory, f'get_{btn_type}')(bot))
         if model:
             getattr(self, cbt).current = model
         if btn_type == 'bot':
@@ -1399,9 +1383,10 @@ class UsersMap():
 
     def create_help(self) -> str:
         help_items_simple = [
-            text('1. 🧑‍💼 User Management:',
-                 '🔹 Add new user: /add_user 123456 UserName',
-                 '🔹 Remove existing user: /remove_user UserName',
+            text('1. 🧑‍💼 User Management (/user or /users):',
+                 '🔹 Add new user: /user add USERNAME TG_ID',
+                 '🔹 Remove existing user: /user remove USERNAME',
+                 '🔹 List all users: /user list', 
                   sep='\n'),
             text('2. 🗂️ Context:',
                  '🔹 -i: Get context_body info',
@@ -1839,9 +1824,12 @@ class Handlers:
             output = await user.prompt(user.text)
             if isinstance(output, str):
                 await users.send_split_response(message, output)
+            elif isinstance(output, dict):
+                await message.answer_photo(**output)
             else:
-                await message.answer_photo(**output) # type: ignore
-        
+                await message.answer(str(output))
+
+
 
 
 class Callbacks:
@@ -1861,29 +1849,6 @@ class Callbacks:
             else:
                 reply_markup = users.create_inline_kb(output, 'change_context')
                 await query.message.edit_reply_markup(reply_markup=reply_markup) # type: ignore
-
-
-
-    # @dp.callback_query(CallbackClass.filter(F.cb_type.contains('conf')))
-    # async def conf_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
-    #     user = await users.check_and_clear(query, 'callback')
-    #     var_name = f'{callback_data.name.split()[-1]}'
-    #     kwargs: dict = {var_name: not getattr(user.current_bot, f'{var_name}_status')}
-    #     await user.change_config(kwargs)
-    #     await query.message.edit_reply_markup(reply_markup=user.make_conf_btns()) # type: ignore
-
-
-
-    # @dp.callback_query(CallbackClass.filter(F.cb_type.contains('template')))
-    # async def template_callback_handler(query: CallbackQuery, callback_data: CallbackClass):
-    #     user = await users.check_and_clear(query, 'callback')
-    #     await query.message.edit_text(f'{callback_data.name} 👇') # type: ignore
-    #     async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot):  # type: ignore
-    #         output = await user.template_prompts(callback_data.name)
-    #     await users.send_split_response(query.message, output) # type: ignore
-    #     # await bot.delete_message(query.message.chat.id, user.last_msg['message_id'])
-    #     await bot.delete_message(**user.last_msg) # type: ignore
-
 
 
     @dp.callback_query(MenuCallbacks.filter(F.btn_act == "go"))
