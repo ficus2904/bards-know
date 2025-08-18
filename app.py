@@ -91,17 +91,14 @@ class UserFilterMiddleware(BaseMiddleware):
                         event: TelegramObject | CallbackQuery, 
                         data: dict):
         USER_ID = data['event_from_user'].id
-        if user_name:= users.db.check_tg_id(USER_ID):
-            data.setdefault('user_name', user_name)
+        if username:= users.db.check_tg_id(USER_ID):
+            data.setdefault('username', username)
             try:
                 await handler(event, data)
             except Exception as e:
                 logger.exception(e)
                 if isinstance(event, Message):
-                    await bot.send_message(
-                        # event.chat.id, **users.set_kwargs(f'❌ Error: {e}'[:200])
-                        event.chat.id, f'❌ Error: {e}'[:200]
-                        ) # type: ignore
+                    await bot.send_message(event.chat.id, f'❌ Error: {e}'[:200])
         else:
             if isinstance(event, Message):
                 logger.warning(f'Unknown user {USER_ID}')
@@ -149,7 +146,7 @@ class DBConnection:
         :param tg_id: The user's ID.
         """
         query = 'INSERT INTO users (id, name) VALUES (?, ?)'
-        self.cursor.execute(query, (tg_id, username.upper()))
+        self.cursor.execute(query, (tg_id, username))
         self.conn.commit()
 
     def remove_user(self, username: str) -> None:
@@ -168,7 +165,7 @@ class DBConnection:
     def check_username(self, username: str) -> str | None:
         answer = self.fetchone("SELECT name FROM users WHERE name = ? LIMIT 1", (username,))
         return answer[0] if answer else None
-    
+      
     def get_list(self) -> str | None:
         return self.fetchall("SELECT * FROM users")
 
@@ -1408,12 +1405,12 @@ class UsersMap():
     async def check_and_clear(self, 
                               message: Message | CallbackQuery, 
                               type_prompt: str, 
-                              user_name: str = '') -> User:
+                              username: str = '') -> User:
         user: User = self.get(message.from_user.id)  # type: ignore
         if type_prompt in {'callback','tts'}:
             return user
         elif type_prompt in ['gen_image']:
-            logger.info(f'{user_name or message.from_user.id}: "{message.text[:100]}"') # type: ignore
+            logger.info(f'{username or message.from_user.id}: "{message.text[:100]}"') # type: ignore
             return user
         ## clear dialog context after 1 hour
         if (time() - user.time_dump) > 3600:
@@ -1426,9 +1423,8 @@ class UsersMap():
             user.text = message.caption or f"the provided {type_prompt}." # type: ignore
             type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt) # type: ignore
         user.text = user.text.lstrip('/')
-        if user_name:
-            # logger.info(f'{user_name}: "{type_prompt if len(type_prompt) < 100 else 'too long prompt'}"')
-            logger.info(f'{user_name}: {type_prompt[:100]}...')
+        if username:
+            logger.info(f'{username}: {type_prompt[:100]}...')
          
         return user
 
@@ -1589,9 +1585,9 @@ class Handlers:
 
 
     @dp.message(Command(commands=["context"]))
-    async def context_handler(message: Message, user_name: str, command: CommandObject):
+    async def context_handler(message: Message, username: str, command: CommandObject):
         '''Handles the context management commands for the bot.'''
-        if user_name != 'ADMIN':
+        if username != 'ADMIN':
             return await message.reply("You don't have admin privileges")
 
         cur_cont: str | None = users.get_current_context(users.get(message.from_user.id)) # type: ignore
@@ -1638,11 +1634,11 @@ class Handlers:
         
 
     @dp.message(Command(commands=["user","users"]))
-    async def user_management_handler(message: Message, user_name: str, command: CommandObject):
+    async def user_management_handler(message: Message, username: str, command: CommandObject):
         """
         Handles the addition / removal of users based on the command received.
         """
-        if user_name != 'ADMIN':
+        if username != 'ADMIN':
             return await message.reply("You don't have admin privileges")
         
         parser = UsersArgParser()
@@ -1659,11 +1655,11 @@ class Handlers:
                         output = f"❌ This TG ID {dict_args['tg_id']} already exists."
                     else:
                         users.db.add_user(name, dict_args['tg_id'])
-                        output = f"✅ User {name} added successfully."
+                        output = f"✅ User {name} added."
                 case 'remove':
                     if users.db.check_username(name):
                         users.db.remove_user(name)
-                        output = f"✅ {name} removed successfully."
+                        output = f"✅ {name} removed."
                     else:
                         output = f"❌ {name} not found."
                 case 'list':
@@ -1679,8 +1675,8 @@ class Handlers:
 
 
     @dp.message(Command(commands=["modify_models"]))
-    async def modify_models_handler(message: Message, user_name: str, command: CommandObject):
-        if user_name != 'ADMIN':
+    async def modify_models_handler(message: Message, username: str, command: CommandObject):
+        if username != 'ADMIN':
             await message.reply("You don't have admin privileges")
             return
         
@@ -1694,8 +1690,8 @@ class Handlers:
 
 
     @dp.message(Command(commands=["image", "i","I"]))
-    async def image_gen_handler(message: Message, user_name: str, command: CommandObject):
-        user = await users.check_and_clear(message, "gen_image", user_name)
+    async def image_gen_handler(message: Message, username: str, command: CommandObject):
+        user = await users.check_and_clear(message, "gen_image", username)
         if command.args is None:
             return await message.reply(
                 'Введите промпт для генерации картинки, например: /i your_prompt'
@@ -1710,8 +1706,8 @@ class Handlers:
 
 
     @dp.message(Command(commands=["tts"]))
-    async def generate_audio_story(message: Message, user_name: str, command: CommandObject):
-        user = await users.check_and_clear(message, 'tts', user_name)
+    async def generate_audio_story(message: Message, username: str, command: CommandObject):
+        user = await users.check_and_clear(message, 'tts', username)
         # parts = message.text.split(maxsplit=1)
         if (command.args is None) or (user.current_bot.name == 'gemini'):
             await message.reply("Отсутствует текст/переключите модель на gemini")
@@ -1723,9 +1719,9 @@ class Handlers:
 
 
     # @dp.message(Command(commands=["rc"]))
-    # async def remote_control_handler(message: Message, user_name: str, command: CommandObject):
+    # async def remote_control_handler(message: Message, username: str, command: CommandObject):
     #     '''Remote control command handler for admin user.'''
-    #     if user_name != 'ADMIN':
+    #     if username != 'ADMIN':
     #         return await message.reply("You don't have admin privileges")
         
     #     from remote_control import RemoteControl
@@ -1758,11 +1754,11 @@ class Handlers:
 
 
     @dp.message(F.media_group_id)
-    async def media_group_handler(message: Message, user_name: str):
+    async def media_group_handler(message: Message, username: str):
         data_info = getattr(message, message.content_type, None)
         mime_type = getattr(data_info, 'mime_type', 'image/jpeg')
         data_type = mime_type.split('/')[0]
-        user = await users.check_and_clear(message, data_type, user_name)
+        user = await users.check_and_clear(message, data_type, username)
         if data_type == 'image':
             data_info = data_info[-1] # type: ignore
         data = await bot.download(data_info.file_id) # type: ignore
@@ -1785,8 +1781,8 @@ class Handlers:
 
 
     @dp.message(F.content_type.in_({'photo'}))
-    async def photo_handler(message: Message, user_name: str):
-        user = await users.check_and_clear(message, 'image', user_name)
+    async def photo_handler(message: Message, username: str):
+        user = await users.check_and_clear(message, 'image', username)
         if user.current_bot.name not in {'gemini'}:
             await user.change_bot('gemini')
             # await users.get_context('♾️ Универсальный')
@@ -1803,11 +1799,11 @@ class Handlers:
 
 
     @dp.message(F.content_type.in_({'voice','video_note','video','document'}))
-    async def data_handler(message: Message, user_name: str):
+    async def data_handler(message: Message, username: str):
         data_info = getattr(message, message.content_type, None)
         mime_type = getattr(data_info, 'mime_type', None)
         data_type = mime_type.split('/')[0] # type: ignore
-        user = await users.check_and_clear(message, data_type, user_name)
+        user = await users.check_and_clear(message, data_type, username)
         if user.current_bot.name not in {'gemini'}:
             await user.change_bot('gemini')
 
@@ -1829,8 +1825,8 @@ class Handlers:
 
 
     @dp.message(F.content_type.in_({'text'}))
-    async def text_handler(message: Message, user_name: str):
-        user = await users.check_and_clear(message, 'text', user_name)
+    async def text_handler(message: Message, username: str):
+        user = await users.check_and_clear(message, 'text', username)
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
             output = await user.prompt(user.text)
             if isinstance(output, str):
