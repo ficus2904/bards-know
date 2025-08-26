@@ -212,7 +212,11 @@
                 "select": "gemini-2.5-flash-lite"
             },
             {
-                "text": "Image gen",
+                "text": "Image gen 2.5",
+                "select": "gemini-2.5-flash-image-preview"
+            },
+            {
+                "text": "Image gen 2.0",
                 "select": "gemini-2.0-flash-preview-image-generation"
             },
             {
