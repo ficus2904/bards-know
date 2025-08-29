@@ -191,6 +191,10 @@
                 "target": "glif"
             },
             {
+                "text": "OpenRouter",
+                "target": "open_router"
+            },
+            {
                 "text": "⬅️",
                 "target": "main"
             }
@@ -281,6 +285,19 @@
             {
                 "text": "OpenAI GPT 5 nano",
                 "select": "GPT 5 nano"
+            },
+            {
+                "text": "⬅️",
+                "target": "bot"
+            }
+        ]
+    },
+    "open_router": {
+        "text": "🧩 OpenRouter",
+        "buttons": [
+            {
+                "text": "Image gen",
+                "select": "google/gemini-2.5-flash-image-preview"
             },
             {
                 "text": "⬅️",

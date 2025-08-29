@@ -21,7 +21,7 @@ from aiolimiter import AsyncLimiter
 from functools import lru_cache
 from time import time
 from groq import AsyncGroq
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from aiogram import (
     Bot, 
     Dispatcher, 
@@ -249,7 +249,7 @@ class BOTS:
                             if part.inline_data is not None:
                                 output['photo'] = BIF(part.inline_data.data, "image.png")
                             elif part.text is not None:
-                                output['caption'] = part.text[:100]
+                                output['caption'] = part.text
 
                         return output or response.candidates[0].finish_reason
                     
@@ -446,7 +446,7 @@ class BOTS:
         async def prompt(self, text: str, image = None) -> str:
             if image:
                 self.context.clear()
-                await User.make_multi_modal_body(text or "What's in this image?", image, self.context)
+                await User.make_multi_modal_body(text, image, self.context)
             else:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
@@ -485,8 +485,9 @@ class BOTS:
 
         async def prompt(self, text: str, image = None) -> str:
             if image:
-                await User.make_multi_modal_body(text or "What's in this image?", 
-                                            image, self.context, is_mistral=True)
+                await User.make_multi_modal_body(
+                    text, image, self.context
+                    )
             else:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
@@ -611,32 +612,59 @@ class BOTS:
 
 
     class OpenRouterAPI(BaseAPIInterface):
-        """DEPRECATED Class for OpenRouter API"""
+        """Class for OpenRouter API"""
         name = 'open_router'
+        # https://openrouter.ai/models
         
-        def __init__(self):
-            self.client = OpenAI(api_key=self.api_key,
-                                base_url="https://openrouter.ai/api/v1")
-            self.models = [
-                'deepseek/deepseek-chat-v3-0324',
-                'qwen/qwen2.5-vl-32b-instruct',
-                'meta-llama/llama-4-maverick',
-                'meta-llama/llama-4-scout'
-                ] # https://openrouter.ai/models
-
+        def __init__(self, menu: dict):
+            self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
+            self.base_url = "https://openrouter.ai"
+            self.proxy_status: bool = True
+            self.client: AsyncOpenAI = None
+            self.create_client(self.proxy_status)
+
+
+        def create_client(self, with_proxy: bool) -> None:
+            '''Create a Groq client with or without proxy'''
+            if with_proxy:
+                if socks := os.getenv('SOCKS'):
+                    kwargs = {
+                        'http_client': httpx.AsyncClient(proxy=socks),
+                        'base_url': self.base_url + "/api/v1",
+                        }
+                else:
+                    kwargs = {
+                            'base_url': os.getenv('WORKER'),
+                            'default_headers':{
+                                'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                                'EXTERNAL-URL': self.base_url,}
+                            }
+            else:
+                kwargs = {}
+            self.proxy_status = with_proxy
+            self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
         
 
-        async def prompt(self, text, image = None) -> str:
-            body = {'role':'user', 'content': text}
-            self.context.append(body)
-            response = self.client.chat.completions.create(
+        async def prompt(self, text, image = None) -> str | dict:
+            if image:
+                await User.make_multi_modal_body(
+                    text, image, self.context
+                    )
+            else:
+                body = {'role':'user', 'content': text}
+                self.context.append(body)
+            response = await self.client.chat.completions.create(
                 model=self.current +':free',
                 messages=self.context,
+                modalities=["image", "text"] if 'image' in self.current else ["text"],
             )
-            output = response.choices[-1].message.content
-            self.context.append({'role':'assistant', 'content':output})
-            return output
+            output = response.choices[-1].message
+            self.context.append({'role':'assistant', 'content':output.content})
+            if hasattr(output, 'images'):
+                return await User.encode_multi_modal_body(output)
+            else:
+                return output.content
 
 
 
@@ -879,8 +907,6 @@ class APIFactory:
     '''A factory pattern for creating bot interfaces'''
     bots: dict = {v.name:v for k,v in BOTS.__dict__.items() if not k.startswith('__')}
     image_bots: dict = {v.name:v for k,v in PIC_BOTS.__dict__.items() if not k.startswith('__')}
-    # image_bots_lst: list = [FalAPI, BOTS.GeminiAPI, BOTS.GlifAPI]
-    # image_bots: dict = {bot_class.name:bot_class for bot_class in image_bots_lst}
     
     def __init__(self):
         self._instances: dict[str,BaseAPIInterface] = {}
@@ -1140,28 +1166,41 @@ class User:
         return f'🧹 Диалог очищен {status or ''}', None
     
 
-    async def make_multi_modal_body(text, 
-                                    image, 
-                                    context: list, 
-                                    is_mistral = False) -> None:
-        image_b64 = base64.b64encode(image.get('data')).decode()
+    async def make_multi_modal_body(text: str | None, 
+                                    image_lst: list[dict], 
+                                    context: list) -> None:
+        image = image_lst[0].get('data')
+        image_b64 = base64.b64encode(image).decode()
         if len(image_b64) > 180_000:
             print("Слишком большое изображение, сжимаем...")
             image_b64 = users.resize_image(image)
         part = f"data:image/jpeg;base64,{image_b64}"
-        embedded_part = part if is_mistral else {"url": part}
         context.extend([
         {
             "role": "user",
             "content": [
-                {"type": "text", "text": text},
+                {"type": "text", "text": text or "Describe this image."},
                 {
                     "type": "image_url",
-                    "image_url": embedded_part,
+                    "image_url": {"url": part},
                 },
             ],
         }
     ])
+        
+
+    async def encode_multi_modal_body(output) -> dict:
+        output_dct: dict[str,str] = {'caption': output.content.strip()}
+        for part in output.images:
+            if img_data := part.get('image_url'):
+                output_dct['photo'] = img_data.get('url','')
+
+        if 'photo' in output_dct:
+            header, b64data = output_dct['photo'].split(",", 1)
+            data = io.BytesIO(base64.b64decode(b64data))
+            data.seek(0)
+            output_dct['photo'] = BIF(data.getvalue(), "image.png")
+        return output_dct
 
 
     async def prompt(self, *args) -> str:
@@ -1784,10 +1823,10 @@ class Handlers:
     @dp.message(F.content_type.in_({'photo'}))
     async def photo_handler(message: Message, username: str):
         user = await users.check_and_clear(message, 'image', username)
-        if user.current_bot.name not in {'gemini'}:
-            await user.change_bot('gemini')
+        if user.current_bot.name not in {'gemini', 'open_router'}:
+            await user.change_model('bot','gemini')
             # await users.get_context('♾️ Универсальный')
-            await message.reply("Выбран gemini")
+            await message.reply(f"Выбран {user.current_bot.name}")
 
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
             tg_photo = await bot.download(message.photo[-1].file_id)  # type: ignore
@@ -1795,8 +1834,12 @@ class Handlers:
                                                     'mime_type': 'image/jpeg'}])
             if isinstance(output, str):
                 await users.send_split_response(message, output)
-            else:
-                await message.answer_photo(**output) # type: ignore
+            elif isinstance(output, dict):
+                if (caption := output.get('caption')) and len(caption) < 1024:
+                    await message.answer_photo(**output) # type: ignore
+                else:
+                    await message.answer_photo(photo=output.get('photo'))
+                    await users.send_split_response(message, caption)
 
 
     @dp.message(F.content_type.in_({'voice','video_note','video','document'}))
@@ -1806,7 +1849,7 @@ class Handlers:
         data_type = mime_type.split('/')[0] # type: ignore
         user = await users.check_and_clear(message, data_type, username)
         if user.current_bot.name not in {'gemini'}:
-            await user.change_bot('gemini')
+            await user.change_model('bot','gemini')
 
         await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
