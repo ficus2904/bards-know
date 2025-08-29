@@ -619,7 +619,7 @@ class BOTS:
         def __init__(self, menu: dict):
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
-            self.base_url = "https://openrouter.ai"
+            self.base_url = "https://openrouter.ai/api/v1"
             self.proxy_status: bool = True
             self.client: AsyncOpenAI = None
             self.create_client(self.proxy_status)
@@ -631,7 +631,7 @@ class BOTS:
                 if socks := os.getenv('SOCKS'):
                     kwargs = {
                         'http_client': httpx.AsyncClient(proxy=socks),
-                        'base_url': self.base_url + "/api/v1",
+                        'base_url': self.base_url,
                         }
                 else:
                     kwargs = {
@@ -641,7 +641,7 @@ class BOTS:
                                 'EXTERNAL-URL': self.base_url,}
                             }
             else:
-                kwargs = {}
+                kwargs = {'base_url': self.base_url}
             self.proxy_status = with_proxy
             self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
         
