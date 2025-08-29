@@ -621,6 +621,7 @@ class BOTS:
             self.current = self.models[0]
             self.base_url = "https://openrouter.ai/api/v1"
             self.proxy_status: bool = True
+            self.image_gen_reset_status: bool = True
             self.client: AsyncOpenAI = None
             self.create_client(self.proxy_status)
 
@@ -646,7 +647,7 @@ class BOTS:
             self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
         
 
-        async def prompt(self, text, image = None) -> str | dict:
+        async def prompt(self, text, image: bytes = None) -> str | dict:
             if image:
                 await User.make_multi_modal_body(
                     text, image, self.context
@@ -660,7 +661,10 @@ class BOTS:
                 modalities=["image", "text"] if 'image' in self.current else ["text"],
             )
             output = response.choices[-1].message
-            self.context.append({'role':'assistant', 'content':output.content})
+            if self.image_gen_reset_status:
+                self.context.clear()
+            else:
+                self.context.append({'role':'assistant', 'content':output.content})
             if hasattr(output, 'images'):
                 return await User.encode_multi_modal_body(output)
             else:
@@ -1169,11 +1173,10 @@ class User:
     async def make_multi_modal_body(text: str | None, 
                                     image_lst: list[dict], 
                                     context: list) -> None:
-        image = image_lst[0].get('data')
-        image_b64 = base64.b64encode(image).decode()
+        image_b64 = base64.b64encode(image_lst[0].get('data')).decode()
         if len(image_b64) > 180_000:
             print("Слишком большое изображение, сжимаем...")
-            image_b64 = users.resize_image(image)
+            image_b64 = users.resize_image(image_b64)
         part = f"data:image/jpeg;base64,{image_b64}"
         context.extend([
         {
@@ -1876,7 +1879,12 @@ class Handlers:
             if isinstance(output, str):
                 await users.send_split_response(message, output)
             elif isinstance(output, dict):
-                await message.answer_photo(**output)
+                # await message.answer_photo(**output)
+                if (caption := output.get('caption')) and len(caption) < 1024:
+                    await message.answer_photo(**output) # type: ignore
+                else:
+                    await message.answer_photo(photo=output.get('photo'))
+                    await users.send_split_response(message, caption)
             else:
                 await message.answer(str(output))
 
