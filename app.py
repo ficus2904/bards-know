@@ -1173,10 +1173,10 @@ class User:
     async def make_multi_modal_body(text: str | None, 
                                     image_lst: list[dict], 
                                     context: list) -> None:
-        image_b64: bytes = base64.b64encode(image_lst[0].get('data')).decode()
-        if len(image_b64) > 180_000:
+        image_str: str = base64.b64encode(image_lst[0].get('data')).decode()
+        if len(image_str) > 180_000:
             print("Слишком большое изображение, сжимаем...")
-            image_b64 = users.resize_image(image_b64)
+            image_b64 = users.resize_image(image_str)
         part = f"data:image/jpeg;base64,{image_b64}"
         context.extend([
         {
@@ -1284,11 +1284,11 @@ class UsersMap():
         return self._user_instances.setdefault(user_id, User())
     
 
-    def resize_image(self, image: bytes, max_b64_length=180_000, max_file_size_kb=450):
+    def resize_image(self, image: str, max_b64_length=180_000, max_file_size_kb=450) -> str:
         max_file_size_bytes = max_file_size_kb * 1024
-        img = Image.open(io.BytesIO(image))
+        img = Image.open(io.BytesIO(base64.b64decode(image)))
         # Функция для сжатия и конвертации изображения в Base64
-        def image_to_base64(img, quality=85):
+        def image_to_base64(img, quality=85) -> tuple[str, bytes]:
             buffer = io.BytesIO()
             img.save(buffer, format='JPEG', quality=quality)
             buffer.seek(0)
@@ -1296,7 +1296,7 @@ class UsersMap():
             return img_b64, buffer.getvalue()
         
         # Рекурсивная функция для сжатия изображения
-        def recursive_compress(img, quality):
+        def recursive_compress(img, quality) -> str | tuple[str, bytes]:
             img_b64, img_bytes = image_to_base64(img, quality=quality)
             # Проверить размер изображения
             if len(img_b64) <= max_b64_length and len(img_bytes) <= max_file_size_bytes:
