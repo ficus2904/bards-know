@@ -1176,8 +1176,8 @@ class User:
         image_str: str = base64.b64encode(image_lst[0].get('data')).decode()
         if len(image_str) > 180_000:
             print("Слишком большое изображение, сжимаем...")
-            image_b64 = users.resize_image(image_str)
-        part = f"data:image/jpeg;base64,{image_b64}"
+            image_str = users.resize_image(image_str)
+        part = f"data:image/jpeg;base64,{image_str}"
         context.extend([
         {
             "role": "user",
