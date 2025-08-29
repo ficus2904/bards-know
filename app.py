@@ -647,7 +647,7 @@ class BOTS:
             self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
         
 
-        async def prompt(self, text, image: bytes = None) -> str | dict:
+        async def prompt(self, text, image: list[dict] = None) -> str | dict:
             if image:
                 await User.make_multi_modal_body(
                     text, image, self.context
@@ -1173,7 +1173,7 @@ class User:
     async def make_multi_modal_body(text: str | None, 
                                     image_lst: list[dict], 
                                     context: list) -> None:
-        image_b64 = base64.b64encode(image_lst[0].get('data')).decode()
+        image_b64: bytes = base64.b64encode(image_lst[0].get('data')).decode()
         if len(image_b64) > 180_000:
             print("Слишком большое изображение, сжимаем...")
             image_b64 = users.resize_image(image_b64)
@@ -1284,9 +1284,9 @@ class UsersMap():
         return self._user_instances.setdefault(user_id, User())
     
 
-    def resize_image(self, image: io.BytesIO, max_b64_length=180_000, max_file_size_kb=450):
+    def resize_image(self, image: bytes, max_b64_length=180_000, max_file_size_kb=450):
         max_file_size_bytes = max_file_size_kb * 1024
-        img = Image.open(image)
+        img = Image.open(io.BytesIO(image))
         # Функция для сжатия и конвертации изображения в Base64
         def image_to_base64(img, quality=85):
             buffer = io.BytesIO()
