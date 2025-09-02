@@ -1973,5 +1973,8 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    logger.info('Start polling')
-    asyncio.run(main())
+    try:
+        logger.info('Start polling')
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Stop polling")
