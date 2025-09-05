@@ -63,10 +63,9 @@ class CallbackClass(CallbackData, prefix='callback'):
     cb_type: str
     name: str
 
-class MenuCallbacks(CallbackData, prefix='menu'):
-    btn_text: str
-    btn_target: str
-    btn_act: str
+class MenuCallbacks(CallbackData, prefix='m'):
+    target: str
+    act: str
 
 class UserFilterMiddleware(BaseMiddleware):
     """
@@ -546,7 +545,6 @@ class BOTS:
                 )
                 output = response.choices[-1].message.content
                 self.context.append({'role':'assistant', 'content':output})
-                # print(output)
                 return output
             else:
                 self.context.append({"role": "user","content": text})
@@ -656,7 +654,7 @@ class BOTS:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
             response = await self.client.chat.completions.create(
-                model=self.current +':free',
+                model=self.current,
                 messages=self.context,
                 modalities=["image", "text"] if 'image' in self.current else ["text"],
             )
@@ -872,7 +870,7 @@ class PIC_BOTS:
                     
 
     class GlifAPIPic(BOTS.GlifAPI):
-        name = 'glif_img'
+        name = 'glif_pic'
 
         def __init__(self, menu: dict):
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.get_api_key('glif')}"}
@@ -880,7 +878,7 @@ class PIC_BOTS:
                 'qwen':'clzmbpo6k000u1pb2ar3udjff',
                 'flux':'clzj1yoqc000i13n0li4mwa2b',
                 }
-            self.models = self.get_models(menu['glif_img'])
+            self.models = self.get_models(menu['glif_pic'])
             self.current = self.models[0]
             self.image_size = '9:16'
 
@@ -1108,7 +1106,8 @@ class User:
         if getattr(self, cbt).name != bot:
             setattr(self, cbt, self.api_factory.get(btn_type, bot))
         if model:
-            getattr(self, cbt).current = model
+            # getattr(self, cbt).current = model
+            getattr(self, cbt).current = getattr(self, cbt).models[int(model)]
         if btn_type == 'bot':
             await self.clear(cmd='wipe')
 
@@ -1124,7 +1123,7 @@ class User:
                 cbt.reset_chat()
             elif 'image_gen_reset' in state:
                 setattr(cbt, state, not attr)
-            print(getattr(getattr(self, f'current_{self.nav_type}'), state))
+            # print(getattr(getattr(self, f'current_{self.nav_type}'), state))
 
 
 
@@ -1258,25 +1257,14 @@ class UsersMap():
                 'Меню':'menu', 
                 'Добавить контекст':'change_context', 
                 'Быстрые команды':'template_prompts',
-                # 'Вывести инфо':'info',
-                # 'Сменить бота':'change_bot', 
-                # 'Очистить контекст':'clear',
-                # 'Изменить модель бота':'change_model'
             }
         self.simple_cmds: set = {'clear', 'info'}
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'gemini' #'glif' gemini mistral
-        self.DEFAULT_PIC: str = 'glif_img' #'glif' gemini mistral
+        self.DEFAULT_BOT: str = 'gemini'
+        self.DEFAULT_PIC: str = 'glif_pic'
         self.image_arg_parser = ImageGenArgParser()
-        # self.builder: ReplyKeyboardBuilder = self.create_builder()
-        # self.config_arg_parser = ConfigArgParser()
+        self.all_abs: dict[str, str] = {'bot': '🧩', 'pic': '🖼️'}
 
-
-    # def create_builder(self) -> ReplyKeyboardMarkup | InlineKeyboardMarkup:
-    #     builder = ReplyKeyboardBuilder()
-    #     for display_text in self.buttons:
-    #         builder.button(text=display_text)
-    #     return builder.adjust(1).as_markup()
 
 
     @lru_cache(maxsize=None)
@@ -1507,28 +1495,27 @@ class UsersMap():
         """
         builder = InlineKeyboardBuilder()
         
-        if target in {'bot', 'pic','switch_bot', 'switch_pic'}:
+        if target in self.all_abs or target.startswith('switch_'):
             user.nav_type = target.replace('switch_','')
         target_menu: dict = self.menu[target]
         cb = getattr(user, f'current_{user.nav_type}')
-        if user.nav_type in {'bot', 'pic'} and target not in {'main', 'switch', 'utils', 'cmd'}:
+        if user.nav_type in self.all_abs and target not in {'main', 'switch', 'utils', 'cmd'}:
             headline: str = f'Текущая модель:\n🤖 {cb.name}\n'\
-                            f'{'🧩' if user.nav_type == 'bot' else '🎨'} {cb.current}'\
+                            f'{self.all_abs.get(user.nav_type)} {cb.current}'\
                             f'{'\n📐' + cb.image_size if user.nav_type == 'pic' else ''}'
         else:
             headline: str = target_menu['text']
 
         btns_list: list[dict] = target_menu["buttons"]
-        for btn in btns_list:
-            state, select = btn.get('state'), btn.get('select')
+        for num, btn in enumerate(btns_list):
+            state, select = btn.get('state'), str(num) if btn.get('select') else None
             if state in self.state_btns and not hasattr(cb, state):
                 continue
             builder.button(
-                text=self._add_emoji_prefix(cb, btn_act, state, select) + btn['text'], 
+                text=self._add_emoji_prefix(cb, btn_act, state, btn.get('select')) + btn['text'], 
                 callback_data=MenuCallbacks(
-                    btn_text=btn['text'], 
-                    btn_target=btn.get('target', target),
-                    btn_act=state or select or 'go',
+                    target=btn.get('target', target),
+                    act=state or select or 'go',
                     ).pack())
         columns = 2 if len(target_menu["buttons"]) > 5 else 1
         return {'text': headline,'reply_markup': builder.adjust(columns).as_markup()}
@@ -1910,53 +1897,50 @@ class Callbacks:
                 await query.message.edit_reply_markup(reply_markup=reply_markup) # type: ignore
 
 
-    @dp.callback_query(MenuCallbacks.filter(F.btn_act == "go"))
+    @dp.callback_query(MenuCallbacks.filter(F.act == "go"))
     async def menu_callback_go(query: CallbackQuery, callback_data: MenuCallbacks):
         user = await users.check_and_clear(query, 'callback')
-        cb = callback_data
-        if cb.btn_target == 'exit':
+        target = callback_data.target
+        if target == 'exit':
             await query.message.delete() # type: ignore
             return
-        elif cb.btn_target == 'context':
+        elif target == 'context':
             cur_bot = user.current_bot
             kwargs: dict = {
                 'text': f'Текущая модель:\n🤖 {cur_bot.name}\n🧩 {cur_bot.current}',
                 'reply_markup':users.create_inline_kb(users.context_dict, 'change_context')
             }
-        elif cb.btn_target.startswith('cmd_'):
+        elif target.startswith('cmd_'):
             await query.answer()
             async with ChatActionSender.typing(chat_id=query.message.chat.id, bot=bot): # type: ignore
-                output: str = await user.template_prompts(cb.btn_target.removeprefix('cmd_'))
+                output: str = await user.template_prompts(target.removeprefix('cmd_'))
             kwargs: dict = users.set_kwargs(output)
 
-        elif cb.btn_target.startswith('dlg_'):
-            kwargs: dict = {'text': user.dialogue_router(cb.btn_target)}
-        elif cb.btn_target.startswith('utils_'):
-            # kwargs: dict = {'text': await user.utils_router(cb.btn_target, query.message.from_user.id)}  # type: ignore
-            kwargs: dict = users.set_kwargs(await user.utils_router(cb.btn_target, user))  # type: ignore
+        elif target.startswith('dlg_'):
+            kwargs: dict = {'text': user.dialogue_router(target)}
+        elif target.startswith('utils_'):
+            kwargs: dict = users.set_kwargs(await user.utils_router(target, user))  # type: ignore
         else:
-            kwargs: dict = users.create_menu_kb(user, cb.btn_target)
+            kwargs: dict = users.create_menu_kb(user, target)
         await query.message.edit_text(**kwargs) # type: ignore
         await query.answer()
         
 
-    @dp.callback_query(MenuCallbacks.filter(F.btn_act != "go"))
+    @dp.callback_query(MenuCallbacks.filter(F.act != "go"))
     async def menu_callback_state_select(query: CallbackQuery, callback_data: MenuCallbacks):
         user = await users.check_and_clear(query, 'callback')
-        cb = callback_data
-        if cb.btn_act in users.state_btns:
-            user.change_state(cb.btn_act)
-        elif cb.btn_act.startswith('ratio'):
-            user.current_pic.image_size = cb.btn_act.split('_',1)[1]
+        target, act = callback_data.target, callback_data.act
+        if act in users.state_btns:
+            user.change_state(act)
+        elif target == 'ratio':
+            # user.current_pic.image_size = act.split('_',1)[1]
+            ratios = BaseAPIInterface.get_models(users.menu['ratio'])
+            user.current_pic.image_size = ratios[int(act)]
         else:
-            await user.change_model(
-                user.nav_type, 
-                cb.btn_target.removesuffix('_pic'),#replace('_pic',''), 
-                cb.btn_act
-                )
+            await user.change_model(user.nav_type, target, act)
         with suppress(Exception):
             await query.message.edit_text(  # type: ignore
-                **users.create_menu_kb(user, cb.btn_target, cb.btn_act)
+                **users.create_menu_kb(user, target, act)
                 )
         await query.answer()
 

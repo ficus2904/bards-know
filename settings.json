@@ -220,6 +220,10 @@
                 "select": "gemini-2.0-flash-preview-image-generation"
             },
             {
+                "text": "Nano Banana",
+                "select": "gemini-2.5-flash-image-preview"
+            },
+            {
                 "text": "⬅️",
                 "target": "bot"
             }
@@ -296,8 +300,8 @@
         "text": "🧩 OpenRouter",
         "buttons": [
             {
-                "text": "Image gen",
-                "select": "google/gemini-2.5-flash-image-preview"
+                "text": "Nano Banana",
+                "select": "google/gemini-2.5-flash-image-preview:free"
             },
             {
                 "text": "⬅️",
@@ -318,7 +322,7 @@
             },
             {
                 "text": "Glif",
-                "target": "glif_img"
+                "target": "glif_pic"
             },
             {
                 "text": "📐 Aspect Ratio",
@@ -380,7 +384,7 @@
             }
         ]
     },
-    "glif_img": {
+    "glif_pic": {
         "text": "🎨 Glif",
         "buttons": [
             {
