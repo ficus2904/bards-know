@@ -450,19 +450,31 @@ class BOTS:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
             
-            # kwargs = {'model': self.current, 'messages': self.context}
-            qwen_kwargs = {
-                'reasoning_format': 'hidden',
-                'reasoning_effort': 'default',
-                'temperature':0.6, 
-                'top_p':0.95, 
-            }
+            kwargs: dict = {
+                'qwen/qwen3-32b': {
+                    'reasoning_format': 'hidden',
+                    'reasoning_effort': 'default',
+                    'temperature':0.6, 
+                    'top_p':0.95, 
+                    }, 
+                'openai/gpt-oss-120b': {
+                    'temperature':1,
+                    'max_completion_tokens':4096,
+                    'top_p':1,
+                    'tool_choice':"auto",
+                    "reasoning_effort": "low",
+                    "include_reasoning": True,
+                    'tools': [
+                        {"type": "browser_search"},
+                        {"type": "code_interpreter"}
+                        ]
+                    }
+                }.get(self.current, {})
             try:
                 response = await self.client.chat.completions.create(
                     model=self.current, 
                     messages=self.context,
-                    **(qwen_kwargs if 'qwen3-32b' in self.current else {})
-                    )
+                    **kwargs)
                 data = response.choices[-1].message.content
                 self.context.append({'role':'assistant', 'content': data})
                 return data
@@ -1958,7 +1970,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     try:
-        logger.info('Start polling')
+        logger.info('🚀 Start polling')
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Stop polling")
+        logger.info("⚠️ Stop polling")
