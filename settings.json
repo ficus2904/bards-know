@@ -117,15 +117,19 @@
         "buttons": [
             {
                 "text": "Прокси",
-                "state": "proxy_status"
+                "state": "proxy"
             },
             {
                 "text": "Поиск",
-                "state": "search_status"
+                "state": "search"
+            },
+            {
+                "text": "Код",
+                "state": "code"
             },
             {
                 "text": "Сброс у Image gen",
-                "state": "image_gen_reset_status"
+                "state": "image_gen_reset"
             },
             {
                 "text": "⬅️",
@@ -138,11 +142,7 @@
         "buttons": [
             {
                 "text": "Прокси",
-                "state": "proxy_status"
-            },
-            {
-                "text": "Поиск",
-                "state": "search_status"
+                "state": "proxy"
             },
             {
                 "text": "⬅️",

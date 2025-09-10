@@ -208,11 +208,18 @@ class BOTS:
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
             self.chat = None
-            self.proxy_status: bool = True
-            self.search_status: bool = True
-            self.image_gen_reset_status: bool = True
+            # self.proxy_status: bool = True
+            # self.search_status: bool = True
+            # self.code_status: bool = False
+            # self.image_gen_reset_status: bool = True
+            self.states: dict[str,str] = {
+                "proxy": True,
+                "search": True,
+                "code": False,
+                "image_gen_reset": True,
+            }
             self.client: GeminiClient = None
-            self.reset_chat(with_proxy=self.proxy_status)
+            self.reset_chat(with_proxy=self.states['proxy'])
 
 
         def create_client(self, with_proxy: bool) -> None:
@@ -228,7 +235,7 @@ class BOTS:
                         headers={'X-Custom-Auth': os.getenv('AUTH_SECRET'),
                                 'EXTERNAL-URL': 'https://generativelanguage.googleapis.com'},
                         **http_options)
-            self.proxy_status = with_proxy
+            self.states['proxy'] = with_proxy
             self.client = GeminiClient(api_key=self.api_key, http_options=http_options)
 
             
@@ -255,7 +262,7 @@ class BOTS:
                     except Exception:
                         return str(response.candidates[0].finish_reason)
                     finally:
-                        if self.image_gen_reset_status:
+                        if self.states['image_gen_reset']:
                             self.dialogue_api_router('clear')
                 else:
                     if response.text:
@@ -297,12 +304,16 @@ class BOTS:
                 config=config,
                 history=history,
                 )
-            if self.search_status and ('image' not in self.current):
-                self.chat._config.tools = [types.Tool(google_search=types.GoogleSearch(),
-                        url_context = types.UrlContext())]
+            if 'image' not in self.current:
+                self.chat._config.tools = [
+                    types.Tool(
+                        google_search=types.GoogleSearch() if self.states['search'] else None,
+                        url_context = types.UrlContext() if self.states['search'] else None,
+                        code_execution=types.ToolCodeExecution if self.states['code'] else None,
+                        )
+                    ]
             else:
                 self.chat._config.tools = None
-            if 'image' in self.current:
                 self.chat._config.thinking_config = None
                 self.chat._config.response_modalities = ['Text','Image']
 
@@ -313,46 +324,6 @@ class BOTS:
                     if 'generateContent' in model.supported_actions]
             return "\n".join(lst)
 
-
-        async def change_chat_config(self, clear: bool | None = None, 
-                                    search: int | None = None, 
-                                    new_model: str | None = None, 
-                                    proxy: int | None = None) -> str | None:
-            '''DEPRECATED'''
-            if self.chat._model != self.current:
-                return self.reset_chat()
-            
-            if new_model:
-                if new_model == 'list':
-                    return self.get_list()
-                    # response = await self.client.aio.models.list(config={'query_base': True})
-                    # return "\n".join([model.name.split('/')[1] for model in response 
-                    #         if 'generateContent' in model.supported_actions])
-                else:
-                    self.models.append(new_model)
-                    return f'В gemini добавлена модель {new_model}'
-
-            if clear:
-                if self.chat._curated_history and self.chat._config.system_instruction:
-                    # self.chat._curated_history.clear()
-                    self.dialogue_api_router('dlg_clear')
-                    return 'кроме системного'
-                else:
-                    # self.chat._curated_history.clear()
-                    # self.chat._config.system_instruction = None
-                    self.dialogue_api_router('dlg_wipe')
-                    return 'полностью'
-
-            if search is not None:
-                self.search_status = bool(search)
-                self.chat._config.tools = [types.Tool(google_search=types.GoogleSearch(),
-                                                url_context = types.UrlContext())] if search else None
-                return 'Поиск в gemini включен ✅' if search else 'Поиск в gemini выключен ❌'
-            
-            if isinstance(proxy, int):
-                self.reset_chat(with_proxy=bool(proxy))
-                return f'Прокси {'включен ✅' if proxy else 'выключен ❌'}\n'
-            
 
         def length(self) -> int: 
             return int(self.chat._config.system_instruction is not None) + len(self.chat._curated_history)
@@ -420,15 +391,21 @@ class BOTS:
         def __init__(self, menu: dict):
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
-            self.proxy_status: bool = False
+            self.states: dict[str,str] = {
+                "proxy": True,
+                "search": True,
+                "code": False,
+                # "image_gen_reset": True,
+            }
+            # self.proxy_status: bool = False
             self.client: AsyncGroq = None
-            self.create_client(self.proxy_status)
+            self.create_client(self.states['proxy'])
 
 
         def create_client(self, with_proxy: bool) -> None:
             '''Create a Groq client with or without proxy'''
             if with_proxy:
-                if socks := os.getenv('SOCKS'):
+                if socks := os.getenv('SOCKS') or os.getenv('LOCAL_SOCKS'):
                     kwargs = {'http_client': httpx.AsyncClient(proxy=socks)}
                 else:
                     kwargs = {
@@ -439,7 +416,7 @@ class BOTS:
                             }
             else:
                 kwargs = {}
-            self.proxy_status = with_proxy
+            self.states['proxy'] = with_proxy
             self.client = AsyncGroq(api_key=self.api_key,**kwargs)
 
         async def prompt(self, text: str, image = None) -> str:
@@ -464,10 +441,10 @@ class BOTS:
                     'tool_choice':"auto",
                     "reasoning_effort": "low",
                     "include_reasoning": True,
-                    'tools': [
-                        {"type": "browser_search"},
-                        {"type": "code_interpreter"}
-                        ]
+                    'tools': [x for x in [
+                        {"type": "browser_search"} if self.states['search'] else None,
+                        {"type": "code_interpreter" if self.states['code'] else None},
+                        ] if x]
                     }
                 }.get(self.current, {})
             try:
@@ -630,10 +607,16 @@ class BOTS:
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
             self.base_url = "https://openrouter.ai/api/v1"
-            self.proxy_status: bool = True
-            self.image_gen_reset_status: bool = True
+            self.states: dict[str,str] = {
+                "proxy": True,
+                # "search": True,
+                # "code": False,
+                "image_gen_reset": True,
+            }
+            # self.proxy_status: bool = True
+            # self.image_gen_reset_status: bool = True
             self.client: AsyncOpenAI = None
-            self.create_client(self.proxy_status)
+            self.create_client(self.states['proxy'])
 
 
         def create_client(self, with_proxy: bool) -> None:
@@ -653,7 +636,7 @@ class BOTS:
                             }
             else:
                 kwargs = {'base_url': self.base_url}
-            self.proxy_status = with_proxy
+            self.states['proxy'] = with_proxy
             self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
         
 
@@ -671,7 +654,7 @@ class BOTS:
                 modalities=["image", "text"] if 'image' in self.current else ["text"],
             )
             output = response.choices[-1].message
-            if self.image_gen_reset_status:
+            if self.states['image_gen_reset']:
                 self.context.clear()
             else:
                 self.context.append({'role':'assistant', 'content':output.content})
@@ -761,9 +744,11 @@ class PIC_BOTS:
             self.api_key = self.get_api_key('gemini')
             self.models = self.get_models(menu['imagen'])
             self.current = self.models[0]
-            self.proxy_status = True
+            self.states: dict[str,str] = {
+                "proxy": True,
+            }
             self.image_size = '9:16'
-            self.create_client(self.proxy_status)
+            self.create_client(self.states['proxy'])
 
 
         async def gen_image(self, prompt: str):
@@ -1092,20 +1077,6 @@ class User:
         return output, None #self.make_conf_btns()
     
     
-    async def change_config(self, kwargs: dict) -> str:
-        '''DEPRECATED'''
-        output = ''
-        if self.current_bot.name == 'gemini':
-            output += f'{await self.current_bot.change_chat_config(**kwargs)}\n'
-        if self.current_bot.name == 'groq':
-            self.current_bot.create_client(kwargs['proxy'])
-            output += f'Прокси {'включен ✅' if kwargs['proxy'] else 'выключен ❌'}\n'
-        # if error := kwargs.get('SystemExit'):
-        #     return error + '\n' + users.config_arg_parser.get_usage()
-
-        return output.strip().strip('None')
-
-
     async def change_bot(self, bot_name: str) -> str:
         '''DEPRECATED'''
         self.current_bot = self.api_factory.get('bot',bot_name)
@@ -1126,6 +1097,20 @@ class User:
 
     def change_state(self, state: str) -> None:
         cbt = getattr(self, f'current_{self.nav_type}')
+        if hasattr(cbt, 'states') and (state in cbt.states):
+            attr: bool = not cbt.states[state]
+            match state:
+                case 'proxy':
+                    cbt.create_client(attr)
+                case _:
+                    cbt.states[state] = attr
+                    cbt.reset_chat() if hasattr(cbt, 'reset_chat') else None
+            print(cbt.states)
+
+
+    def change_state_old(self, state: str) -> None:
+        '''DEPRECATED'''
+        cbt = getattr(self, f'current_{self.nav_type}')
         if hasattr(cbt, state):
             attr: bool = getattr(cbt, state)
             if 'proxy' in state:
@@ -1135,7 +1120,6 @@ class User:
                 cbt.reset_chat()
             elif 'image_gen_reset' in state:
                 setattr(cbt, state, not attr)
-            # print(getattr(getattr(self, f'current_{self.nav_type}'), state))
 
 
 
@@ -1521,7 +1505,8 @@ class UsersMap():
         btns_list: list[dict] = target_menu["buttons"]
         for num, btn in enumerate(btns_list):
             state, select = btn.get('state'), str(num) if btn.get('select') else None
-            if state in self.state_btns and not hasattr(cb, state):
+            # if state in self.state_btns and not hasattr(cb, state):
+            if (state in self.state_btns) and (state not in getattr(cb, "states", ())):
                 continue
             builder.button(
                 text=self._add_emoji_prefix(cb, btn_act, state, btn.get('select')) + btn['text'], 
@@ -1548,8 +1533,8 @@ class UsersMap():
             str: Emoji prefix or empty string
         """
         # Handle state toggle buttons
-        if state and hasattr(cb, state):
-            return '✅ ' if getattr(cb, state) else '❌ '
+        if state and hasattr(cb, 'states'):
+            return '✅ ' if cb.states[state] else '❌ '
         # Handle model selection buttons
         if select:
             if select.startswith('ratio'):
@@ -1973,4 +1958,4 @@ if __name__ == "__main__":
         logger.info('🚀 Start polling')
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("⚠️ Stop polling")
+        logger.info("⚠️  Stop polling")
