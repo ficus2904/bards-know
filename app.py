@@ -1105,7 +1105,6 @@ class User:
                 case _:
                     cbt.states[state] = attr
                     cbt.reset_chat() if hasattr(cbt, 'reset_chat') else None
-            print(cbt.states)
 
 
     def change_state_old(self, state: str) -> None:
