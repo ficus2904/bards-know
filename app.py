@@ -208,10 +208,6 @@ class BOTS:
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
             self.chat = None
-            # self.proxy_status: bool = True
-            # self.search_status: bool = True
-            # self.code_status: bool = False
-            # self.image_gen_reset_status: bool = True
             self.states: dict[str,str] = {
                 "proxy": True,
                 "search": True,
@@ -395,9 +391,7 @@ class BOTS:
                 "proxy": True,
                 "search": True,
                 "code": False,
-                # "image_gen_reset": True,
             }
-            # self.proxy_status: bool = False
             self.client: AsyncGroq = None
             self.create_client(self.states['proxy'])
 
@@ -419,6 +413,7 @@ class BOTS:
             self.states['proxy'] = with_proxy
             self.client = AsyncGroq(api_key=self.api_key,**kwargs)
 
+
         async def prompt(self, text: str, image = None) -> str:
             if image:
                 self.context.clear()
@@ -427,26 +422,7 @@ class BOTS:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
             
-            kwargs: dict = {
-                'qwen/qwen3-32b': {
-                    'reasoning_format': 'hidden',
-                    'reasoning_effort': 'default',
-                    'temperature':0.6, 
-                    'top_p':0.95, 
-                    }, 
-                'openai/gpt-oss-120b': {
-                    'temperature':1,
-                    'max_completion_tokens':4096,
-                    'top_p':1,
-                    'tool_choice':"auto",
-                    "reasoning_effort": "low",
-                    "include_reasoning": True,
-                    'tools': [x for x in [
-                        {"type": "browser_search"} if self.states['search'] else None,
-                        {"type": "code_interpreter" if self.states['code'] else None},
-                        ] if x]
-                    }
-                }.get(self.current, {})
+            kwargs: dict = self.get_kwargs()
             try:
                 response = await self.client.chat.completions.create(
                     model=self.current, 
@@ -457,7 +433,34 @@ class BOTS:
                 return data
             except Exception as e:
                 return f'{e}'
+            
 
+        def get_kwargs(self) -> dict:
+            match self.current:
+                case 'qwen/qwen3-32b':
+                    kwargs = {
+                        'reasoning_format': 'hidden',
+                        'reasoning_effort': 'default',
+                        'temperature':0.6, 
+                        'top_p':0.95, 
+                    }
+                case s if 'openai' in s:
+                    kwargs = {
+                        'temperature':1,
+                        'max_completion_tokens':4096,
+                        'top_p':1,
+                        'tool_choice':"auto",
+                        "reasoning_effort": "low",
+                        "include_reasoning": True,
+                        'tools': [x for x in [
+                            {"type": "browser_search"} if self.states['search'] else None,
+                            {"type": "code_interpreter" if self.states['code'] else None},
+                            ] if x]
+                    }
+                case _:
+                    kwargs = {}
+            return kwargs
+        
 
 
     class MistralAPI(BaseAPIInterface):
@@ -734,6 +737,7 @@ class BOTS:
                     return None
 
 
+
 class PIC_BOTS:
     """Picture generation bot interfaces"""
 
@@ -810,19 +814,22 @@ class PIC_BOTS:
         
 
         def get_kwargs(self) -> dict[str,str]:
-            if self.current == 'flux-pro/v1.1-ultra':
-                kwargs = {
-                    "aspect_ratio": self.to_aspect_ratio(),
-                    "raw": self.raw,
-                }
-            elif 'imagen' in self.current:
-                kwargs = {
-                    "aspect_ratio": self.to_aspect_ratio(),
-                }
-            elif 'hidream' in self.current:
-                kwargs = {
-                    "image_size": self.image_size,
-                }
+            match self.current:
+                case 'flux-pro/v1.1-ultra':
+                    kwargs = {
+                        "aspect_ratio": self.to_aspect_ratio(),
+                        "raw": self.raw,
+                    }
+                case s if 'imagen' in s:
+                    kwargs = {
+                        "aspect_ratio": self.to_aspect_ratio(),
+                    }
+                case s if 'seedream' in s:
+                    kwargs = {
+                        "aspect_ratio": s,
+                    }
+                case _:
+                    kwargs = {}
             return kwargs
 
 
@@ -900,6 +907,7 @@ class PIC_BOTS:
                             case _:
                                 logger.error(error_msg := f'Unexpected error: {str(e)}')
                         return '❌: ' + error_msg
+
 
 
 class APIFactory:

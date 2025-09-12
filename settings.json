@@ -242,7 +242,7 @@
             },
             {
                 "text": "Kimi K2",
-                "select": "moonshotai/kimi-k2-instruct"
+                "select": "moonshotai/kimi-k2-instruct-0905"
             },
             {
                 "text": "⬅️",
@@ -338,16 +338,16 @@
         "text": "🎨 FalAI",
         "buttons": [
             {
+                "text": "Seedream 4",
+                "select": "bytedance/seedream/v4/text-to-image"
+            },
+            {
                 "text": "Flux Ultra",
                 "select": "flux-pro/v1.1-ultra"
             },
             {
-                "text": "Hidream i1 Fast",
-                "select": "hidream-i1-fast"
-            },
-            {
-                "text": "Hidream i1 Full",
-                "select": "hidream-i1-full"
+                "text": "Nano banana",
+                "select": "nano-banana"
             },
             {
                 "text": "Imagen4 Fast",
