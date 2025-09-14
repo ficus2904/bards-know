@@ -778,6 +778,10 @@ class PIC_BOTS:
         name = 'FalAI'
         
         def __init__(self, menu: dict):
+            self.headers: dict[str,str] = {
+                "Authorization": f"Key {self.api_key}",
+                'Content-Type': 'application/json',
+                }
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
             self.image_size = 'portrait_16_9'
@@ -826,7 +830,7 @@ class PIC_BOTS:
                     }
                 case s if 'seedream' in s:
                     kwargs = {
-                        "aspect_ratio": s,
+                        "image_size": s,
                     }
                 case _:
                     kwargs = {}
@@ -836,10 +840,6 @@ class PIC_BOTS:
         async def gen_image(self, prompt: str) -> str:
             '''Method to generate an image using the Fal API'''
             kwargs = self.get_kwargs()
-            headers: dict[str,str] = {
-                "Authorization": f"Key {self.api_key}",
-                'Content-Type': 'application/json',
-                }
             body: dict[str,str] = {
                     "prompt": prompt,
                     "num_images": 1,
@@ -849,7 +849,7 @@ class PIC_BOTS:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     url=f"https://fal.run/fal-ai/{self.current}",
-                    headers=headers,
+                    headers=self.headers,
                     json=body, 
                     timeout=90,
                     ) as response:
@@ -1752,18 +1752,6 @@ class Handlers:
                     await message.answer_voice(link)
 
 
-    # @dp.message(Command(commands=["rc"]))
-    # async def remote_control_handler(message: Message, username: str, command: CommandObject):
-    #     '''Remote control command handler for admin user.'''
-    #     if username != 'ADMIN':
-    #         return await message.reply("You don't have admin privileges")
-        
-    #     from remote_control import RemoteControl
-
-    #     return RemoteControl().command_router(command.args)
-    
-
-
     @dp.message(F.text.in_(users.buttons) | F.text.casefold().in_(users.simple_cmds))
     async def reply_kb_command(message: Message):
         user = await users.check_and_clear(message, 'text')
@@ -1878,7 +1866,6 @@ class Handlers:
                     await users.send_split_response(message, caption)
             else:
                 await message.answer(str(output))
-
 
 
 
