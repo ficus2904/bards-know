@@ -899,7 +899,10 @@ class PIC_BOTS:
                     try:
                         response.raise_for_status()
                         answer: dict = await response.json()
-                        return answer.get('output') or '❌ ' + answer.get('error','No output data')
+                        if error_msg := answer.get('error'):
+                            raise Exception(error_msg)
+                        else:
+                            return answer.get('output')
                     except Exception as e:
                         match e:
                             case asyncio.TimeoutError():
