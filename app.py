@@ -879,6 +879,8 @@ class PIC_BOTS:
         def __init__(self, menu: dict):
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.get_api_key('glif')}"}
             self.models_with_ids = {
+                "nano_banana":"cmfccdw4u0000ky04upzoh4xc",
+                "seedream":"cmff1glzk0006jp04605n84cg",
                 'qwen':'clzmbpo6k000u1pb2ar3udjff',
                 'flux':'clzj1yoqc000i13n0li4mwa2b',
                 }
@@ -905,7 +907,10 @@ class PIC_BOTS:
                             case aiohttp.ClientResponseError():
                                 logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
                             case _:
-                                logger.error(error_msg := f'Unexpected error: {str(e)}')
+                                if str(e) == 'unknown error':
+                                    error_msg = '💳 The credits have run out.'
+                                else:
+                                    logger.error(error_msg := f'Unexpected error: {str(e)}')
                         return '❌: ' + error_msg
 
 
@@ -1742,14 +1747,13 @@ class Handlers:
     @dp.message(Command(commands=["tts"]))
     async def generate_audio_story(message: Message, username: str, command: CommandObject):
         user = await users.check_and_clear(message, 'tts', username)
-        # parts = message.text.split(maxsplit=1)
-        if (command.args is None) or (user.current_bot.name == 'gemini'):
-            await message.reply("Отсутствует текст/переключите модель на gemini")
-        else:
-            async with ChatActionSender.record_voice(chat_id=message.chat.id, bot=bot):
-                link = await user.current_bot.tts(command.args)
-                if link:
-                    await message.answer_voice(link)
+        if command.args is None:
+            return await message.reply("Отсутствует текст")
+
+        async with ChatActionSender.record_voice(chat_id=message.chat.id, bot=bot):
+            link = await user.current_bot.tts(command.args)
+            if link:
+                await message.answer_voice(link)
 
 
     @dp.message(F.text.in_(users.buttons) | F.text.casefold().in_(users.simple_cmds))
@@ -1833,7 +1837,7 @@ class Handlers:
         if user.current_bot.name not in {'gemini'}:
             await user.change_model('bot','gemini')
 
-        await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
+        # await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
             data = await bot.download(data_info.file_id) # type: ignore
             output = await user.prompt(user.text, [{'data': data.getvalue(), 'mime_type': mime_type}])

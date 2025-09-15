@@ -388,6 +388,14 @@
         "text": "🎨 Glif",
         "buttons": [
             {
+                "text": "Seedream 4",
+                "select": "seedream" 
+            },
+            {
+                "text": "Nano Banana",
+                "select": "nano_banana" 
+            },
+            {
                 "text": "Qwen image",
                 "select": "qwen" 
             },
