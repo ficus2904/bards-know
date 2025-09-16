@@ -749,7 +749,7 @@ class BOTS:
             self.current = self.models[0]
             self.image_size = '9:16'
             self.states: dict[str,str] = {
-                "proxy": False,
+                "proxy": True,
             }
             self.client = None
             self.create_client(self.states['proxy'])
@@ -2006,10 +2006,10 @@ class Callbacks:
         if act in users.state_btns:
             user.change_state(act)
         elif target == 'ratio':
-            ratios = BaseAPIInterface.get_models(users.menu['ratio'])
-            user.current_pic.image_size = ratios[int(act)]
+            ratio = BaseAPIInterface.get_models(users.menu['ratio'])[int(act)].split('ratio_')[1]
+            user.current_pic.image_size = ratio
             if hasattr(user.current_bot, 'image_size'):
-                user.current_bot.image_size = ratios[int(act)]
+                user.current_bot.image_size = ratio
         else:
             await user.change_model(user.nav_type, target, act)
         with suppress(Exception):
