@@ -749,7 +749,7 @@ class BOTS:
             self.current = self.models[0]
             self.image_size = '9:16'
             self.states: dict[str,str] = {
-                "proxy": True,
+                "proxy": False,
             }
             self.client = None
             self.create_client(self.states['proxy'])
