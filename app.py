@@ -787,7 +787,6 @@ class BOTS:
         async def prompt(self, prompt: str, image: list = None) -> dict | str:
             '''Method to create, edit and remix an image using the Reve API'''
             body = self.prepare_kwargs(prompt, image)
-            logger.info(f'{self.headers}\nBode\n{body}')
             response = await self.client.post(
                 url=self.current,
                 headers=self.headers, json=body,
