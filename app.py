@@ -417,7 +417,7 @@ class BOTS:
         async def prompt(self, text: str, image = None) -> str:
             if image:
                 self.context.clear()
-                await User.make_multi_modal_body(text, image, self.context)
+                User.make_multi_modal_body(image, text, self.context)
             else:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
@@ -476,9 +476,7 @@ class BOTS:
 
         async def prompt(self, text: str, image = None) -> str:
             if image:
-                await User.make_multi_modal_body(
-                    text, image, self.context
-                    )
+                User.make_multi_modal_body(image, text, self.context)
             else:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
@@ -645,9 +643,7 @@ class BOTS:
 
         async def prompt(self, text, image: list[dict] = None) -> str | dict:
             if image:
-                await User.make_multi_modal_body(
-                    text, image, self.context
-                    )
+                User.make_multi_modal_body(image, text, self.context)
             else:
                 body = {'role':'user', 'content': text}
                 self.context.append(body)
@@ -662,7 +658,7 @@ class BOTS:
             else:
                 self.context.append({'role':'assistant', 'content':output.content})
             if hasattr(output, 'images'):
-                return await User.encode_multi_modal_body(output)
+                return User.encode_multi_modal_body(output)
             else:
                 return output.content
 
@@ -735,6 +731,87 @@ class BOTS:
                 except httpx.HTTPStatusError as e:
                     logger.error(f"{e.response.status_code} {e.response.text}")
                     return None
+
+
+
+    class ReveAPI(BaseAPIInterface):
+        """Class for Reve API"""
+        name = 'reve'
+        
+        def __init__(self, menu: dict):
+            self.base_url = 'https://api.reve.com/v1/image/'
+            self.headers: dict[str,str] = {
+                "Authorization": f"Bearer {self.api_key}",
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                }
+            self.models = self.get_models(menu[self.name])
+            self.current = self.models[0]
+            self.image_size = '9:16'
+            self.states: dict[str,str] = {
+                "proxy": True,
+            }
+            self.client = None
+            self.create_client(self.states['proxy'])
+
+
+        def create_client(self, with_proxy: bool) -> None:
+            '''Create a client with or without proxy'''
+            if with_proxy:
+                if socks := os.getenv('SOCKS') or os.getenv('LOCAL_SOCKS'):
+                    kwargs = {'proxy': socks}
+                else:
+                    kwargs = {
+                        'proxy': os.getenv('WORKER'),
+                        'headers':{
+                            'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                            'EXTERNAL-URL': self.base_url + self.current,
+                            }
+                    }
+            else:
+                kwargs = {}
+            self.states['proxy'] = with_proxy
+            self.client = httpx.AsyncClient(timeout=90,**kwargs)
+
+
+        def to_aspect_ratio(self) -> str:
+            return {
+                "portrait_16_9":"9:16", 
+                "portrait_4_3":"3:4",
+                "square_hd":"1:1", 
+                "landscape_4_3":"4:3", 
+                "landscape_16_9":"16:9",
+            }.get(self.image_size, self.image_size)
+
+
+        async def prompt(self, prompt: str, image: list = None) -> dict | str:
+            '''Method to create, edit and remix an image using the Reve API'''
+            body = self.prepare_kwargs(prompt, image)
+            response = await self.client.post(
+                url=self.base_url + self.current,
+                headers=self.headers, json=body,
+                )
+            try:
+                response.raise_for_status()
+                answer = response.json()
+                return User.encode_multi_modal_body(answer)
+            except Exception as e:
+                logger.error(error_msg := f'❌: {str(e)[:100]}')
+                return error_msg
+            
+
+        def prepare_kwargs(self, prompt: str, image: list = None) -> dict:
+            """Prepare request body based on current mode and presence of image(s)."""
+            base: dict = {"prompt": prompt, "aspect_ratio": self.to_aspect_ratio()}
+            if not image: ## create
+                return base
+
+            ref_images = [User.make_multi_modal_body(ref) for ref in image]
+            self.current = {1:'edit', 2:'remix'}.get(len(ref_images))
+            if self.current == 'edit':
+                return {"edit_instruction": prompt, "reference_image": ref_images[0]}
+            elif self.current == 'remix':
+                return base | {"reference_images": ref_images}
 
 
 
@@ -1123,21 +1200,6 @@ class User:
                     cbt.reset_chat() if hasattr(cbt, 'reset_chat') else None
 
 
-    def change_state_old(self, state: str) -> None:
-        '''DEPRECATED'''
-        cbt = getattr(self, f'current_{self.nav_type}')
-        if hasattr(cbt, state):
-            attr: bool = getattr(cbt, state)
-            if 'proxy' in state:
-                cbt.create_client(not attr)
-            elif 'search' in state:
-                setattr(cbt, state, not attr)
-                cbt.reset_chat()
-            elif 'image_gen_reset' in state:
-                setattr(cbt, state, not attr)
-
-
-
     def dialogue_router(self, cmd: str) -> str:
         """Router for command actions."""
         cbt = getattr(self, f'current_{self.nav_type}')
@@ -1180,36 +1242,49 @@ class User:
         return f'🧹 Диалог очищен {status or ''}', None
     
 
-    async def make_multi_modal_body(text: str | None, 
-                                    image_lst: list[dict], 
-                                    context: list) -> None:
-        image_str: str = base64.b64encode(image_lst[0].get('data')).decode()
+    def make_multi_modal_body(images: list[dict] | dict, 
+                              text: str | None = None, 
+                              context: list = None) -> str:
+        data = images[0] if isinstance(images, list) else images
+        image_str: str = base64.b64encode(data.get('data')).decode()
         if len(image_str) > 180_000:
             print("Слишком большое изображение, сжимаем...")
             image_str = users.resize_image(image_str)
-        part = f"data:image/jpeg;base64,{image_str}"
-        context.extend([
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": text or "Describe this image."},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": part},
-                },
-            ],
-        }
-    ])
+        if context:
+            part = f"data:image/jpeg;base64,{image_str}"
+            context.extend([
+            {
+                "role": "user",
+                "content": [
+                        {"type": "text", "text": text or "Describe this image."},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": part},
+                        },
+                    ],
+                }
+            ])
+        return image_str
         
 
-    async def encode_multi_modal_body(output) -> dict:
-        output_dct: dict[str,str] = {'caption': output.content.strip()}
-        for part in output.images:
-            if img_data := part.get('image_url'):
-                output_dct['photo'] = img_data.get('url','')
+    def encode_multi_modal_body(output) -> dict:
+        if isinstance(output, dict):
+            ## reve
+            used, rem = output.get('credits_used'), output.get('credits_remaining')
+            logger.info(caption :=f"x - {used} = {rem}")
+            output_dct: dict[str,str] = {'caption': caption, 'photo': output.get('image')}
+        else:
+            ## open_router
+            output_dct: dict[str,str] = {'caption': output.content.strip()}
+            for part in output.images:
+                if img_data := part.get('image_url'):
+                    output_dct['photo'] = img_data.get('url','')
 
-        if 'photo' in output_dct:
-            header, b64data = output_dct['photo'].split(",", 1)
+        if raw_data := output_dct.get('photo'):
+            if raw_data.startswith('data:'):
+                header, b64data = raw_data.split(",", 1)
+            else:
+                b64data = raw_data
             data = io.BytesIO(base64.b64decode(b64data))
             data.seek(0)
             output_dct['photo'] = BIF(data.getvalue(), "image.png")
@@ -1812,9 +1887,8 @@ class Handlers:
     @dp.message(F.content_type.in_({'photo'}))
     async def photo_handler(message: Message, username: str):
         user = await users.check_and_clear(message, 'image', username)
-        if user.current_bot.name not in {'gemini', 'open_router'}:
+        if (user.current_bot.name not in {'gemini', 'open_router', 'reve'}):
             await user.change_model('bot','gemini')
-            # await users.get_context('♾️ Универсальный')
             await message.reply(f"Выбран {user.current_bot.name}")
 
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
@@ -1931,9 +2005,10 @@ class Callbacks:
         if act in users.state_btns:
             user.change_state(act)
         elif target == 'ratio':
-            # user.current_pic.image_size = act.split('_',1)[1]
             ratios = BaseAPIInterface.get_models(users.menu['ratio'])
             user.current_pic.image_size = ratios[int(act)]
+            if hasattr(user.current_bot, 'image_size'):
+                user.current_bot.image_size = ratios[int(act)]
         else:
             await user.change_model(user.nav_type, target, act)
         with suppress(Exception):

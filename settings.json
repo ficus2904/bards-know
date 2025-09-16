@@ -195,6 +195,10 @@
                 "target": "open_router"
             },
             {
+                "text": "Reve",
+                "target": "reve"
+            },
+            {
                 "text": "⬅️",
                 "target": "main"
             }
@@ -302,6 +306,27 @@
             {
                 "text": "Nano Banana",
                 "select": "google/gemini-2.5-flash-image-preview:free"
+            },
+            {
+                "text": "⬅️",
+                "target": "bot"
+            }
+        ]
+    },
+    "reve": {
+        "text": "🎨 Reve",
+        "buttons": [
+            {
+                "text": "Create",
+                "select": "create" 
+            },
+            {
+                "text": "Edit",
+                "select": "edit" 
+            },
+            {
+                "text": "Remix",
+                "select": "remix" 
             },
             {
                 "text": "⬅️",
