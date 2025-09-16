@@ -762,14 +762,14 @@ class BOTS:
                     kwargs = {'proxy': socks}
                 else:
                     kwargs = {
-                        'proxy': os.getenv('WORKER'),
-                        'headers':{
+                        'base_url': os.getenv('WORKER'),
+                        'headers': {
                             'X-Custom-Auth': os.getenv('AUTH_SECRET'),
-                            'EXTERNAL-URL': self.base_url + self.current,
+                            'EXTERNAL-URL': self.base_url,
                             }
                     }
             else:
-                kwargs = {}
+                kwargs = {'base_url': self.base_url,}
             self.states['proxy'] = with_proxy
             self.client = httpx.AsyncClient(timeout=90,**kwargs)
 
@@ -788,7 +788,7 @@ class BOTS:
             '''Method to create, edit and remix an image using the Reve API'''
             body = self.prepare_kwargs(prompt, image)
             response = await self.client.post(
-                url=self.base_url + self.current,
+                url=self.current,
                 headers=self.headers, json=body,
                 )
             try:
