@@ -787,6 +787,7 @@ class BOTS:
         async def prompt(self, prompt: str, image: list = None) -> dict | str:
             '''Method to create, edit and remix an image using the Reve API'''
             body = self.prepare_kwargs(prompt, image)
+            logger.info(f'{self.headers}\nBode\n{body}')
             response = await self.client.post(
                 url=self.current,
                 headers=self.headers, json=body,
@@ -796,8 +797,8 @@ class BOTS:
                 answer = response.json()
                 return User.encode_multi_modal_body(answer)
             except Exception as e:
-                logger.error(error_msg := f'❌: {str(e)[:100]}')
-                return error_msg
+                logger.error(error_msg := f'❌: {str(e)}')
+                return error_msg[:100]
             
 
         def prepare_kwargs(self, prompt: str, image: list = None) -> dict:
