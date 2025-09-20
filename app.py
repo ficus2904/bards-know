@@ -270,7 +270,7 @@ class BOTS:
                 match e.code:
                     case code if 500 <= code < 600:
                         if attempts < 3:
-                            await asyncio.sleep(5)
+                            await asyncio.sleep(10)
                             logger.warning(f'Gemini attempt: {attempts}')
                             return await self.prompt(text, data, attempts+1)
 
@@ -1021,7 +1021,7 @@ class RateLimitedQueueManager:
     """
     def __init__(self):
         self.all_bots = APIFactory.bots | APIFactory.image_bots
-        self.limiters = {name:AsyncLimiter(5, 30) for name in self.all_bots}
+        self.limiters = {name:AsyncLimiter(5, 60) for name in self.all_bots}
     
     async def enqueue_request(self, api_name: str, task):
         limiter = self.limiters[api_name]
