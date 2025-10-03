@@ -209,15 +209,15 @@
         "buttons": [
             {
                 "text": "Flash",
-                "select": "gemini-2.5-flash"
+                "select": "gemini-flash-latest"
             },
             {
                 "text": "Pro",
-                "select": "gemini-2.5-pro"
+                "select": "gemini-pro-latest"
             },
             {
                 "text": "Flash Lite",
-                "select": "gemini-2.5-flash-lite"
+                "select": "gemini-flash-lite-latest"
             },
             {
                 "text": "Image gen",
@@ -225,7 +225,7 @@
             },
             {
                 "text": "Nano Banana",
-                "select": "gemini-2.5-flash-image-preview"
+                "select": "gemini-2.5-flash-image"
             },
             {
                 "text": "⬅️",
