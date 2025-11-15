@@ -220,10 +220,6 @@
                 "select": "gemini-flash-lite-latest"
             },
             {
-                "text": "Image gen",
-                "select": "gemini-2.0-flash-preview-image-generation"
-            },
-            {
                 "text": "Nano Banana",
                 "select": "gemini-2.5-flash-image"
             },
@@ -304,8 +300,12 @@
         "text": "🧩 OpenRouter",
         "buttons": [
             {
-                "text": "Nano Banana",
-                "select": "google/gemini-2.5-flash-image-preview:free"
+                "text": "DeepSeek V3.1",
+                "select": "deepseek/deepseek-chat-v3.1:free"
+            },
+            {
+                "text": "Meituan LongCat",
+                "select": "meituan/longcat-flash-chat:free"
             },
             {
                 "text": "⬅️",
