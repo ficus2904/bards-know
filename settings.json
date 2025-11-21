@@ -308,6 +308,10 @@
         "text": "🧩 OpenRouter",
         "buttons": [
             {
+                "text": "Grok 4.1 Fast",
+                "select": "x-ai/grok-4.1-fast:free"
+            },
+            {
                 "text": "DeepSeek V3.1",
                 "select": "deepseek/deepseek-chat-v3.1:free"
             },
@@ -380,7 +384,7 @@
             },
             {
                 "text": "Nano banana",
-                "select": "nano-banana"
+                "select": "nano-banana-pro"
             },
             {
                 "text": "Imagen4 Fast",
@@ -399,10 +403,6 @@
     "imagen": {
         "text": "🎨 Gemini Imagen",
         "buttons": [
-            {
-                "text": "Imagen 3",
-                "select": "3.0-generate-002"
-            },
             {
                 "text": "Imagen 4 preview",
                 "select": "4.0-generate-preview-06-06"

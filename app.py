@@ -906,6 +906,12 @@ class PIC_BOTS:
                     kwargs = {
                         "aspect_ratio": self.to_aspect_ratio(),
                     }
+                case s if 'banana' in s:
+                    kwargs = {
+                        "aspect_ratio": self.to_aspect_ratio(),
+                        "output_format": 'webp',
+                        "resolution": "4K",
+                    }
                 case s if 'seedream' in s:
                     kwargs = {
                         "image_size": s,
