@@ -413,10 +413,10 @@ class BOTS:
                         **http_options)
                 else:
                     http_options = types.HttpOptions(
+                        api_version='v1',
                         base_url=os.getenv('WORKER'),
                         headers={'X-Custom-Auth': os.getenv('AUTH_SECRET'),
-                                'EXTERNAL-URL': self.url},
-                        **http_options)
+                                'EXTERNAL-URL': self.url})
             self.states['proxy'] = with_proxy
             self.client = GeminiClient(
                 vertexai=True,
