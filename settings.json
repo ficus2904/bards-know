@@ -195,8 +195,8 @@
                 "target": "open_router"
             },
             {
-                "text": "Reve",
-                "target": "reve"
+                "text": "Zenmux",
+                "target": "zenmux"
             },
             {
                 "text": "⬅️",
@@ -226,6 +226,23 @@
             {
                 "text": "Nano Banana",
                 "select": "gemini-2.5-flash-image"
+            },
+            {
+                "text": "⬅️",
+                "target": "bot"
+            }
+        ]
+    },
+    "zenmux": {
+        "text": "🧩 Zenmux",
+        "buttons": [
+            {
+                "text": "Gemini 3 Pro",
+                "select": "google/gemini-3-pro-preview-free"
+            },
+            {
+                "text": "Nano Banana Pro 🍌",
+                "select": "google/gemini-3-pro-image-preview-free"
             },
             {
                 "text": "⬅️",
