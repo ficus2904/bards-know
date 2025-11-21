@@ -672,6 +672,7 @@ class BOTS:
         def __init__(self, menu: dict):
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.api_key}"}
             self.models_with_ids = {
+                "Gemini 3 pro":"cmi8ct8tt0001js049yduuohi",
                 "Claude 4 sonnet":"clxwyy4pf0003jo5w0uddefhd",
                 "GPT 5 mini":"clxx330wj000ipbq9rwh4hmp3",
                 "GPT 5 nano":"clyzjs4ht0000iwvdlacfm44y",

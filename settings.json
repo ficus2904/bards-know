@@ -283,6 +283,10 @@
         "text": "🧩 Glif",
         "buttons": [
             {
+                "text": "Gemini 3 pro",
+                "select": "Gemini 3 pro"
+            },
+            {
                 "text": "Claude 4 sonnet",
                 "select": "Claude 4 sonnet"
             },
