@@ -450,8 +450,8 @@
                 "select": "qwen" 
             },
             {
-                "text": "Flux",
-                "select": "flux"
+                "text": "ZImage",
+                "select": "zimage"
             },
             {
                 "text": "⬅️",

@@ -1117,10 +1117,10 @@ class PIC_BOTS:
         def __init__(self, menu: dict):
             self.headers: dict[str,str] = {"Authorization": f"Bearer {self.get_api_key('glif')}"}
             self.models_with_ids = {
+                'zimage':'cmg93zrn80000l2042r0imk6f',
                 "nano_banana":"cmfccdw4u0000ky04upzoh4xc",
                 "seedream":"cmff1glzk0006jp04605n84cg",
                 'qwen':'clzmbpo6k000u1pb2ar3udjff',
-                'flux':'clzj1yoqc000i13n0li4mwa2b',
                 }
             self.models = self.get_models(menu['glif_pic'])
             self.current = self.models[0]
