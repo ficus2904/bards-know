@@ -1507,7 +1507,7 @@ class UsersMap():
             }
         self.simple_cmds: set = {'clear', 'info'}
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'gemini'
+        self.DEFAULT_BOT: str = 'mistral'
         self.DEFAULT_PIC: str = 'glif_pic'
         self.image_arg_parser = ImageGenArgParser()
         self.all_abs: dict[str, str] = {'bot': '🧩', 'pic': '🖼️'}

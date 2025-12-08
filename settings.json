@@ -208,24 +208,12 @@
         "text": "🧩 Gemini",
         "buttons": [
             {
-                "text": "Flash",
-                "select": "gemini-flash-latest"
-            },
-            {
-                "text": "Pro",
-                "select": "gemini-pro-latest"
-            },
-            {
                 "text": "Flash Lite",
                 "select": "gemini-flash-lite-latest"
             },
             {
-                "text": "Pro 3",
-                "select": "gemini-3-pro-preview"
-            },
-            {
-                "text": "Nano Banana",
-                "select": "gemini-2.5-flash-image"
+                "text": "Flash",
+                "select": "gemini-flash-latest"
             },
             {
                 "text": "⬅️",
@@ -325,12 +313,8 @@
         "text": "🧩 OpenRouter",
         "buttons": [
             {
-                "text": "Grok 4.1 Fast",
-                "select": "x-ai/grok-4.1-fast:free"
-            },
-            {
                 "text": "DeepSeek V3.1",
-                "select": "deepseek/deepseek-chat-v3.1:free"
+                "select": "tngtech/deepseek-r1t2-chimera:free"
             },
             {
                 "text": "Meituan LongCat",
