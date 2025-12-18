@@ -384,13 +384,9 @@ class BOTS:
     class ZenmuxAPI(BaseAPIInterface):
         """Class for Zenmux API"""
         name = 'zenmux'
-        url = "https://zenmux.ai/api/vertex-ai"
-        safety_settings = [types.SafetySetting(
-            category=category, 
-            threshold="BLOCK_NONE"
-            ) for category in types.HarmCategory._member_names_[1:-5]]
 
         def __init__(self, menu: dict):
+            self.base_url = "https://zenmux.ai/api/v1"
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
             self.chat = None
@@ -398,139 +394,50 @@ class BOTS:
                 "proxy": True,
                 "search": True,
                 "code": False,
-                "image_gen_reset": True,
+                # "image_gen_reset": True,
             }
-            self.client: GeminiClient = None
-            self.reset_chat(with_proxy=self.states['proxy'])
+            self.client: AsyncOpenAI = None
+            self.create_client(self.states['proxy'])
 
 
         def create_client(self, with_proxy: bool) -> None:
-            http_options = {'api_version':'v1', 'base_url': self.url}
+            '''Create a Groq client with or without proxy'''
             if with_proxy:
-                if socks := os.getenv('SOCKS') or os.getenv('LOCAL_SOCKS'):
-                    http_options = types.HttpOptions(
-                        async_client_args={'proxy': socks},
-                        **http_options)
+                if socks := os.getenv('SOCKS'):
+                    kwargs = {
+                        'http_client': httpx.AsyncClient(proxy=socks),
+                        'base_url': self.base_url,
+                        }
                 else:
-                    http_options = types.HttpOptions(
-                        api_version='v1',
-                        base_url=os.getenv('WORKER'),
-                        headers={'X-Custom-Auth': os.getenv('AUTH_SECRET'),
-                                'EXTERNAL-URL': self.url})
-            self.states['proxy'] = with_proxy
-            self.client = GeminiClient(
-                vertexai=True,
-                api_key=self.api_key, 
-                http_options=http_options)
-
-            
-        async def prompt(self, 
-                        text: str | None = None, 
-                        data: list | None = None, 
-                        attempts: int = 0) -> str | dict | None:
-            try:
-                content= [
-                    *[types.Part.from_bytes(**subdata) # type: ignore
-                    for subdata in data], text] if data else text
-                response = await self.chat.send_message(content)
-                if 'image' in self.current:
-                    try:
-                        output: dict = {}
-                        for part in response.candidates[0].content.parts:
-                            if part.inline_data is not None:
-                                output['photo'] = BIF(part.inline_data.data, "image.png")
-                            elif part.text is not None:
-                                output['caption'] = part.text
-
-                        return (output if 'photo' in output  else response.text
-                                ) or response.candidates[0].finish_reason
-                    
-                    except Exception:
-                        return str(response.candidates[0].finish_reason)
-                    finally:
-                        if self.states['image_gen_reset']:
-                            self.dialogue_api_router('clear')
-                else:
-                    if response.text:
-                        return response.text
-                    else:
-                        raise GeminiError.APIError(598, response_json={})
-                
-            except GeminiError.APIError as e:
-                match e.code:
-                    case code if 500 <= code < 600:
-                        if attempts < 3:
-                            await asyncio.sleep(10)
-                            logger.warning(f'Gemini attempt: {attempts}')
-                            return await self.prompt(text, data, attempts+1)
-
-                return f'Gemini error {e.code}: {e}'
-                    
-                
-            except Exception as e:
-                logger.exception(e)
-                return f'Exception in Gemini: {e}'
-        
-        
-        def reset_chat(self, 
-                       context: str | None = None, 
-                       with_proxy: bool | None = None,
-                       history: str | None = None):
-            
-            if isinstance(with_proxy, bool):
-                self.create_client(with_proxy)
-            self.context = [{'role':'system', 'content': context}]
-            config = types.GenerateContentConfig(
-                system_instruction=context, 
-                safety_settings=self.safety_settings,
-                thinking_config=types.ThinkingConfig(thinking_level='high'),
-                )
-            self.chat = self.client.aio.chats.create(
-                model=self.current, 
-                config=config,
-                history=history,
-                )
-            if 'image' not in self.current:
-                self.chat._config.tools = [
-                    types.Tool(
-                        google_search=types.GoogleSearch() if self.states['search'] else None,
-                        # url_context = types.UrlContext() if self.states['search'] else None,
-                        # code_execution=types.ToolCodeExecution if self.states['code'] else None,
-                        )
-                    ]
+                    kwargs = {
+                            'base_url': os.getenv('WORKER'),
+                            'default_headers':{
+                                'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                                'EXTERNAL-URL': self.base_url,}
+                            }
             else:
-                self.chat._config.tools = None
-                self.chat._config.thinking_config = None
-                self.chat._config.response_modalities = ['Text','Image']
+                kwargs = {'base_url': self.base_url}
+            self.states['proxy'] = with_proxy
+            self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
+        
 
-
-        async def get_list(self) -> str:
-            response = await self.client.aio.models.list(config={'query_base': True})
-            lst = [model.name.split('/')[1] for model in response 
-                    if 'generateContent' in model.supported_actions]
-            return "\n".join(lst)
-
-
-        def length(self) -> int: 
-            return int(self.chat._config.system_instruction is not None) + len(self.chat._curated_history)
-
-
-        def dialogue_api_router(self, cmd: str | None = None) -> str:
-            '''Remove last question and answer from the chat history'''
-            if cmd is None:
-                cmd: str = 'clear' if (self.chat._curated_history 
-                                and self.chat._config.system_instruction
-                                ) else 'wipe'
-            system_content: str | None = self.context[0].get('content') if self.context else None
-            system_instruction: str = {
-                'last': system_content,
-                'clear': system_content,
-                'wipe': None,}[cmd]
-            self.reset_chat(
-                context=system_instruction,
-                history=self.chat.get_history()[:-2] if cmd == 'last' else None
-                )
-            return 'кроме системного' if cmd == 'clear' else 'полностью'
+        async def prompt(self, text, image: list[dict] = None) -> str | dict:
+            if image:
+                User.make_multi_modal_body(image, text, self.context)
+            else:
+                body = {'role':'user', 'content': text}
+                self.context.append(body)
+            response = await self.client.chat.completions.create(
+                model=self.current,
+                messages=self.context,
+                modalities=["image", "text"] if 'image' in self.current else ["text"],
+            )
+            output = response.choices[-1].message
+            self.context.append({'role':'assistant', 'content':output.content})
+            if hasattr(output, 'images'):
+                return User.encode_multi_modal_body(output)
+            else:
+                return output.content
 
 
 
@@ -766,7 +673,7 @@ class BOTS:
                 "proxy": True,
                 # "search": True,
                 # "code": False,
-                "image_gen_reset": True,
+                # "image_gen_reset": True,
             }
             # self.proxy_status: bool = True
             # self.image_gen_reset_status: bool = True
@@ -807,10 +714,10 @@ class BOTS:
                 modalities=["image", "text"] if 'image' in self.current else ["text"],
             )
             output = response.choices[-1].message
-            if self.states['image_gen_reset']:
-                self.context.clear()
-            else:
-                self.context.append({'role':'assistant', 'content':output.content})
+            # if self.states['image_gen_reset']:
+            #     self.context.clear()
+            # else:
+            self.context.append({'role':'assistant', 'content':output.content})
             if hasattr(output, 'images'):
                 return User.encode_multi_modal_body(output)
             else:
@@ -1319,7 +1226,7 @@ class User:
     
 
     async def info(self, delete_prev: bool = False) -> tuple:
-        is_gemini = self.current_bot.name in {'gemini','zenmux'}
+        is_gemini = self.current_bot.name in {'gemini'}
         output = text(
             f'🤖 Текущий бот: {self.current_bot.name}',
             f'🧩 Модель: {self.current_bot.current}',
@@ -1388,7 +1295,7 @@ class User:
         
 
     async def clear(self, delete_prev: bool = False, cmd: str | None = None) -> tuple:
-        if self.current_bot.name in {'gemini','zenmux'}:
+        if self.current_bot.name in {'gemini'}:
             status: str = self.current_bot.dialogue_api_router(cmd)
         else:
             ct = self.current_bot.context
@@ -1803,14 +1710,14 @@ class UsersMap():
 
     def modify_models(self, bot: str, nm_name: str, new_model: str) -> str:
         """Modify models for bot"""
-        if new_model == 'remove':
+        if nm_name == 'remove':
             try:
                 self.menu[bot]["buttons"].remove(
-                    next((m for m in self.menu[bot]["buttons"] if m["text"] == nm_name), None)
+                    next((m for m in self.menu[bot]["buttons"] if m["text"] == new_model), None)
                     )
-                output = f'✂️ Модель {nm_name} удалена из {bot}'
+                output = f'✂️ Модель {new_model} удалена из {bot}'
             except ValueError:
-                return f'❌ Модель {nm_name} не найдена в {bot}'
+                return f'❌ Модель {new_model} не найдена в {bot}'
 
         else:
             self.menu[bot]["buttons"] = [
@@ -1959,9 +1866,10 @@ class Handlers:
             return
         
         args: list = message.text.split(maxsplit=3) if command.args else [] # type: ignore
+        logger.info(args)
         if len(args) != 4:
-            output: str = '❌ Используйте формат: `/modify_models gemini Ultra gemini-2.5-ultra`'\
-                    'Или `/modify_models gemini remove short_name` для удаления модели'
+            output: str = '❌ Используйте формат:\n`/modify_models gemini Ultra gemini-2.5-ultra`'\
+                    '\nИли\n`/modify_models gemini remove short_name` для удаления модели'
             return await message.reply(output, parse_mode=ParseMode.MARKDOWN_V2)
             
         await message.reply(users.modify_models(*args[1:])) # type: ignore

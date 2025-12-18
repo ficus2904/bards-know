@@ -216,10 +216,6 @@
                 "select": "gemini-flash-latest"
             },
             {
-                "text": "Flash 3",
-                "select": "gemini-3-flash-preview"
-            },
-            {
                 "text": "⬅️",
                 "target": "bot"
             }
@@ -229,12 +225,12 @@
         "text": "🧩 Zenmux",
         "buttons": [
             {
-                "text": "Gemini 3 Pro",
-                "select": "google/gemini-3-pro-preview-free"
+                "text": "Gemini 3 Flash",
+                "select": "google/gemini-3-flash-preview-free"
             },
             {
-                "text": "Nano Banana Pro 🍌",
-                "select": "google/gemini-3-pro-image-preview-free"
+                "text": "Xiaomi Mimo",
+                "select": "xiaomi/mimo-v2-flash"
             },
             {
                 "text": "⬅️",
@@ -335,15 +331,15 @@
         "buttons": [
             {
                 "text": "Create",
-                "select": "create" 
+                "select": "create"
             },
             {
                 "text": "Edit",
-                "select": "edit" 
+                "select": "edit"
             },
             {
                 "text": "Remix",
-                "select": "remix" 
+                "select": "remix"
             },
             {
                 "text": "⬅️",
@@ -427,15 +423,15 @@
         "buttons": [
             {
                 "text": "Seedream 4",
-                "select": "seedream" 
+                "select": "seedream"
             },
             {
                 "text": "Nano Banana",
-                "select": "nano_banana" 
+                "select": "nano_banana"
             },
             {
                 "text": "Qwen image",
-                "select": "qwen" 
+                "select": "qwen"
             },
             {
                 "text": "ZImage",
