@@ -422,16 +422,12 @@
         "text": "🎨 Glif",
         "buttons": [
             {
-                "text": "Seedream 4",
-                "select": "seedream"
+                "text": "Flux 2 Turbo",
+                "select": "flux2turbo"
             },
             {
                 "text": "Nano Banana",
                 "select": "nano_banana"
-            },
-            {
-                "text": "Qwen image",
-                "select": "qwen"
             },
             {
                 "text": "ZImage",
@@ -446,6 +442,10 @@
     "ratio": {
         "text": "📐 Aspect Ratio",
         "buttons": [
+            {
+                "text": "🧍 9x21",
+                "select": "ratio_portrait_21_9"
+            },
             {
                 "text": "🧍 9x16",
                 "select": "ratio_portrait_16_9"
@@ -465,6 +465,10 @@
             {
                 "text": "🖼️ 16x9",
                 "select": "ratio_landscape_16_9"
+            },
+            {
+                "text": "🖼️ 21x9",
+                "select": "ratio_landscape_21_9"
             },
             {
                 "text": "⬅️",

@@ -1026,21 +1026,35 @@ class PIC_BOTS:
             self.models_with_ids = {
                 'zimage':'cmg93zrn80000l2042r0imk6f',
                 "nano_banana":"cmfccdw4u0000ky04upzoh4xc",
-                "seedream":"cmff1glzk0006jp04605n84cg",
+                "flux2turbo":"cmff1glzk0006jp04605n84cg",
                 'qwen':'clzmbpo6k000u1pb2ar3udjff',
                 }
             self.models = self.get_models(menu['glif_pic'])
             self.current = self.models[0]
             self.image_size = '9:16'
+            self.model_limits = {
+                'zimage': 1280,
+                'flux2turbo': 2048
+            }
+            self.aspect_ratios = {
+                "portrait_9_21":"9:21",
+                "portrait_16_9":"9:16", 
+                "portrait_4_3":"3:4",
+                "square_hd":"1:1", 
+                "landscape_4_3":"4:3", 
+                "landscape_16_9":"16:9",
+                "landscape_21_9":"21:9",
+            }
 
 
         async def gen_image(self, prompt: str) -> str:
             body: dict[str,str] = {
                 "id": self.models_with_ids.get(self.current), 
-                "inputs": {"prompt": prompt}
+                "inputs": {"prompt": prompt} | self.get_calculated_dimensions() 
                 }
             async with aiohttp.ClientSession() as session:
-                async with session.post(url=self.url, headers=self.headers, json=body, timeout=90) as response:
+                async with session.post(
+                    url=self.url, headers=self.headers, json=body, timeout=90) as response:
                     try:
                         response.raise_for_status()
                         answer: dict = await response.json()
@@ -1060,6 +1074,25 @@ class PIC_BOTS:
                                 else:
                                     logger.error(error_msg := f'Unexpected error: {str(e)}')
                         return '❌: ' + error_msg
+                    
+
+        def get_calculated_dimensions(self) -> dict[str, int]:
+            """Calculate image dimensions based on the current model's limits and aspect ratio."""
+            self.image_size = self.aspect_ratios.get(self.image_size, self.image_size)
+            if self.current == 'nano_banana':
+                return {"image_size": self.image_size}
+            
+            limit = self.model_limits.get(self.current, 1024)
+            try:
+                w_part, h_part = map(int, self.image_size.split(':'))
+            except (ValueError, AttributeError):
+                return {"width": limit, "height": limit}
+
+            scale = limit / max(w_part, h_part)
+            return {
+                "width": int(w_part * scale),
+                "height": int(h_part * scale)
+            }
 
 
 
