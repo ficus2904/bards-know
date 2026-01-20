@@ -1076,7 +1076,7 @@ class PIC_BOTS:
                         return '❌: ' + error_msg
                     
 
-        def get_calculated_dimensions(self) -> dict[str, int]:
+        def get_calculated_dimensions(self) -> dict[str, str]:
             """Calculate image dimensions based on the current model's limits and aspect ratio."""
             self.image_size = self.aspect_ratios.get(self.image_size, self.image_size)
             if self.current == 'nano_banana':
@@ -1086,12 +1086,12 @@ class PIC_BOTS:
             try:
                 w_part, h_part = map(int, self.image_size.split(':'))
             except (ValueError, AttributeError):
-                return {"width": limit, "height": limit}
+                return {"width": str(limit), "height": str(limit)}
 
             scale = limit / max(w_part, h_part)
             return {
-                "width": int(w_part * scale),
-                "height": int(h_part * scale)
+                "width": str(int(w_part * scale)),
+                "height": str(int(h_part * scale))
             }
 
 
