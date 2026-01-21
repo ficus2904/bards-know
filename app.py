@@ -2113,7 +2113,7 @@ class Callbacks:
         if act in users.state_btns:
             user.change_state(act)
         elif target == 'ratio':
-            ratio = BaseAPIInterface.get_models(users.menu['ratio'])[int(act)].split('ratio_')[1]
+            ratio = BaseAPIInterface.get_models(users.menu['ratio'])[int(act)].removeprefix('ratio_')
             user.current_pic.image_size = ratio
             if hasattr(user.current_bot, 'image_size'):
                 user.current_bot.image_size = ratio
