@@ -355,10 +355,6 @@
                 "target": "FalAI"
             },
             {
-                "text": "Imagen",
-                "target": "imagen"
-            },
-            {
                 "text": "Glif",
                 "target": "glif_pic"
             },

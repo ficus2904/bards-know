@@ -882,6 +882,7 @@ class PIC_BOTS:
     """Picture generation bot interfaces"""
 
     class GeminiImagen(BOTS.GeminiAPI):
+        '''DEPRECATED'''
         name = 'imagen'
 
         def __init__(self, menu: dict):
@@ -974,7 +975,7 @@ class PIC_BOTS:
             return kwargs
 
 
-        async def gen_image(self, prompt: str) -> str:
+        async def gen_image(self, prompt: str) -> dict | str:
             '''Method to generate an image using the Fal API'''
             kwargs = self.get_kwargs()
             body: dict[str,str] = {
@@ -994,9 +995,9 @@ class PIC_BOTS:
                         response.raise_for_status()
                         answer = await response.json()
                         try:
-                            return answer['images'][0]['url']
+                            return {'photo': answer['images'][0]['url']}
                         except Exception:
-                            return str(answer)
+                            return {'photo': str(answer)}
                     except Exception as e:
                         match e:
                             case asyncio.TimeoutError():
@@ -1031,7 +1032,7 @@ class PIC_BOTS:
             }
 
 
-        async def gen_image(self, prompt: str) -> str:
+        async def gen_image(self, prompt: str) -> dict | str:
             body: dict[str,str] = {
                 "id": self.models_with_ids.get(self.current), 
                 "inputs": {"prompt": prompt} | self.get_calculated_dimensions() 
@@ -1045,7 +1046,8 @@ class PIC_BOTS:
                         if error_msg := answer.get('error'):
                             raise Exception(error_msg)
                         else:
-                            return answer.get('output')
+                            return {'photo': answer.get('output'), 
+                                    'caption': answer.get('price')}
                     except Exception as e:
                         match e:
                             case asyncio.TimeoutError():
@@ -1923,11 +1925,11 @@ class Handlers:
                 )
             
         async with ChatActionSender.upload_photo(chat_id=message.chat.id, bot=bot):
-            image_url = await user.gen_image(command.args)
-        if isinstance(image_url, str) and image_url.startswith('❌'):
-            await message.answer(image_url)
+            image_info: dict | str = await user.gen_image(command.args)
+        if isinstance(image_info, str) and image_info.startswith('❌'):
+            await message.answer(image_info)
         else:
-            await message.answer_photo(photo=image_url)
+            await message.answer_photo(**image_info) # type: ignore
 
 
     @dp.message(Command(commands=["tts"]))
