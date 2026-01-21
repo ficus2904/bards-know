@@ -444,31 +444,31 @@
         "buttons": [
             {
                 "text": "🧍 9x21",
-                "select": "ratio_portrait_21_9"
+                "select": "9:21"
             },
             {
                 "text": "🧍 9x16",
-                "select": "ratio_portrait_16_9"
+                "select": "9:16"
             },
             {
                 "text": "🧍 3x4",
-                "select": "ratio_portrait_4_3"
+                "select": "3:4"
             },
             {
                 "text": "🔳 1x1",
-                "select": "ratio_square_hd"
+                "select": "1:1"
             },
             {
                 "text": "🖼️ 4x3",
-                "select": "ratio_landscape_4_3"
+                "select": "4:3"
             },
             {
                 "text": "🖼️ 16x9",
-                "select": "ratio_landscape_16_9"
+                "select": "16:9"
             },
             {
                 "text": "🖼️ 21x9",
-                "select": "ratio_landscape_21_9"
+                "select": "21:9"
             },
             {
                 "text": "⬅️",

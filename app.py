@@ -1,5 +1,6 @@
 import os
 import io
+import math
 import wave
 import json
 import httpx
@@ -923,7 +924,7 @@ class PIC_BOTS:
                 }
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
-            self.image_size = 'portrait_16_9'
+            self.image_size = '9:16'
             self.raw = False
 
 
@@ -937,6 +938,7 @@ class PIC_BOTS:
 
 
         def to_aspect_ratio(self) -> str:
+            '''DEPRECATED'''
             return {
                 "portrait_16_9":"9:16", 
                 "portrait_4_3":"3:4",
@@ -946,30 +948,20 @@ class PIC_BOTS:
             }.get(self.image_size, '4:3')
 
 
-        def change_image_size_old(self, image_size: str) -> str:
-            '''DEPRECATED'''
-            # "21:9" "9:21",
-            if image_size in {"9:16","3:4","1:1","4:3","16:9"}:
-                self.image_size = image_size
-            else:
-                self.image_size = "9:16"
-            return self.image_size
-        
-
         def get_kwargs(self) -> dict[str,str]:
             match self.current:
                 case 'flux-pro/v1.1-ultra':
                     kwargs = {
-                        "aspect_ratio": self.to_aspect_ratio(),
+                        "aspect_ratio": self.image_size,
                         "raw": self.raw,
                     }
                 case s if 'imagen' in s:
                     kwargs = {
-                        "aspect_ratio": self.to_aspect_ratio(),
+                        "aspect_ratio": self.image_size,
                     }
                 case s if 'banana' in s:
                     kwargs = {
-                        "aspect_ratio": self.to_aspect_ratio(),
+                        "aspect_ratio": self.image_size,
                         "output_format": 'webp',
                         "resolution": "4K",
                     }
@@ -1033,17 +1025,9 @@ class PIC_BOTS:
             self.current = self.models[0]
             self.image_size = '9:16'
             self.model_limits = {
-                'zimage': 1280,
-                'flux2turbo': 2048
-            }
-            self.aspect_ratios = {
-                "portrait_9_21":"9:21",
-                "portrait_16_9":"9:16", 
-                "portrait_4_3":"3:4",
-                "square_hd":"1:1", 
-                "landscape_4_3":"4:3", 
-                "landscape_16_9":"16:9",
-                "landscape_21_9":"21:9",
+                'zimage': {'max_side': 1280, 'max_area': 1638400},      # 1.6 MP (1280*1280)
+                'flux2turbo': {'max_side': 2048, 'max_area': 2500000},  # 2.5 MP (Safe for Turbo)
+                'default': {'max_side': 1024, 'max_area': 1048576},     # 1 MP (1024*1024)
             }
 
 
@@ -1078,20 +1062,42 @@ class PIC_BOTS:
 
         def get_calculated_dimensions(self) -> dict[str, str]:
             """Calculate image dimensions based on the current model's limits and aspect ratio."""
-            self.image_size = self.aspect_ratios.get(self.image_size, self.image_size)
+            PIXEL_STEP = 16
             if self.current == 'nano_banana':
                 return {"image_size": self.image_size}
             
-            limit = self.model_limits.get(self.current, 1024)
+            config = self.model_limits.get(self.current, 
+                                           self.model_limits['default'])
+            max_side = config['max_side']
+            max_area = config['max_area']
+
             try:
                 w_part, h_part = map(int, self.image_size.split(':'))
-            except (ValueError, AttributeError):
-                return {"width": str(limit), "height": str(limit)}
+            except (ValueError, AttributeError, IndexError):
+                w_part, h_part = 1, 1
 
-            scale = limit / max(w_part, h_part)
+            if w_part >= h_part:
+                width = max_side
+                height = (max_side * h_part) / w_part
+            else:
+                height = max_side
+                width = (max_side * w_part) / h_part
+
+            current_area = width * height
+            if current_area > max_area:
+                area_scale = math.sqrt(max_area / current_area)
+                width *= area_scale
+                height *= area_scale
+
+            final_w = int((round(width) // PIXEL_STEP) * PIXEL_STEP)
+            final_h = int((round(height) // PIXEL_STEP) * PIXEL_STEP)
+
+            final_w = max(PIXEL_STEP, final_w)
+            final_h = max(PIXEL_STEP, final_h)
+
             return {
-                "width": str(int(w_part * scale)),
-                "height": str(int(h_part * scale))
+                "width": str(final_w),
+                "height": str(final_h)
             }
 
 
@@ -1449,8 +1455,8 @@ class UsersMap():
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
         self.DEFAULT_BOT: str = 'gemini'
         self.DEFAULT_PIC: str = 'glif_pic'
-        self.image_arg_parser = ImageGenArgParser()
         self.all_abs: dict[str, str] = {'bot': '🧩', 'pic': '🖼️'}
+        # self.image_arg_parser = ImageGenArgParser()
 
 
 
@@ -2120,6 +2126,7 @@ class Callbacks:
         await query.answer()
 
 
+
 async def main() -> None:
     await bot.set_my_commands([
         BotCommand(command="/menu", description="🏠 Меню"),
@@ -2129,6 +2136,7 @@ async def main() -> None:
     ])
     # await users.remove_kb_for_users()
     await dp.start_polling(bot)
+
 
 
 if __name__ == "__main__":
