@@ -208,12 +208,12 @@
         "text": "🧩 Gemini",
         "buttons": [
             {
-                "text": "Flash Lite",
-                "select": "gemini-flash-lite-latest"
-            },
-            {
                 "text": "Flash",
                 "select": "gemini-flash-latest"
+            },
+            {
+                "text": "Flash Lite",
+                "select": "gemini-flash-lite-latest"
             },
             {
                 "text": "⬅️",
