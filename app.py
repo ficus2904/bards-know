@@ -1049,7 +1049,7 @@ class PIC_BOTS:
                         if error_msg := answer.get('error'):
                             raise Exception(error_msg)
                         else:
-                            price = round(answer.get('price',0.0),2)
+                            price = round(float(answer.get('price',0.0)),2)
                             return {'photo': answer.get('output'), 
                                     'caption': f"🧩: {self.current}\n"
                                                f"💳: {self.calc_balance(price)}\n"
