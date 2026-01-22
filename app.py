@@ -10,6 +10,7 @@ import sqlite3
 import asyncio
 import aiohttp
 import warnings
+from datetime import date
 from loguru import logger
 from contextlib import suppress
 from argparse import ArgumentParser
@@ -1025,6 +1026,7 @@ class PIC_BOTS:
             self.models = self.get_models(menu['glif_pic'])
             self.current = self.models[0]
             self.image_size = '9:16'
+            self.balance = {}
             self.model_limits = {
                 'zimage': {'max_side': 1280, 'max_area': 1638400},      # 1.6 MP (1280*1280)
                 'flux2turbo': {'max_side': 2048, 'max_area': 2500000},  # 2.5 MP (Safe for Turbo)
@@ -1047,11 +1049,12 @@ class PIC_BOTS:
                         if error_msg := answer.get('error'):
                             raise Exception(error_msg)
                         else:
+                            price = round(answer.get('price',0.0),2)
                             return {'photo': answer.get('output'), 
                                     'caption': f"🧩: {self.current}\n"
-                                               f"💳: {round(answer.get('price',0.0),2)}\n"
+                                               f"💳: {self.calc_balance(price)}\n"
                                                f"📐: {self.image_size}\n"
-                                               f"📏: {'x'.join(sizes.values()) if self.current != 'nano_banana' else ''}"}
+                                               f"📏: {'x'.join(sizes.values())}"}
                     except Exception as e:
                         match e:
                             case asyncio.TimeoutError():
@@ -1064,6 +1067,15 @@ class PIC_BOTS:
                                 else:
                                     logger.error(error_msg := f'Unexpected error: {str(e)}')
                         return '❌: ' + error_msg
+                    
+
+        def calc_balance(self, price: float) -> str:
+            """Subtract price from today's balance (default 10) and return a calc string."""
+            today = date.today()
+            prev = self.balance.get(today, 10)
+            curr = prev - price
+            self.balance[today] = curr
+            return f'{prev} - {price} = {curr}'
                     
 
         def get_calculated_dimensions(self) -> dict[str, str]:
