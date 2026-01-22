@@ -10,7 +10,7 @@ import sqlite3
 import asyncio
 import aiohttp
 import warnings
-from datetime import date
+from datetime import datetime, timezone
 from loguru import logger
 from contextlib import suppress
 from argparse import ArgumentParser
@@ -1071,8 +1071,11 @@ class PIC_BOTS:
 
         def calc_balance(self, price: float) -> str:
             """Subtract price from today's balance (default 10) and return a calc string."""
-            today = date.today()
-            prev = self.balance.get(today, 10)
+            today = datetime.now(timezone.utc).date() # resets at midnight UTC
+            if today not in self.balance:
+                self.balance = {today: 10}
+            
+            prev = self.balance[today]
             curr = prev - price
             self.balance[today] = curr
             return f'{prev} - {price} = {curr}'
