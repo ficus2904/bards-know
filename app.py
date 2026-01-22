@@ -1033,9 +1033,10 @@ class PIC_BOTS:
 
 
         async def gen_image(self, prompt: str) -> dict | str:
+            sizes = self.get_calculated_dimensions() 
             body: dict[str,str] = {
                 "id": self.models_with_ids.get(self.current), 
-                "inputs": {"prompt": prompt} | self.get_calculated_dimensions() 
+                "inputs": {"prompt": prompt} | sizes
                 }
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -1047,7 +1048,10 @@ class PIC_BOTS:
                             raise Exception(error_msg)
                         else:
                             return {'photo': answer.get('output'), 
-                                    'caption': answer.get('price')}
+                                    'caption': f"🧩: {self.current}\n"
+                                               f"💳: {round(answer.get('price',0.0),2)}\n"
+                                               f"📐: {self.image_size}\n"
+                                               f"📏: {'x'.join(sizes.values()) if self.current != 'nano_banana' else ''}"}
                     except Exception as e:
                         match e:
                             case asyncio.TimeoutError():
