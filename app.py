@@ -1076,7 +1076,7 @@ class PIC_BOTS:
                 self.balance = {today: 10}
             
             prev = self.balance[today]
-            curr = prev - price
+            curr = round(prev - price, 1)
             self.balance[today] = curr
             return f'{prev} - {price} = {curr}'
                     
