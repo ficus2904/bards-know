@@ -439,8 +439,8 @@
         "text": "📐 Aspect Ratio",
         "buttons": [
             {
-                "text": "🧍 9x21",
-                "select": "ratio_9:21"
+                "text": "🧍 9x19.5",
+                "select": "ratio_9:19.5"
             },
             {
                 "text": "🧍 9x16",

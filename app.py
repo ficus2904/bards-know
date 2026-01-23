@@ -1093,7 +1093,7 @@ class PIC_BOTS:
             max_area = config['max_area']
 
             try:
-                w_part, h_part = map(int, self.image_size.split(':'))
+                w_part, h_part = map(float, self.image_size.split(':'))
             except (ValueError, AttributeError, IndexError):
                 w_part, h_part = 1, 1
 
