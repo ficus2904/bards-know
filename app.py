@@ -179,12 +179,20 @@ class BaseAPIInterface(ABC):
     def __init_subclass__(cls, **kwargs):  
         super().__init_subclass__(**kwargs)  
         cls.api_key = cls.get_api_key(cls.name)
-        cls.context = []
+
+    @property
+    def context(self) -> list:
+        if not hasattr(self, '_context'):
+            self._context = []
+        return self._context
+    
+    @context.setter
+    def context(self, value):
+        self._context = value
 
     @staticmethod  
     def get_api_key(name: str):  
         return os.getenv(f'{name.upper()}_API_KEY')
-
 
     @abstractmethod
     async def prompt(self, *args, **kwargs):
