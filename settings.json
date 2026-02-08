@@ -313,6 +313,10 @@
         "text": "🧩 OpenRouter",
         "buttons": [
             {
+                "text": "Free Models Router",
+                "select": "openrouter/free"
+            },
+            {
                 "text": "DeepSeek V3.1",
                 "select": "tngtech/deepseek-r1t2-chimera:free"
             },
