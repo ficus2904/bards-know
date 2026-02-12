@@ -1244,15 +1244,18 @@ class UsersArgParser:
 
 class User:
     '''Specific user interface in chat'''
-    def __init__(self):
+    async def __init__(self):
+        self.DEFAULT_BOT: str = 'gemini'
+        self.DEFAULT_PIC: str = 'glif_pic'
         self.api_factory = APIFactory()
-        self.current_bot: BaseAPIInterface = self.api_factory.get('bot',users.DEFAULT_BOT)
-        self.current_pic: BaseAPIInterface = self.api_factory.get('pic',users.DEFAULT_PIC)
+        self.current_bot: BaseAPIInterface = self.api_factory.get('bot',self.DEFAULT_BOT)
+        self.current_pic: BaseAPIInterface = self.api_factory.get('pic',self.DEFAULT_PIC)
         self.time_dump = time()
         self.text: str = None
         self.last_msg: dict = None # for deleting messages
         self.media_group_buffer: dict = None ## for media_group_handler
         self.nav_type: str = 'bot'
+        await self.change_context('♾️ Универсальный')
         
 
     async def change_context(self, context_name: str) -> str | dict:
@@ -1482,8 +1485,6 @@ class UsersMap():
             }
         self.simple_cmds: set = {'clear', 'info'}
         self.PARSE_MODE = ParseMode.MARKDOWN_V2
-        self.DEFAULT_BOT: str = 'gemini'
-        self.DEFAULT_PIC: str = 'glif_pic'
         self.all_abs: dict[str, str] = {'bot': '🧩', 'pic': '🖼️'}
         # self.image_arg_parser = ImageGenArgParser()
 
