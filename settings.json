@@ -208,19 +208,15 @@
         "text": "🧩 Gemini",
         "buttons": [
             {
-                "text": "Flash latest",
+                "text": "Flash",
                 "select": "gemini-flash-latest"
-            },
-            {
-                "text": "Flash 3 Preview",
-                "select": "gemini-3-flash-preview"
             },
             {
                 "text": "Flash Lite",
                 "select": "gemini-flash-lite-latest"
             },
             {
-                "text": "Flash 2.5",
+                "text": "Flash 2.5 (с поиском)",
                 "select": "gemini-2.5-flash"
             },
             {

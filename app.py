@@ -220,9 +220,9 @@ class BOTS:
             self.chat = None
             self.states: dict[str,str] = {
                 "proxy": True,
-                "search": True,
+                "search": False,
                 "code": False,
-                "image_gen_reset": True,
+                # "image_gen_reset": True,
             }
             self.client: GeminiClient = None
             self.reset_chat(with_proxy=self.states['proxy'])
@@ -269,7 +269,7 @@ class BOTS:
                     except Exception:
                         return str(response.candidates[0].finish_reason)
                     finally:
-                        if self.states['image_gen_reset']:
+                        if self.states.get('image_gen_reset'):
                             self.dialogue_api_router('clear')
                 else:
                     if response.text:
