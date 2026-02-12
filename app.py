@@ -1244,7 +1244,7 @@ class UsersArgParser:
 
 class User:
     '''Specific user interface in chat'''
-    async def __init__(self):
+    def __init__(self):
         self.DEFAULT_BOT: str = 'gemini'
         self.DEFAULT_PIC: str = 'glif_pic'
         self.api_factory = APIFactory()
@@ -1255,7 +1255,6 @@ class User:
         self.last_msg: dict = None # for deleting messages
         self.media_group_buffer: dict = None ## for media_group_handler
         self.nav_type: str = 'bot'
-        await self.change_context('♾️ Универсальный')
         
 
     async def change_context(self, context_name: str) -> str | dict:
