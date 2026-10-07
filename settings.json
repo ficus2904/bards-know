@@ -187,10 +187,6 @@
                 "target": "mistral"
             },
             {
-                "text": "Glif",
-                "target": "glif"
-            },
-            {
                 "text": "OpenRouter",
                 "target": "open_router"
             },
@@ -299,10 +295,6 @@
             {
                 "text": "FalAI",
                 "target": "FalAI"
-            },
-            {
-                "text": "Glif",
-                "target": "glif_pic"
             },
             {
                 "text": "📐 Aspect Ratio",
