@@ -817,7 +817,7 @@ class User:
     '''Specific user interface in chat'''
     def __init__(self):
         self.DEFAULT_BOT: str = 'gemini'
-        self.DEFAULT_PIC: str = 'glif_pic'
+        self.DEFAULT_PIC: str = 'FalAI'
         self.api_factory = APIFactory()
         self.current_bot: BaseAPIInterface = self.api_factory.get('bot',self.DEFAULT_BOT)
         self.current_pic: BaseAPIInterface = self.api_factory.get('pic',self.DEFAULT_PIC)
