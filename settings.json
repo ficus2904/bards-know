@@ -208,10 +208,6 @@
         "text": "🧩 Gemini",
         "buttons": [
             {
-                "text": "Flash",
-                "select": "gemini-flash-latest"
-            },
-            {
                 "text": "Flash Lite",
                 "select": "gemini-flash-lite-latest"
             },
@@ -246,16 +242,12 @@
         "text": "🧩 Groq",
         "buttons": [
             {
+                "text": "Qwen 3.8 27B",
+                "select": "qwen/qwen3.8-27b"
+            },
+            {
                 "text": "OpenAI GPT-OSS 120B",
                 "select": "openai/gpt-oss-120b"
-            },
-            {
-                "text": "Qwen 3 32B",
-                "select": "qwen/qwen3-32b"
-            },
-            {
-                "text": "Kimi K2",
-                "select": "moonshotai/kimi-k2-instruct-0905"
             },
             {
                 "text": "⬅️",
@@ -288,66 +280,12 @@
             }
         ]
     },
-    "glif": {
-        "text": "🧩 Glif",
-        "buttons": [
-            {
-                "text": "Gemini 3 pro",
-                "select": "Gemini 3 pro"
-            },
-            {
-                "text": "Claude 4 sonnet",
-                "select": "Claude 4 sonnet"
-            },
-            {
-                "text": "OpenAI GPT 5 mini",
-                "select": "GPT 5 mini"
-            },
-            {
-                "text": "OpenAI GPT 5 nano",
-                "select": "GPT 5 nano"
-            },
-            {
-                "text": "⬅️",
-                "target": "bot"
-            }
-        ]
-    },
     "open_router": {
         "text": "🧩 OpenRouter",
         "buttons": [
             {
                 "text": "Free Models Router",
                 "select": "openrouter/free"
-            },
-            {
-                "text": "DeepSeek V3.1",
-                "select": "tngtech/deepseek-r1t2-chimera:free"
-            },
-            {
-                "text": "Meituan LongCat",
-                "select": "meituan/longcat-flash-chat:free"
-            },
-            {
-                "text": "⬅️",
-                "target": "bot"
-            }
-        ]
-    },
-    "reve": {
-        "text": "🎨 Reve",
-        "buttons": [
-            {
-                "text": "Create",
-                "select": "create"
-            },
-            {
-                "text": "Edit",
-                "select": "edit"
-            },
-            {
-                "text": "Remix",
-                "select": "remix"
             },
             {
                 "text": "⬅️",
@@ -398,44 +336,6 @@
             {
                 "text": "Imagen4 Ultra",
                 "select": "imagen4/preview/ultra"
-            },
-            {
-                "text": "⬅️",
-                "target": "pic"
-            }
-        ]
-    },
-    "imagen": {
-        "text": "🎨 Gemini Imagen",
-        "buttons": [
-            {
-                "text": "Imagen 4 preview",
-                "select": "4.0-generate-preview-06-06"
-            },
-            {
-                "text": "Imagen 4 ultra",
-                "select": "4.0-ultra-generate-preview-06-06"
-            },
-            {
-                "text": "⬅️",
-                "target": "pic"
-            }
-        ]
-    },
-    "glif_pic": {
-        "text": "🎨 Glif",
-        "buttons": [
-            {
-                "text": "Flux 2 Turbo",
-                "select": "flux2turbo"
-            },
-            {
-                "text": "Nano Banana",
-                "select": "nano_banana"
-            },
-            {
-                "text": "ZImage",
-                "select": "zimage"
             },
             {
                 "text": "⬅️",
