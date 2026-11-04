@@ -12,3 +12,5 @@ env/
 /prompts_editor.ipynb
 /.vscode
 /prompts_old.json
+.*_cache/
+ty.toml

@@ -1,52 +1,51 @@
-import os
-import io
-import math
-import wave
-import json
-import httpx
+import asyncio
 import atexit
 import base64
+import io
+import json
+
+# import math
+import os
 import sqlite3
-import asyncio
-import aiohttp
 import warnings
-from datetime import datetime, timezone
-from loguru import logger
-from contextlib import suppress
+import wave
+from abc import ABC, abstractmethod
 from argparse import ArgumentParser
-from mistralai import Mistral
+from contextlib import AsyncExitStack, suppress
+
+# from datetime import datetime, timezone
+from functools import lru_cache
+from pathlib import Path
+from time import time
+
+import aiohttp
+import httpx
+import httpx2
+from aiogram import BaseMiddleware, Bot, Dispatcher, F, exceptions
+from aiogram.enums import ParseMode
+from aiogram.filters import Command, CommandObject, CommandStart
+from aiogram.filters.callback_data import CallbackData
+from aiogram.types import BotCommand, CallbackQuery, Message, TelegramObject
+from aiogram.types import BufferedInputFile as BIF
+from aiogram.utils.chat_action import ChatActionSender
+from aiogram.utils.formatting import ExpandableBlockQuote, as_numbered_list
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
+from aiogram.utils.markdown import text
+from aiolimiter import AsyncLimiter
+from dotenv import load_dotenv
 from google.genai import Client as GeminiClient
 from google.genai import errors as GeminiError
 from google.genai import types
-from abc import ABC, abstractmethod
-from aiolimiter import AsyncLimiter
-from functools import lru_cache
-from time import time
 from groq import AsyncGroq
-from openai import OpenAI, AsyncOpenAI
-from aiogram import (
-    Bot, 
-    Dispatcher, 
-    BaseMiddleware,
-    exceptions,
-    F)
-from aiogram.types import (
-    TelegramObject, 
-    Message, 
-    CallbackQuery,
-    BotCommand
-    )
-from aiogram.types import BufferedInputFile as BIF
-from aiogram.utils.markdown import text
-from aiogram.utils.formatting import ExpandableBlockQuote, as_numbered_list
-from aiogram.filters import Command, CommandStart, CommandObject
-from aiogram.filters.callback_data import CallbackData
-from aiogram.enums import ParseMode
-from aiogram.utils.chat_action import ChatActionSender
-from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-from md2tgmd import escape
+from loguru import logger
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+from mistralai import Mistral
+from openai import AsyncOpenAI, BadRequestError
 from PIL import Image, ImageOps
-from dotenv import load_dotenv
+
+from md2tgmd import escape
+
 load_dotenv(override=True)
 warnings.simplefilter('ignore')
 
@@ -96,7 +95,7 @@ class UserFilterMiddleware(BaseMiddleware):
             data.setdefault('username', username)
             try:
                 await handler(event, data)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.exception(e)
                 if isinstance(event, Message):
                     await bot.send_message(event.chat.id, f'❌ Error: {e}'[:200])
@@ -113,7 +112,7 @@ class DBConnection:
 
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
-            cls._instance = super(DBConnection, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance.conn = sqlite3.connect('db.sqlite3')
             cls._instance.cursor = cls._instance.conn.cursor()
             atexit.register(cls._instance.close)
@@ -192,7 +191,7 @@ class BaseAPIInterface(ABC):
 
     @staticmethod  
     def get_api_key(name: str):  
-        return os.getenv(f'{name.upper()}_API_KEY')
+        return os.getenv(f'{name.upper()}_API_KEY','')
 
     @abstractmethod
     async def prompt(self, *args, **kwargs):
@@ -203,13 +202,49 @@ class BaseAPIInterface(ABC):
         return [m["select"] for m in bot_menu["buttons"] if "select" in m]
 
 
+exa: ClientSession | None = None
+exa_mcp_tools: list = []
+_exa_stack: AsyncExitStack | None = None
+
+
+async def exa_start(**_):
+    """Поднимаем streamable-http сессию к mcp.exa.ai.
+    google.genai принимает ClientSession прямо в config.tools и сам
+    объявляет/вызывает web_search_exa (automatic function calling)."""
+    global exa, exa_mcp_tools, _exa_stack
+    if not (key := os.getenv('EXA_API_KEY')):
+        logger.warning('EXA_API_KEY не задан — режим «Поиск» работает без Exa')
+        return
+    url = (f'https://mcp.exa.ai/mcp?exaApiKey={key}'
+           '&tools=web_search_exa,web_fetch_exa&dynamicHighlights=true')
+    stack = AsyncExitStack()
+    try:
+        socks = os.getenv('SOCKS') or os.getenv('LOCAL_SOCKS')
+        client = await stack.enter_async_context(httpx2.AsyncClient(proxy=socks)) if socks else None
+        read, write = await stack.enter_async_context(
+            streamable_http_client(url, http_client=client) if client else streamable_http_client(url))
+        exa = await stack.enter_async_context(ClientSession(read, write))
+        await exa.initialize()
+        exa_mcp_tools = (await exa.list_tools()).tools
+        logger.info(f"Exa MCP: {[t.name for t in exa_mcp_tools]}")
+        _exa_stack = stack
+    except Exception as e:  # noqa: BLE001
+        logger.error(f'Exa MCP не поднялся: {e}')
+        await stack.aclose()
+
+
+async def exa_stop(**_):
+    if _exa_stack:
+        await _exa_stack.aclose()
+
+
 class BOTS:
     """LLM bot interfaces"""
 
     class GeminiAPI(BaseAPIInterface):
         """Class for Gemini API"""
         name = 'gemini'
-        safety_settings = [types.SafetySetting(
+        safety_settings = [types.SafetySetting(  # noqa: RUF012
             category=category, 
             threshold="BLOCK_NONE"
             ) for category in types.HarmCategory._member_names_[1:-5]]
@@ -222,7 +257,6 @@ class BOTS:
                 "proxy": True,
                 "search": False,
                 "code": False,
-                # "image_gen_reset": True,
             }
             self.client: GeminiClient = None
             self.reset_chat(with_proxy=self.states['proxy'])
@@ -266,7 +300,7 @@ class BOTS:
                         return (output if 'photo' in output  else response.text
                                 ) or response.candidates[0].finish_reason
                     
-                    except Exception:
+                    except Exception:  # noqa: BLE001
                         return str(response.candidates[0].finish_reason)
                     finally:
                         if self.states.get('image_gen_reset'):
@@ -288,7 +322,7 @@ class BOTS:
                 return f'Gemini error {e.code}: {e}'
                     
                 
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.exception(e)
                 return f'Exception in Gemini: {e}'
         
@@ -313,12 +347,11 @@ class BOTS:
                 )
             if 'image' not in self.current:
                 self.chat._config.tools = [
-                    types.Tool(
-                        google_search=types.GoogleSearch() if self.states['search'] else None,
-                        url_context = types.UrlContext() if self.states['search'] else None,
-                        code_execution=types.ToolCodeExecution if self.states['code'] else None,
-                        )
-                    ]
+                    *([types.Tool(code_execution=types.ToolCodeExecution)] if self.states['code'] else []),
+                    *([exa] if self.states['search'] and exa else []),
+                    ] or None
+                self.chat._config.automatic_function_calling = \
+                    types.AutomaticFunctionCallingConfig(maximum_remote_calls=5)
             else:
                 self.chat._config.tools = None
                 self.chat._config.thinking_config = None
@@ -369,7 +402,7 @@ class BOTS:
                             logger.warning(f'Gemini attempt: {attempts}')
                             return await self.tts(text, attempts+1)
 
-                raise Exception(f'Gemini error {e.code}: {e}')
+                raise Exception(f'Gemini error {e.code}: {e}')  # noqa: TRY002
 
 
         def dialogue_api_router(self, cmd: str | None = None) -> str:
@@ -431,7 +464,7 @@ class BOTS:
             self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
         
 
-        async def prompt(self, text, image: list[dict] = None) -> str | dict:
+        async def prompt(self, text, image: list[dict] | None = None) -> str | dict:
             if image:
                 User.make_multi_modal_body(image, text, self.context)
             else:
@@ -502,34 +535,41 @@ class BOTS:
                 data = response.choices[-1].message.content
                 self.context.append({'role':'assistant', 'content': data})
                 return data
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 return f'{e}'
             
 
         def get_kwargs(self) -> dict:
+            exa = [{
+                "type": "mcp",
+                "server_label": "exa",
+                "require_approval": "never",
+                "server_description": "Semantic web search and page content extraction",
+                "server_url": "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa&dynamicHighlights=true",
+                "headers": {"Authorization": f"Bearer {os.getenv('EXA_API_KEY')}"},
+            }] if self.states['search'] and os.getenv('EXA_API_KEY') else []
             match self.current:
-                case 'qwen/qwen3-32b':
+                case s if s.startswith('qwen'):
                     kwargs = {
                         'reasoning_format': 'hidden',
                         'reasoning_effort': 'default',
-                        'temperature':0.6, 
+                        'temperature':1.0, 
                         'top_p':0.95, 
+                        **({'tools': exa, 'tool_choice':"auto"} if exa else {}),
                     }
                 case s if 'openai' in s:
                     kwargs = {
                         'temperature':1,
                         'max_completion_tokens':4096,
                         'top_p':1,
-                        'tool_choice':"auto",
                         "reasoning_effort": "low",
-                        "include_reasoning": True,
-                        'tools': [x for x in [
-                            {"type": "browser_search"} if self.states['search'] else None,
-                            {"type": "code_interpreter" if self.states['code'] else None},
-                            ] if x]
+                        **({'tools': [x for x in [
+                            {"type": "code_interpreter"} if self.states['code'] else None,
+                            *exa,
+                            ] if x], 'tool_choice':"auto"} if (exa or self.states['code']) else {}),
                     }
                 case _:
-                    kwargs = {}
+                    kwargs = {'tools': exa, 'tool_choice':"auto"} if exa else {}
             return kwargs
         
 
@@ -603,7 +643,7 @@ class BOTS:
             self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
         
 
-        async def prompt(self, text, image: list[dict] = None) -> str | dict:
+        async def prompt(self, text, image: list[dict] | None = None) -> str | dict:
             if image:
                 User.make_multi_modal_body(image, text, self.context)
             else:
@@ -623,6 +663,104 @@ class BOTS:
                 return User.encode_multi_modal_body(output)
             else:
                 return output.content
+
+
+
+    class LocalAPI(BaseAPIInterface):
+        """OpenAI-compatible llama.cpp"""
+        name = 'local'
+
+        def __init__(self, menu: dict):
+            self.base_url = os.getenv('LOCAL_BASE_URL')
+            self.models = self.get_models(menu[self.name])
+            self.current = self.models[0]
+            self.reasoning_effort = 'medium'
+            self.tools_ok = True
+            self.states: dict[str,bool] = {
+                "search": True,
+            }
+            self.client: AsyncOpenAI = None
+            self.create_client()
+
+
+        def create_client(self) -> None:
+            self.client = AsyncOpenAI(base_url=self.base_url, api_key='none', timeout=180)
+
+
+        @staticmethod
+        def exa_schema() -> list[dict]:
+            '''Exa mcp'''
+            drop = {'$schema', '$defs', 'definitions', 'additionalProperties', 'title'}
+            return [{'type': 'function', 'function': {
+                        'name': t.name,
+                        'description': t.description or '',
+                        'parameters': {k: v for k, v in (t.input_schema or {}).items() if k not in drop},
+                        }} for t in exa_mcp_tools]
+
+
+        def get_kwargs(self) -> dict:
+            kwargs = {'reasoning_effort': self.reasoning_effort} if self.reasoning_effort else {}
+            if self.tools_ok and self.states['search'] and exa:
+                kwargs |= {'tools': self.exa_schema(), 'tool_choice': 'auto'}
+            return kwargs
+
+
+        async def prompt(self, text: str, image = None) -> str:
+            if image:
+                self.context.clear()
+                User.make_multi_modal_body(image, text, self.context)
+            else:
+                self.context.append({'role':'user', 'content': text})
+            kwargs = self.get_kwargs()
+            rounds = 5
+            try:
+                while rounds:
+                    try:
+                        response = await self.create(**kwargs)
+                    except BadRequestError:
+                        if 'tools' in kwargs:
+                            self.tools_ok = False
+                        else:
+                            raise
+                        logger.warning(f'{self.name}: {self.current} rejected a parameter, retrying without it')
+                        kwargs = self.get_kwargs()
+                        continue
+                    msg = response.choices[-1].message
+                    if not msg.tool_calls:
+                        break
+                    rounds -= 1
+                    self.context.append({k: v for k, v in msg.model_dump().items() if v is not None})
+                    for call in msg.tool_calls:
+                        out = await exa.call_tool(call.function.name, json.loads(call.function.arguments or '{}'))
+                        self.context.append({'role':'tool', 'tool_call_id': call.id,
+                                             'content': ' '.join(c.text for c in out.content if c.type == 'text')})
+                    kwargs = self.get_kwargs()
+                data = response.choices[-1].message.content
+                if data is None:
+                    return '❌ Локальный сервер не вернул ответ (цикл инструментов)'
+                self.context.append({'role':'assistant', 'content': data})
+                return data
+            except Exception as e:  # noqa: BLE001
+                return f'{e}'
+
+
+        async def create(self, **kwargs) -> object:
+            '''Обёртка запроса, чтобы не дублировать create в цикле инструментов'''
+            return await self.client.chat.completions.create(
+                model=self.current, messages=self.context, **kwargs)
+
+
+        def dialogue_api_router(self, cmd: str | None = None) -> str:
+            '''dlg_last — снять последний вопрос/ответ, dlg_clear — оставить системный'''
+            match cmd or 'wipe':
+                case 'last':
+                    head = self.context[:1] if self.context[:1] and self.context[0]['role'] == 'system' else []
+                    self.context = head + self.context[len(head):-2]
+                case 'clear':
+                    self.context = self.context[:1] if self.context[:1] and self.context[0]['role'] == 'system' else []
+                case _:
+                    self.context.clear()
+            return 'кроме системного' if cmd == 'clear' else 'полностью'
 
 
 
@@ -653,17 +791,6 @@ class PIC_BOTS:
                     f'🤖 Model: {self.current}')
 
 
-        def to_aspect_ratio(self) -> str:
-            '''DEPRECATED'''
-            return {
-                "portrait_16_9":"9:16", 
-                "portrait_4_3":"3:4",
-                "square_hd":"1:1", 
-                "landscape_4_3":"4:3", 
-                "landscape_16_9":"16:9",
-            }.get(self.image_size, '4:3')
-
-
         def get_kwargs(self) -> dict[str,str]:
             match self.current:
                 case 'flux-pro/v1.1-ultra':
@@ -683,7 +810,13 @@ class PIC_BOTS:
                     }
                 case s if 'seedream' in s:
                     kwargs = {
-                        "image_size": s,
+                        "image_size": {
+                            "1:1":"square_hd",
+                            "3:4":"portrait_4_3",
+                            "9:16":"portrait_16_9",
+                            "4:3":"landscape_4_3",
+                            "16:9":"landscape_16_9",
+                            }.get(self.image_size, "auto"),
                     }
                 case _:
                     kwargs = {}
@@ -699,38 +832,38 @@ class PIC_BOTS:
                     "enable_safety_checker": False,
                     "safety_tolerance": "5",
                     } | kwargs
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url=f"https://fal.run/fal-ai/{self.current}",
+            try:
+                async with aiohttp.request(
+                    'POST',
+                    f"https://fal.run/fal-ai/{self.current}",
                     headers=self.headers,
-                    json=body, 
-                    timeout=90,
+                    json=body,
+                    timeout=aiohttp.ClientTimeout(total=90),
                     ) as response:
+                    response.raise_for_status()
+                    answer = await response.json()
                     try:
-                        response.raise_for_status()
-                        answer = await response.json()
-                        try:
-                            return {'photo': answer['images'][0]['url']}
-                        except Exception:
-                            return {'photo': str(answer)}
-                    except Exception as e:
-                        match e:
-                            case asyncio.TimeoutError():
-                                logger.error(error_msg := 'Timeout error')
-                            case aiohttp.ClientResponseError():
-                                logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
-                            case KeyError():
-                                logger.error(error_msg := 'No output data')
-                            case _:
-                                logger.error(error_msg := f'Unexpected error: {str(e)}')
-                        return f'❌: {error_msg}'
+                        return {'photo': answer['images'][0]['url']}
+                    except Exception:  # noqa: BLE001
+                        return {'photo': str(answer)}
+            except Exception as e:  # noqa: BLE001
+                match e:
+                    case asyncio.TimeoutError():
+                        logger.error(error_msg := 'Timeout error')
+                    case aiohttp.ClientResponseError():
+                        logger.error(error_msg := f'HTTP error {e.status}: {e.message}')
+                    case KeyError():
+                        logger.error(error_msg := 'No output data')
+                    case _:
+                        logger.error(error_msg := f'Unexpected error: {e!s}')
+                return f'❌: {error_msg}'
       
 
 
 class APIFactory:
     '''A factory pattern for creating bot interfaces'''
-    bots: dict = {v.name:v for k,v in BOTS.__dict__.items() if not k.startswith('__')}
-    image_bots: dict = {v.name:v for k,v in PIC_BOTS.__dict__.items() if not k.startswith('__')}
+    bots: dict = {v.name:v for k,v in BOTS.__dict__.items() if not k.startswith('__')}  # noqa: RUF012
+    image_bots: dict = {v.name:v for k,v in PIC_BOTS.__dict__.items() if not k.startswith('__')}  # noqa: RUF012
     
     def __init__(self):
         self._instances: dict[str,BaseAPIInterface] = {}
@@ -739,6 +872,7 @@ class APIFactory:
     def get(self, bot_type: str, bot_name: str) -> BaseAPIInterface:
         dct = self.bots if bot_type == 'bot' else self.image_bots
         return self._instances.setdefault(bot_name, dct[bot_name](users.menu))
+
 
 
 class RateLimitedQueueManager:
@@ -761,7 +895,6 @@ class RateLimitedQueueManager:
             return await task
 
 
-    
 
 class UsersArgParser:
     """A wrapper for ArgumentParser to handle user management commands.
@@ -913,7 +1046,7 @@ class User:
         """Router for command actions."""
         cbt = getattr(self, f'current_{self.nav_type}')
         if hasattr(cbt, 'dialogue_api_router'):
-            getattr(cbt, 'dialogue_api_router')(cmd.removeprefix('dlg_'))
+            cbt.dialogue_api_router(cmd.removeprefix('dlg_'))
             return {'dlg_last': 'Удален последний ответ и вопрос из контекста',
                     'dlg_clear': 'Очистка контекста',
                     'dlg_wipe': 'Очистка контекста и системной инструкции'}[cmd]
@@ -953,13 +1086,13 @@ class User:
 
     def make_multi_modal_body(images: list[dict] | dict, 
                               text: str | None = None, 
-                              context: list = None) -> str:
+                              context: list | None = None) -> str:
         data = images[0] if isinstance(images, list) else images
         image_str: str = base64.b64encode(data.get('data')).decode()
         if len(image_str) > 180_000:
             print("Слишком большое изображение, сжимаем...")
             image_str = users.resize_image(image_str)
-        if context:
+        if context is not None:
             part = f"data:image/jpeg;base64,{image_str}"
             context.extend([
             {
@@ -977,21 +1110,15 @@ class User:
         
 
     def encode_multi_modal_body(output) -> dict:
-        if isinstance(output, dict):
-            ## reve
-            used, rem = output.get('credits_used'), output.get('credits_remaining')
-            logger.info(caption :=f"x - {used} = {rem}")
-            output_dct: dict[str,str] = {'caption': caption, 'photo': output.get('image')}
-        else:
-            ## open_router
-            output_dct: dict[str,str] = {'caption': output.content.strip()}
-            for part in output.images:
-                if img_data := part.get('image_url'):
-                    output_dct['photo'] = img_data.get('url','')
+        ## open_router
+        output_dct: dict[str,str] = {'caption': output.content.strip()}
+        for part in output.images:
+            if img_data := part.get('image_url'):
+                output_dct['photo'] = img_data.get('url','')
 
         if raw_data := output_dct.get('photo'):
             if raw_data.startswith('data:'):
-                header, b64data = raw_data.split(",", 1)
+                _, b64data = raw_data.split(",", 1)
             else:
                 b64data = raw_data
             data = io.BytesIO(base64.b64decode(b64data))
@@ -1020,13 +1147,12 @@ class User:
 
 
 
-class UsersMap():
+class UsersMap:
     '''Main storage of user's sessions, common variables and functions'''
     def __init__(self):
-        self.load_json = lambda file: json.loads(open(f'./{file}.json', 'r', encoding="utf-8").read())
+        self.load_json = lambda file: json.loads(Path(f'./{file}.json').read_bytes())
         self.menu: dict[str, dict] = self.load_json('settings')
-        self.state_btns: set = set(filter(None, map(lambda btn: btn.get('state'), 
-                        self.menu['switch_bot']['buttons'] + self.menu['switch_pic']['buttons'])))
+        self.state_btns: set = set(filter(None, (btn.get('state') for btn in self.menu['switch_bot']['buttons'] + self.menu['switch_pic']['buttons'])))
         self.db = DBConnection()
         self.queue_manager = RateLimitedQueueManager()
         self._user_instances: dict[int, User] = {}
@@ -1060,7 +1186,7 @@ class UsersMap():
 
 
 
-    @lru_cache(maxsize=None)
+    @lru_cache(maxsize=None)  # noqa: B019, UP033
     def get(self, user_id: int) -> User:
         return self._user_instances.setdefault(user_id, User())
     
@@ -1245,7 +1371,7 @@ class UsersMap():
             type_prompt = message.text # type: ignore
         else:
             user.text = message.caption or f"the provided {type_prompt}." # type: ignore
-            type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt) # type: ignore
+            type_prompt = (lambda x: f'{x}: {message.caption or "no desc"}')(type_prompt) # type: ignore  # noqa: PLC3002
         user.text = user.text.lstrip('/')
         if username:
             logger.info(f'{username}: {type_prompt[:100]}...')
@@ -1432,7 +1558,7 @@ class Handlers:
         
         elif arg == '-r' and prompt_body in users.context_dict:
             users.context_dict.pop(prompt_body)
-            with open('./prompts.json', 'w', encoding="utf-8") as f:
+            with open('./prompts.json', 'w', encoding="utf-8") as f:  # noqa: ASYNC230
                 json.dump(users.context_dict, f, ensure_ascii=False, indent=4)
             await message.reply(f"Context {prompt_body} removed successfully.")
         
@@ -1443,10 +1569,10 @@ class Handlers:
                 return
             try:
                 users.context_dict[prompt_name] = prompt
-                with open('./prompts.json', 'w', encoding="utf-8") as f:
+                with open('./prompts.json', 'w', encoding="utf-8") as f:  # noqa: ASYNC230
                     json.dump(users.context_dict, f, ensure_ascii=False, indent=4)
                 await message.reply(f"Context {prompt_name} added successfully.")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 await message.reply(f"An error occurred: {e}.")
 
         else:
@@ -1734,6 +1860,8 @@ async def main() -> None:
         BotCommand(command="/clear", description="🧹 Очистить диалог"),
         BotCommand(command="/info", description="📚 Вывести инфо"),
     ])
+    dp.startup.register(exa_start)
+    dp.shutdown.register(exa_stop)
     # await users.remove_kb_for_users()
     await dp.start_polling(bot)
 

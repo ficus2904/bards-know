@@ -2,6 +2,7 @@ httpx[socks]
 aiogram
 loguru
 google-genai
+mcp
 python-dotenv
 pillow
 groq

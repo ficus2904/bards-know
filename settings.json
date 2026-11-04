@@ -195,6 +195,10 @@
                 "target": "zenmux"
             },
             {
+                "text": "Local",
+                "target": "local"
+            },
+            {
                 "text": "⬅️",
                 "target": "main"
             }
@@ -227,6 +231,19 @@
             {
                 "text": "Xiaomi Mimo",
                 "select": "xiaomi/mimo-v2-flash"
+            },
+            {
+                "text": "⬅️",
+                "target": "bot"
+            }
+        ]
+    },
+    "local": {
+        "text": "🏠 Local",
+        "buttons": [
+            {
+                "text": "Local",
+                "select": "local"
             },
             {
                 "text": "⬅️",
