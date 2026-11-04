@@ -206,6 +206,7 @@ class Exa:
     """Exa MCP: live session, tool list, closing stack — one owner, no globals."""
 
     TOOLS = 'web_search_exa,web_fetch_exa'
+    DROP = frozenset(('$schema', '$defs', 'definitions', 'additionalProperties', 'title'))
 
     def __init__(self) -> None:
         self.session: ClientSession | None = None
@@ -234,6 +235,17 @@ class Exa:
         # genai deep-copies config.tools via model_copy(deep=True) (chats.py:710, genai #2669)
         # and dies on the live session Task — a copy is useless, the session hands out itself
         session.__deepcopy__ = lambda memo: session
+        # genai pulls tool schemas through session.list_tools() on every request, so that is
+        # the only place where they can be cleaned before Gemini sees them
+        list_tools = session.list_tools
+
+        async def list_tools_clean():
+            res = await list_tools()
+            for t in res.tools:
+                t.input_schema = self.clean_schema(t.input_schema)
+            return res
+
+        session.list_tools = list_tools_clean
         self.stack = stack
         return session, (await session.list_tools()).tools
 
@@ -259,13 +271,20 @@ class Exa:
                 await self.stack.aclose()
         self.session, self.tools = None, []
 
+    @classmethod
+    def clean_schema(cls, schema: dict) -> dict:
+        '''Strip the JSON Schema junk recursively: genai 2.34.0 crashes on
+        "additionalProperties": false (_mcp_utils._filter_to_supported_schema, genai #2476),
+        the Gemini API rejects that key outright and both it and the local server choke on the rest.'''
+        return {k: (cls.clean_schema(v) if isinstance(v, dict) else v)
+                for k, v in (schema or {}).items() if k not in cls.DROP}
+
     def schemas(self) -> list[dict]:
-        '''OpenAI format out of mcp schemas: the local server chokes on $schema/$defs/...'''
-        drop = {'$schema', '$defs', 'definitions', 'additionalProperties', 'title'}
+        '''OpenAI format out of mcp schemas.'''
         return [{'type': 'function', 'function': {
                     'name': t.name,
                     'description': t.description or '',
-                    'parameters': {k: v for k, v in (t.input_schema or {}).items() if k not in drop},
+                    'parameters': self.clean_schema(t.input_schema),
                     }} for t in self.tools]
 
     @classmethod
