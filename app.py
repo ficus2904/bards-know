@@ -202,40 +202,90 @@ class BaseAPIInterface(ABC):
         return [m["select"] for m in bot_menu["buttons"] if "select" in m]
 
 
-exa: ClientSession | None = None
-exa_mcp_tools: list = []
-_exa_stack: AsyncExitStack | None = None
+class Exa:
+    """Exa MCP: live session, tool list, closing stack — one owner, no globals."""
 
+    TOOLS = 'web_search_exa,web_fetch_exa'
 
-async def exa_start(**_):
-    """Поднимаем streamable-http сессию к mcp.exa.ai.
-    google.genai принимает ClientSession прямо в config.tools и сам
-    объявляет/вызывает web_search_exa (automatic function calling)."""
-    global exa, exa_mcp_tools, _exa_stack
-    if not (key := os.getenv('EXA_API_KEY')):
-        logger.warning('EXA_API_KEY не задан — режим «Поиск» работает без Exa')
-        return
-    url = (f'https://mcp.exa.ai/mcp?exaApiKey={key}'
-           '&tools=web_search_exa,web_fetch_exa&dynamicHighlights=true')
-    stack = AsyncExitStack()
-    try:
-        socks = os.getenv('SOCKS') or os.getenv('LOCAL_SOCKS')
-        client = await stack.enter_async_context(httpx2.AsyncClient(proxy=socks)) if socks else None
+    def __init__(self) -> None:
+        self.session: ClientSession | None = None
+        self.tools: list = []
+        self.stack: AsyncExitStack | None = None
+
+    def __bool__(self) -> bool:
+        return self.session is not None
+
+    async def _connect(self, url: str):
+        """Stack + session. Must live in its own task: the anyio cancel-scope of the
+        streamable transport fires in its own task, a dead proxy lands in the startup handler."""
+        stack = AsyncExitStack()
+        client = None
+        if socks := os.getenv('SOCKS') or os.getenv('LOCAL_SOCKS'):
+            client = await stack.enter_async_context(httpx2.AsyncClient(proxy=socks))
+        elif worker := os.getenv('WORKER'):
+            client = await stack.enter_async_context(httpx2.AsyncClient(
+                headers={'X-Custom-Auth': os.getenv('AUTH_SECRET'),
+                         'EXTERNAL-URL': 'https://mcp.exa.ai'}))
+            url = url.replace('https://mcp.exa.ai', worker.rstrip('/'))
         read, write = await stack.enter_async_context(
             streamable_http_client(url, http_client=client) if client else streamable_http_client(url))
-        exa = await stack.enter_async_context(ClientSession(read, write))
-        await exa.initialize()
-        exa_mcp_tools = (await exa.list_tools()).tools
-        logger.info(f"Exa MCP: {[t.name for t in exa_mcp_tools]}")
-        _exa_stack = stack
-    except Exception as e:  # noqa: BLE001
-        logger.error(f'Exa MCP не поднялся: {e}')
-        await stack.aclose()
+        session = await stack.enter_async_context(ClientSession(read, write))
+        await session.initialize()
+        # genai deep-copies config.tools via model_copy(deep=True) (chats.py:710, genai #2669)
+        # and dies on the live session Task — a copy is useless, the session hands out itself
+        session.__deepcopy__ = lambda memo: session
+        self.stack = stack
+        return session, (await session.list_tools()).tools
+
+    async def start(self, **_):
+        if self.session:
+            return
+        if not (key := os.getenv('EXA_API_KEY')):
+            logger.warning('EXA_API_KEY не задан — режим «Поиск» работает без Exa')
+            return
+        url = (f'https://mcp.exa.ai/mcp?exaApiKey={key}'
+               f'&tools={self.TOOLS}&dynamicHighlights=true')
+        try:
+            self.session, self.tools = await asyncio.create_task(self._connect(url))
+            logger.info(f"Exa MCP: {[t.name for t in self.tools]}")
+        except (Exception, asyncio.CancelledError) as e:  # noqa: BLE001
+            # CancelledError is required: on a dead proxy the transport cancels initialize() itself
+            logger.error(f'Exa MCP не поднялся: {e}')
+            self.session, self.tools = None, []
+
+    async def stop(self, **_):
+        if self.stack:
+            with suppress(Exception, asyncio.CancelledError):
+                await self.stack.aclose()
+        self.session, self.tools = None, []
+
+    def schemas(self) -> list[dict]:
+        '''OpenAI format out of mcp schemas: the local server chokes on $schema/$defs/...'''
+        drop = {'$schema', '$defs', 'definitions', 'additionalProperties', 'title'}
+        return [{'type': 'function', 'function': {
+                    'name': t.name,
+                    'description': t.description or '',
+                    'parameters': {k: v for k, v in (t.input_schema or {}).items() if k not in drop},
+                    }} for t in self.tools]
+
+    @classmethod
+    def remote_config(cls) -> list[dict]:
+        '''Server-side MCP entry: the provider connects to Exa itself, no local session involved.'''
+        return [] if not (key := os.getenv('EXA_API_KEY')) else [{
+            'type': 'mcp',
+            'server_label': 'exa',
+            'require_approval': 'never',
+            'server_description': 'Semantic web search and page content extraction',
+            'server_url': f'https://mcp.exa.ai/mcp?tools={cls.TOOLS}&dynamicHighlights=true',
+            'headers': {'Authorization': f'Bearer {key}'},
+        }]
+
+    async def call(self, name: str, args: dict) -> str:
+        out = await self.session.call_tool(name, args)
+        return ' '.join(c.text for c in out.content if c.type == 'text')
 
 
-async def exa_stop(**_):
-    if _exa_stack:
-        await _exa_stack.aclose()
+exa = Exa()
 
 
 class BOTS:
@@ -255,7 +305,7 @@ class BOTS:
             self.chat = None
             self.states: dict[str,str] = {
                 "proxy": True,
-                "search": False,
+                "search": True,
                 "code": False,
             }
             self.client: GeminiClient = None
@@ -348,7 +398,7 @@ class BOTS:
             if 'image' not in self.current:
                 self.chat._config.tools = [
                     *([types.Tool(code_execution=types.ToolCodeExecution)] if self.states['code'] else []),
-                    *([exa] if self.states['search'] and exa else []),
+                    *([exa.session] if self.states['search'] and exa else []),
                     ] or None
                 self.chat._config.automatic_function_calling = \
                     types.AutomaticFunctionCallingConfig(maximum_remote_calls=5)
@@ -540,14 +590,7 @@ class BOTS:
             
 
         def get_kwargs(self) -> dict:
-            exa = [{
-                "type": "mcp",
-                "server_label": "exa",
-                "require_approval": "never",
-                "server_description": "Semantic web search and page content extraction",
-                "server_url": "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa&dynamicHighlights=true",
-                "headers": {"Authorization": f"Bearer {os.getenv('EXA_API_KEY')}"},
-            }] if self.states['search'] and os.getenv('EXA_API_KEY') else []
+            remote = exa.remote_config() if self.states['search'] else []
             match self.current:
                 case s if s.startswith('qwen'):
                     kwargs = {
@@ -555,7 +598,7 @@ class BOTS:
                         'reasoning_effort': 'default',
                         'temperature':1.0, 
                         'top_p':0.95, 
-                        **({'tools': exa, 'tool_choice':"auto"} if exa else {}),
+                        **({'tools': remote, 'tool_choice':"auto"} if remote else {}),
                     }
                 case s if 'openai' in s:
                     kwargs = {
@@ -565,11 +608,11 @@ class BOTS:
                         "reasoning_effort": "low",
                         **({'tools': [x for x in [
                             {"type": "code_interpreter"} if self.states['code'] else None,
-                            *exa,
-                            ] if x], 'tool_choice':"auto"} if (exa or self.states['code']) else {}),
+                            *remote,
+                            ] if x], 'tool_choice':"auto"} if (remote or self.states['code']) else {}),
                     }
                 case _:
-                    kwargs = {'tools': exa, 'tool_choice':"auto"} if exa else {}
+                    kwargs = {'tools': remote, 'tool_choice':"auto"} if remote else {}
             return kwargs
         
 
@@ -687,21 +730,10 @@ class BOTS:
             self.client = AsyncOpenAI(base_url=self.base_url, api_key='none', timeout=180)
 
 
-        @staticmethod
-        def exa_schema() -> list[dict]:
-            '''Exa mcp'''
-            drop = {'$schema', '$defs', 'definitions', 'additionalProperties', 'title'}
-            return [{'type': 'function', 'function': {
-                        'name': t.name,
-                        'description': t.description or '',
-                        'parameters': {k: v for k, v in (t.input_schema or {}).items() if k not in drop},
-                        }} for t in exa_mcp_tools]
-
-
         def get_kwargs(self) -> dict:
             kwargs = {'reasoning_effort': self.reasoning_effort} if self.reasoning_effort else {}
             if self.tools_ok and self.states['search'] and exa:
-                kwargs |= {'tools': self.exa_schema(), 'tool_choice': 'auto'}
+                kwargs |= {'tools': exa.schemas(), 'tool_choice': 'auto'}
             return kwargs
 
 
@@ -731,9 +763,9 @@ class BOTS:
                     rounds -= 1
                     self.context.append({k: v for k, v in msg.model_dump().items() if v is not None})
                     for call in msg.tool_calls:
-                        out = await exa.call_tool(call.function.name, json.loads(call.function.arguments or '{}'))
                         self.context.append({'role':'tool', 'tool_call_id': call.id,
-                                             'content': ' '.join(c.text for c in out.content if c.type == 'text')})
+                                             'content': await exa.call(call.function.name,
+                                                                       json.loads(call.function.arguments or '{}'))})
                     kwargs = self.get_kwargs()
                 data = response.choices[-1].message.content
                 if data is None:
@@ -745,13 +777,13 @@ class BOTS:
 
 
         async def create(self, **kwargs) -> object:
-            '''Обёртка запроса, чтобы не дублировать create в цикле инструментов'''
+            '''Request wrapper so the tool loop does not duplicate create'''
             return await self.client.chat.completions.create(
                 model=self.current, messages=self.context, **kwargs)
 
 
         def dialogue_api_router(self, cmd: str | None = None) -> str:
-            '''dlg_last — снять последний вопрос/ответ, dlg_clear — оставить системный'''
+            '''dlg_last: drop the last question and answer, dlg_clear: keep the system message'''
             match cmd or 'wipe':
                 case 'last':
                     head = self.context[:1] if self.context[:1] and self.context[0]['role'] == 'system' else []
@@ -913,22 +945,22 @@ class UsersArgParser:
     """
     def __init__(self):
         self.parser = ArgumentParser(description="User's management", exit_on_error=False)
-        # главный парсер
+        # main parser
         self.subparser = self.parser.add_subparsers(
             dest='action', 
             required=True, 
             help='Действие'
             )
-        # Парсер для команды "add"
+        # parser for the "add" command
         self.parser_add = self.subparser.add_parser('add', help='Добавить нового пользователя')
         self.parser_add.add_argument('username', type=str.upper, help='Имя нового пользователя')
         self.parser_add.add_argument('tg_id', type=str, help='ID нового пользователя')
 
-        # Парсер для команды "remove"
+        # parser for the "remove" command
         self.parser_remove = self.subparser.add_parser('remove', help='Удалить пользователя')
         self.parser_remove.add_argument('username', type=str.upper, help='Имя пользователя')
 
-        # Парсер для команды "list"
+        # parser for the "list" command
         self.parser_list = self.subparser.add_parser('list', help='Список пользователей')
 
 
@@ -1194,7 +1226,7 @@ class UsersMap:
     def resize_image(self, image: str, max_b64_length=180_000, max_file_size_kb=450) -> str:
         max_file_size_bytes = max_file_size_kb * 1024
         img = Image.open(io.BytesIO(base64.b64decode(image)))
-        # Функция для сжатия и конвертации изображения в Base64
+        # Compress an image and convert it to Base64
         def image_to_base64(img, quality=85) -> tuple[str, bytes]:
             buffer = io.BytesIO()
             img.save(buffer, format='JPEG', quality=quality)
@@ -1202,21 +1234,21 @@ class UsersMap:
             img_b64 = base64.b64encode(buffer.getvalue()).decode()
             return img_b64, buffer.getvalue()
         
-        # Рекурсивная функция для сжатия изображения
+        # recursive image compression
         def recursive_compress(img, quality) -> str | tuple[str, bytes]:
             img_b64, img_bytes = image_to_base64(img, quality=quality)
-            # Проверить размер изображения
+            # check the image size
             if len(img_b64) <= max_b64_length and len(img_bytes) <= max_file_size_bytes:
                 return img_b64
-            # Уменьшить размер изображения
+            # downscale the image
             img = ImageOps.exif_transpose(img)
             img.thumbnail((img.size[0] * 0.9, img.size[1] * 0.9), Image.ADAPTIVE) # type: ignore
-            # Уменьшить качество, если размер все еще превышает лимит
+            # lower the quality if the size is still over the limit
             quality = max(10, quality - 5)
-            # Рекурсивный вызов для сжатия изображения с новыми параметрами
+            # recurse with the new parameters
             return recursive_compress(img, quality)
         
-        # Начальное сжатие
+        # initial compression
         return recursive_compress(img, quality=85)
     
 
@@ -1250,13 +1282,13 @@ class UsersMap:
             while start < len(text) and text[start] in ('\n', ' '):
                 start += 1
             
-            # Добавляем небольшую задержку, чтобы дать возможность другим задачам выполниться
+            # brief yield so other tasks get a turn
             await asyncio.sleep(0)
 
 
     async def split_text(self, text: str, max_length: int = 4090):
         """
-        Разбивает текст на фрагменты, учитывая markdown-блоки, так чтобы блоки не делились.
+        Splits text into chunks, keeping markdown blocks intact so they never get cut.
         """
         trigger = 'Closing Prompt'
         if (trigger_index := text.find(trigger, 2500)) != -1:  
@@ -1266,40 +1298,40 @@ class UsersMap:
         markers = ["```", "`", "**", "__", "*", "_", "~"]
 
         while start < len(text):
-            # Если оставшийся текст короче max_length, берём весь
+            # the rest fits into max_length — take it whole
             if len(text) - start <= max_length:
                 chunk = text[start:]
             else:
-                # Ищем оптимальную точку разбиения (например, последний перенос строки или пробел)
+                # find the best split point (last newline, then space)
                 split_index = self.find_split_index(text, start, max_length)
                 chunk = text[start:split_index]
 
-            # Проверка баланса для каждого markdown-маркера
+            # balance check for every markdown marker
             for marker in markers:
-                # Если количество вхождений маркера нечётное – блок не закрыт
+                # an odd marker count means the block is left open
                 if chunk.count(marker) % 2 != 0:
-                    # Пытаемся найти закрывающий маркер в оставшейся части текста
+                    # look for the closing marker in the rest of the text
                     end = min(start + max_length, len(text))
                     closing_index = text.find(marker, start + len(chunk), end)
                     if closing_index != -1:
-                        # Расширяем фрагмент, включая закрывающий маркер
+                        # extend the chunk to include the closing marker
                         chunk = text[start:closing_index + len(marker)]
                     else:
-                        # Если закрывающий маркер не найден, можно добавить его искусственно
+                        # no closing marker found — add one artificially
                         chunk += marker
             
-            # Если фрагмент превышает max_length, обрезаем его
+            # the chunk overflows max_length — trim it
             if len(chunk) > max_length:
                 chunk = chunk[:max_length]
 
             yield chunk
-            # Переход к следующему фрагменту – учитываем, что мы могли превысить max_length
+            # next chunk, accounting for a possible overflow past max_length
             start += len(chunk)
 
 
     def find_split_index(self, text: str, start: int, max_length: int) -> int:
         """
-        Ищет индекс для разбиения текста, ориентируясь на последний перенос строки или пробел.
+        Finds a split index, aiming at the last newline or space.
         """
         split_index = start + max_length
         for separator in ('\n', ' '):
@@ -1860,8 +1892,8 @@ async def main() -> None:
         BotCommand(command="/clear", description="🧹 Очистить диалог"),
         BotCommand(command="/info", description="📚 Вывести инфо"),
     ])
-    dp.startup.register(exa_start)
-    dp.shutdown.register(exa_stop)
+    dp.startup.register(exa.start)
+    dp.shutdown.register(exa.stop)
     # await users.remove_kb_for_users()
     await dp.start_polling(bot)
 
