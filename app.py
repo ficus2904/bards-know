@@ -40,7 +40,7 @@ from groq import AsyncGroq
 from loguru import logger
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
-from mistralai import Mistral
+from mistralai.client import Mistral
 from openai import AsyncOpenAI, BadRequestError
 from PIL import Image, ImageOps
 
