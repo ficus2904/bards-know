@@ -40,6 +40,7 @@ from groq import AsyncGroq
 from loguru import logger
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
 from mistralai.client import Mistral
 from openai import AsyncOpenAI, BadRequestError
 from PIL import Image, ImageOps
@@ -203,13 +204,14 @@ class BaseAPIInterface(ABC):
 
 
 class Exa:
-    """Exa MCP: live session, tool list, closing stack — one owner, no globals."""
+    """Exa MCP: one live session, the handle genai stores, tool lists, closing stack."""
 
     TOOLS = 'web_search_exa,web_fetch_exa'
     DROP = frozenset(('$schema', '$defs', 'definitions', 'additionalProperties', 'title'))
 
     def __init__(self) -> None:
         self.session: ClientSession | None = None
+        self.handle: ClientSession | None = None
         self.tools: list = []
         self.stack: AsyncExitStack | None = None
 
@@ -240,7 +242,14 @@ class Exa:
         list_tools = session.list_tools
 
         async def list_tools_clean():
-            res = await list_tools()
+            try:
+                res = await list_tools()
+            except MCPError:
+                # the worker closes the stream from time to time: rebuild the session and ask once more
+                await self.reconnect()
+                if not self.session:
+                    raise
+                res = await self.session.list_tools()
             for t in res.tools:
                 t.input_schema = self.clean_schema(t.input_schema)
             return res
@@ -259,6 +268,7 @@ class Exa:
                f'&tools={self.TOOLS}&dynamicHighlights=true')
         try:
             self.session, self.tools = await asyncio.create_task(self._connect(url))
+            self.bind(self.session)
             logger.info(f"Exa MCP: {[t.name for t in self.tools]}")
         except (Exception, asyncio.CancelledError) as e:  # noqa: BLE001
             # CancelledError is required: on a dead proxy the transport cancels initialize() itself
@@ -270,6 +280,20 @@ class Exa:
             with suppress(Exception, asyncio.CancelledError):
                 await self.stack.aclose()
         self.session, self.tools = None, []
+
+    def bind(self, session: ClientSession):
+        '''genai keeps the session object inside chat._config.tools, so the very first session stays
+        the handle forever: after a reconnect it only forwards its two methods to the live session.'''
+        self.handle = self.handle or session
+        self.handle.list_tools = session.list_tools
+        self.handle.call_tool = session.call_tool
+
+    async def reconnect(self) -> bool:
+        '''Cloudflare drops long-idle streams, mcp then raises "Connection closed" on every call.
+        start() binds the fresh session to the handle the chat configs already point at.'''
+        await self.stop()
+        await self.start()
+        return self.session is not None
 
     @classmethod
     def clean_schema(cls, schema: dict) -> dict:
@@ -417,7 +441,7 @@ class BOTS:
             if 'image' not in self.current:
                 self.chat._config.tools = [
                     *([types.Tool(code_execution=types.ToolCodeExecution)] if self.states['code'] else []),
-                    *([exa.session] if self.states['search'] and exa else []),
+                    *([exa.handle] if self.states['search'] and exa else []),
                     ] or None
                 self.chat._config.automatic_function_calling = \
                     types.AutomaticFunctionCallingConfig(maximum_remote_calls=5)
