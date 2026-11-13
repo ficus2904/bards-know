@@ -208,12 +208,12 @@
         "text": "🧩 Gemini",
         "buttons": [
             {
-                "text": "Hydrogen",
-                "select": "gemini-4-hydrogen"
-            },
-            {
                 "text": "Flash Lite",
                 "select": "gemini-flash-lite-latest"
+            },
+            {
+                "text": "Hydrogen",
+                "select": "gemini-4-hydrogen"
             },
             {
                 "text": "Flash 2.5 (с поиском)",

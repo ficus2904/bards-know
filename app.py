@@ -428,11 +428,10 @@ class BOTS:
             if isinstance(with_proxy, bool):
                 self.create_client(with_proxy)
             self.context = [{'role':'system', 'content': context}]
-            reasoning = types.ThinkingLevel.XHIGH if '4' in self.current else types.ThinkingLevel.HIGH
             config = types.GenerateContentConfig(
                 system_instruction=context, 
                 safety_settings=self.safety_settings,
-                thinking_config=types.ThinkingConfig(thinking_level=reasoning),
+                thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH),
                 )
             self.chat = self.client.aio.chats.create(
                 model=self.current, 
