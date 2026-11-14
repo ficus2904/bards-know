@@ -388,21 +388,21 @@ class BOTS:
                     raise GeminiError.APIError(598, response_json={})
                 
             except GeminiError.APIError as e:
-                match e.code:
-                    case 429:
-                        if attempts == 0 and self.current != self.models[0]:
-                            logger.warning(output := 'Квота закончилась, отвечает lite модель...')
-                            if chat_id := kwargs.get('chat_id'):
-                                with suppress(exceptions.TelegramAPIError):
-                                    await bot.send_message(chat_id, output)
+                # Google отдаёт исчерпанную квоту то 429, то 5xx с RESOURCE_EXHAUSTED
+                quota = e.code == 429 or any(k in f'{e.status} {e.message}'.upper()
+                                             for k in ('EXHAUST', 'QUOTA'))
+                if quota and self.current != self.models[0]:
+                    logger.warning(output := 'Квота закончилась, отвечает lite модель...')
+                    if chat_id := kwargs.get('chat_id'):
+                        with suppress(exceptions.TelegramAPIError):
+                            await bot.send_message(chat_id, output)
 
-                            self.current = self.chat._model = self.models[0]
-                            return await self.prompt(text, data, attempts+1, chat_id=chat_id)
-                    case code if 500 <= code < 600:
-                        if attempts < 3:
-                            await asyncio.sleep(10)
-                            logger.warning(f'Gemini attempt: {attempts}')
-                            return await self.prompt(text, data, attempts+1)
+                    self.current = self.chat._model = self.models[0]
+                    return await self.prompt(text, data, attempts+1, chat_id=chat_id)
+                if 500 <= e.code < 600 and attempts < 3:
+                    await asyncio.sleep(10)
+                    logger.warning(f'Gemini attempt: {attempts}')
+                    return await self.prompt(text, data, attempts+1)
 
                 return f'Gemini error {e.code}: {e}'
                     
