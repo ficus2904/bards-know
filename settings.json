@@ -32,6 +32,10 @@
                 "target": "utils"
             },
             {
+                "text": "🧠 Reasoning",
+                "target": "reasoning"
+            },
+            {
                 "text": "🚪 Exit",
                 "target": "exit"
             }
@@ -147,6 +151,27 @@
             {
                 "text": "⬅️",
                 "target": "switch"
+            }
+        ]
+    },
+    "reasoning": {
+        "text": "🧠 Глубина размышления (текущий бот)",
+        "buttons": [
+            {
+                "text": "🪶 Low",
+                "select": "reason_low"
+            },
+            {
+                "text": "⚖️ Medium",
+                "select": "reason_medium"
+            },
+            {
+                "text": "🧠 High",
+                "select": "reason_high"
+            },
+            {
+                "text": "⬅️",
+                "target": "main"
             }
         ]
     },

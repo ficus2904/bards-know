@@ -352,7 +352,22 @@ class BOTS:
                 "code": False,
             }
             self.client: GeminiClient = None
+            self.reasoning: str = 'high'
             self.reset_chat(with_proxy=self.states['proxy'])
+
+
+        @property
+        def reasoning(self) -> str:
+            return self._reasoning
+
+
+        @reasoning.setter
+        def reasoning(self, level: str) -> None:
+            # config чата читается на каждый send_message, так что живая смена без пересборки истории
+            self._reasoning = level
+            if self.chat:
+                self.chat._config.thinking_config = types.ThinkingConfig(
+                    thinking_level=types.ThinkingLevel[level.upper()])
 
 
         def create_client(self, with_proxy: bool) -> None:
@@ -394,17 +409,16 @@ class BOTS:
                 if quota and self.current != self.models[0]:
                     logger.warning(output := 'Квота закончилась, отвечает lite модель...')
                     if chat_id := kwargs.get('chat_id'):
-                        with suppress(exceptions.TelegramAPIError):
-                            await bot.send_message(chat_id, output)
+                        await bot.send_message(chat_id, output)
 
                     self.current = self.chat._model = self.models[0]
                     return await self.prompt(text, data, attempts+1, chat_id=chat_id)
                 if 500 <= e.code < 600 and attempts < 3:
-                    await asyncio.sleep(10)
                     logger.warning(f'Gemini attempt: {attempts}')
+                    await asyncio.sleep(10)
                     return await self.prompt(text, data, attempts+1)
 
-                return f'Gemini error {e.code}: {e}'
+                return f'{self.current} error {e.code}: {e}'
                     
                 
             except Exception as e:  # noqa: BLE001
@@ -423,7 +437,8 @@ class BOTS:
             config = types.GenerateContentConfig(
                 system_instruction=context, 
                 safety_settings=self.safety_settings,
-                thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.HIGH),
+                thinking_config=types.ThinkingConfig(
+                    thinking_level=types.ThinkingLevel[self.reasoning.upper()]),
                 )
             self.chat = self.client.aio.chats.create(
                 model=self.current, 
@@ -578,6 +593,7 @@ class BOTS:
                 "code": False,
             }
             self.client: AsyncGroq = None
+            self.reasoning: str = 'medium'
             self.create_client(self.states['proxy'])
 
 
@@ -626,7 +642,7 @@ class BOTS:
                 case s if s.startswith('qwen'):
                     kwargs = {
                         'reasoning_format': 'hidden',
-                        'reasoning_effort': 'default',
+                        'reasoning_effort': self.reasoning,
                         'temperature':1.0, 
                         'top_p':0.95, 
                         **({'tools': remote, 'tool_choice':"auto"} if remote else {}),
@@ -748,7 +764,7 @@ class BOTS:
             self.base_url = os.getenv('LOCAL_BASE_URL')
             self.models = self.get_models(menu[self.name])
             self.current = self.models[0]
-            self.reasoning_effort = 'medium'
+            self.reasoning = 'medium'
             self.tools_ok = True
             self.states: dict[str,bool] = {
                 "search": True,
@@ -762,7 +778,11 @@ class BOTS:
 
 
         def get_kwargs(self) -> dict:
-            kwargs = {'reasoning_effort': self.reasoning_effort} if self.reasoning_effort else {}
+            # у qwen3.8 в шаблоне только low/medium/xhigh: 'high' шаблон не понимает, а top-level
+            # reasoning_effort старые версии сервера игнорировали, поэтому несём уровень и туда, и в chat_template_kwargs
+            level = 'xhigh' if self.reasoning == 'high' else self.reasoning
+            kwargs = {'reasoning_effort': level,
+                      'extra_body': {'chat_template_kwargs': {'reasoning_effort': level}}} if level else {}
             if self.tools_ok and self.states['search'] and exa:
                 kwargs |= {'tools': exa.schemas(), 'tool_choice': 'auto'}
             return kwargs
@@ -783,6 +803,8 @@ class BOTS:
                     except BadRequestError:
                         if 'tools' in kwargs:
                             self.tools_ok = False
+                        elif 'reasoning_effort' in kwargs:
+                            self.reasoning = ''  # уровень не по зубам шаблону этой модели, уходим в её дефолт
                         else:
                             raise
                         logger.warning(f'{self.name}: {self.current} rejected a parameter, retrying without it')
@@ -1480,6 +1502,8 @@ class UsersMap:
         if target in self.all_abs or target.startswith('switch_'):
             user.nav_type = target.replace('switch_','')
         target_menu: dict = self.menu[target]
+        if target == 'reasoning':
+            user.nav_type = 'bot'
         cb = getattr(user, f'current_{user.nav_type}')
         if user.nav_type in self.all_abs and target not in {'main', 'switch', 'utils', 'cmd'}:
             headline: str = f'Текущая модель:\n🤖 {cb.name}\n'\
@@ -1523,6 +1547,8 @@ class UsersMap:
             return '✅ ' if cb.states[state] else '❌ '
         # Handle model selection buttons
         if select:
+            if select.startswith('reason'):
+                return '✅ ' if select.removeprefix('reason_') == getattr(cb, 'reasoning', None) else ''
             if select.startswith('ratio'):
                 # Handle image_size selection buttons
                 return '✅ ' if select.removeprefix('ratio_') in {cb.image_size, btn_act} else ''
@@ -1915,6 +1941,11 @@ class Callbacks:
             user.current_pic.image_size = ratio
             if hasattr(user.current_bot, 'image_size'):
                 user.current_bot.image_size = ratio
+        elif target == 'reasoning':
+            # level берём из settings.json, как в ratio-меню
+            if hasattr(user.current_bot, 'reasoning'):
+                user.current_bot.reasoning = BaseAPIInterface.get_models(
+                    users.menu['reasoning'])[int(act)].removeprefix('reason_')
         else:
             await user.change_model(user.nav_type, target, act)
         with suppress(Exception):
