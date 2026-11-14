@@ -375,37 +375,29 @@ class BOTS:
         async def prompt(self, 
                         text: str | None = None, 
                         data: list | None = None, 
-                        attempts: int = 0) -> str | dict | None:
+                        attempts: int = 0,
+                        **kwargs) -> str | dict | None:
             try:
                 content= [
                     *[types.Part.from_bytes(**subdata) # type: ignore
                     for subdata in data], text] if data else text
                 response = await self.chat.send_message(content)
-                if 'image' in self.current:
-                    try:
-                        output: dict = {}
-                        for part in response.candidates[0].content.parts:
-                            if part.inline_data is not None:
-                                output['photo'] = BIF(part.inline_data.data, "image.png")
-                            elif part.text is not None:
-                                output['caption'] = part.text
-
-                        return (output if 'photo' in output  else response.text
-                                ) or response.candidates[0].finish_reason
-                    
-                    except Exception:  # noqa: BLE001
-                        return str(response.candidates[0].finish_reason)
-                    finally:
-                        if self.states.get('image_gen_reset'):
-                            self.dialogue_api_router('clear')
+                if response.text:
+                    return response.text
                 else:
-                    if response.text:
-                        return response.text
-                    else:
-                        raise GeminiError.APIError(598, response_json={})
+                    raise GeminiError.APIError(598, response_json={})
                 
             except GeminiError.APIError as e:
                 match e.code:
+                    case 429:
+                        if attempts == 0 and self.current != self.models[0]:
+                            logger.warning(output := 'Квота закончилась, отвечает lite модель...')
+                            if chat_id := kwargs.get('chat_id'):
+                                with suppress(exceptions.TelegramAPIError):
+                                    await bot.send_message(chat_id, output)
+
+                            self.current = self.chat._model = self.models[0]
+                            return await self.prompt(text, data, attempts+1, chat_id=chat_id)
                     case code if 500 <= code < 600:
                         if attempts < 3:
                             await asyncio.sleep(10)
@@ -438,17 +430,13 @@ class BOTS:
                 config=config,
                 history=history,
                 )
-            if 'image' not in self.current:
-                self.chat._config.tools = [
-                    *([types.Tool(code_execution=types.ToolCodeExecution)] if self.states['code'] else []),
-                    *([exa.handle] if self.states['search'] and exa else []),
-                    ] or None
-                self.chat._config.automatic_function_calling = \
-                    types.AutomaticFunctionCallingConfig(maximum_remote_calls=5)
-            else:
-                self.chat._config.tools = None
-                self.chat._config.thinking_config = None
-                self.chat._config.response_modalities = ['Text','Image']
+            self.chat._config.tools = [
+                *([types.Tool(code_execution=types.ToolCodeExecution)] if self.states['code'] else []),
+                *([exa.handle] if self.states['search'] and exa else []),
+                ] or None
+            self.chat._config.automatic_function_calling = \
+                types.AutomaticFunctionCallingConfig(maximum_remote_calls=5)
+
 
 
         async def get_list(self) -> str:
@@ -465,7 +453,7 @@ class BOTS:
         async def tts(self, text: str, attempts: int = 0) -> BIF | None:
             try:
                 response = await self.client.aio.models.generate_content(
-                    model="gemini-2.5-flash-preview-tts",
+                    model="gemini-3.1-flash-tts-preview",
                     contents=text,
                     config=types.GenerateContentConfig(
                         safety_settings=self.safety_settings,
@@ -473,7 +461,7 @@ class BOTS:
                         speech_config=types.SpeechConfig(
                             voice_config=types.VoiceConfig(
                                 prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                                    voice_name='Kore'
+                                    voice_name='Leda'
                                     )
                                 )
                         ),
@@ -557,7 +545,7 @@ class BOTS:
             self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
         
 
-        async def prompt(self, text, image: list[dict] | None = None) -> str | dict:
+        async def prompt(self, text, image: list[dict] | None = None, **kwargs) -> str | dict:
             if image:
                 User.make_multi_modal_body(image, text, self.context)
             else:
@@ -611,7 +599,7 @@ class BOTS:
             self.client = AsyncGroq(api_key=self.api_key,**kwargs)
 
 
-        async def prompt(self, text: str, image = None) -> str:
+        async def prompt(self, text: str, image = None, **kwargs) -> str:
             if image:
                 self.context.clear()
                 User.make_multi_modal_body(image, text, self.context)
@@ -671,7 +659,7 @@ class BOTS:
             self.current = self.models[0]
 
 
-        async def prompt(self, text: str, image = None) -> str:
+        async def prompt(self, text: str, image = None, **kwargs) -> str:
             if image:
                 User.make_multi_modal_body(image, text, self.context)
             else:
@@ -729,7 +717,7 @@ class BOTS:
             self.client = AsyncOpenAI(api_key=self.api_key,**kwargs)
         
 
-        async def prompt(self, text, image: list[dict] | None = None) -> str | dict:
+        async def prompt(self, text, image: list[dict] | None = None, **kwargs) -> str | dict:
             if image:
                 User.make_multi_modal_body(image, text, self.context)
             else:
@@ -780,7 +768,7 @@ class BOTS:
             return kwargs
 
 
-        async def prompt(self, text: str, image = None) -> str:
+        async def prompt(self, text: str, image = None, **kwargs) -> str:
             if image:
                 self.context.clear()
                 User.make_multi_modal_body(image, text, self.context)
@@ -1202,9 +1190,9 @@ class User:
         return output_dct
 
 
-    async def prompt(self, *args) -> str:
+    async def prompt(self, *args, **kwargs) -> str | dict:
         output = await users.queue_manager.enqueue_request(self.current_bot.name, 
-                                            self.current_bot.prompt(*args))
+                                            self.current_bot.prompt(*args, **kwargs))
         return output
 
 
@@ -1786,7 +1774,11 @@ class Handlers:
             user.media_group_buffer = None
 
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
-            output = await user.prompt(user.text, [tg_photo1, tg_photo2])
+            output = await user.prompt(
+                user.text, 
+                [tg_photo1, tg_photo2],
+                chat_id=message.chat.id
+                )
             if isinstance(output, str):
                 await users.send_split_response(message, output)
             else:
@@ -1796,14 +1788,16 @@ class Handlers:
     @dp.message(F.content_type.in_({'photo'}))
     async def photo_handler(message: Message, username: str):
         user = await users.check_and_clear(message, 'image', username)
-        if (user.current_bot.name not in {'gemini', 'open_router', 'zenmux'}):
+        if (user.current_bot.name not in {'gemini', 'open_router', 'groq'}):
             await user.change_model('bot','gemini')
             await message.reply(f"Выбран {user.current_bot.name}")
 
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
             tg_photo = await bot.download(message.photo[-1].file_id)  # type: ignore
-            output = await user.prompt(user.text, [{'data': tg_photo.getvalue(), 
-                                                    'mime_type': 'image/jpeg'}])
+            output = await user.prompt(
+                user.text, 
+                [{'data': tg_photo.getvalue(), 'mime_type': 'image/jpeg'}],
+                chat_id=message.chat.id)
             if isinstance(output, str):
                 await users.send_split_response(message, output)
             elif isinstance(output, dict):
@@ -1826,7 +1820,10 @@ class Handlers:
         # await message.reply(f"{data_type.capitalize()} получено! Ожидайте ⏳")
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
             data = await bot.download(data_info.file_id) # type: ignore
-            output = await user.prompt(user.text, [{'data': data.getvalue(), 'mime_type': mime_type}])
+            output = await user.prompt(
+                user.text, 
+                [{'data': data.getvalue(), 'mime_type': mime_type}],
+                chat_id=message.chat.id)
             if isinstance(output, str):
                 await users.send_split_response(message, output)
             else:
@@ -1844,7 +1841,7 @@ class Handlers:
     async def text_handler(message: Message, username: str):
         user = await users.check_and_clear(message, 'text', username)
         async with ChatActionSender.typing(chat_id=message.chat.id, bot=bot):
-            output = await user.prompt(user.text)
+            output = await user.prompt(user.text, chat_id=message.chat.id)
             if isinstance(output, str):
                 await users.send_split_response(message, output)
             elif isinstance(output, dict):

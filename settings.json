@@ -263,10 +263,6 @@
                 "select": "qwen/qwen3.8-27b"
             },
             {
-                "text": "OpenAI GPT-OSS 120B",
-                "select": "openai/gpt-oss-120b"
-            },
-            {
                 "text": "⬅️",
                 "target": "bot"
             }
